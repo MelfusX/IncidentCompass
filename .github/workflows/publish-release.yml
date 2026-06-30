@@ -1,0 +1,204 @@
+name: publish-release
+
+on:
+  # Primary path: a squash merge of a release PR updates VERSION on main.
+  # The workflow reads VERSION, tags the current main HEAD and publishes the release.
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+    tags:
+      - "v*.*.*"
+  # Recovery path: manually publish from main with an explicit version if an
+  # automatic run must be repaired or replayed.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. v0.3.0 or 0.3.0. Run from main."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      DOTNET_NOLOGO: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+
+      # Resolve the release version and require its release-notes file BEFORE the
+      # build/format/gates/tests, so a bad version or missing notes fail fast.
+      # Main pushes reach this workflow only when VERSION changes, workflow_dispatch
+      # uses the typed input, and tag pushes publish the pushed tag. Main/dispatch
+      # releases create a tag only when the same version does not already point at
+      # the current HEAD.
+      - name: Resolve and validate release version
+        id: version
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          can_create_tag=false
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            if [[ ! -f VERSION ]]; then
+              echo "::error::Missing VERSION. Release PRs must update VERSION before merging to main."
+              exit 1
+            fi
+
+            version_file="$(tr -d '[:space:]' < VERSION)"
+            if [[ ! "${version_file}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::VERSION must contain SemVer without a leading v, e.g. 0.3.0."
+              exit 1
+            fi
+
+            version="v${version_file}"
+            can_create_tag=true
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+              echo "::error::workflow_dispatch releases must run from main, got '${GITHUB_REF}'."
+              exit 1
+            fi
+
+            raw_version="${DISPATCH_VERSION}"
+            if [[ "${raw_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              version="v${raw_version}"
+            elif [[ "${raw_version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              version="${raw_version}"
+            else
+              echo "::error::Version '${raw_version}' must look like v1.2.3 or 1.2.3."
+              exit 1
+            fi
+
+            can_create_tag=true
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version '${version}' must look like v1.2.3."
+            exit 1
+          fi
+
+          notes_file="docs/release-notes-${version}.md"
+          if [[ ! -f "${notes_file}" ]]; then
+            echo "::error::Missing ${notes_file}. Add it in the release PR before publishing ${version}."
+            exit 1
+          fi
+
+          tag_exists=false
+          if git rev-parse --verify --quiet "refs/tags/${version}" >/dev/null; then
+            tagged_sha="$(git rev-list -n 1 "refs/tags/${version}")"
+            head_sha="$(git rev-parse HEAD)"
+            if [[ "${tagged_sha}" != "${head_sha}" ]]; then
+              echo "::error::Tag '${version}' already exists at ${tagged_sha}, but current HEAD is ${head_sha}."
+              exit 1
+            fi
+            tag_exists=true
+          fi
+
+          should_create_tag=false
+          if [[ "${can_create_tag}" == "true" && "${tag_exists}" != "true" ]]; then
+            should_create_tag=true
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "notes_file=${notes_file}" >> "${GITHUB_OUTPUT}"
+          echo "should_create_tag=${should_create_tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Detect NuGet lock files
+        id: nuget-locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find . -name packages.lock.json -not -path "*/bin/*" -not -path "*/obj/*" | grep -q .; then
+            echo "found=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "found=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Setup .NET with NuGet cache
+        if: steps.nuget-locks.outputs.found == 'true'
+        uses: actions/setup-dotnet@v5.3.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Setup .NET
+        if: steps.nuget-locks.outputs.found != 'true'
+        uses: actions/setup-dotnet@v5.3.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore locked dependencies
+        if: steps.nuget-locks.outputs.found == 'true'
+        run: dotnet restore IncidentCompass.slnx --locked-mode
+
+      - name: Restore dependencies
+        if: steps.nuget-locks.outputs.found != 'true'
+        run: dotnet restore IncidentCompass.slnx
+
+      - name: Build
+        run: dotnet build IncidentCompass.slnx --configuration Release --no-restore
+
+      - name: Format
+        run: dotnet format IncidentCompass.slnx --verify-no-changes --verbosity minimal
+
+      - name: Code organization gate
+        shell: pwsh
+        run: ./scripts/code-organization-gate.ps1
+
+      - name: Vulnerability scan
+        shell: pwsh
+        run: ./scripts/package-vulnerability-gate.ps1
+
+      - name: Unit tests
+        run: dotnet test tests/IncidentCompass.UnitTests/IncidentCompass.UnitTests.csproj --configuration Release --no-build
+
+      # Main/dispatch releases tag the validated HEAD. Tag-push releases already
+      # have a tag, and reruns skip this step when the tag points at the same HEAD.
+      - name: Tag release commit
+        if: steps.version.outputs.should_create_tag == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RELEASE_VERSION}" -m "${RELEASE_VERSION}"
+          git push origin "refs/tags/${RELEASE_VERSION}"
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          NOTES_FILE: ${{ steps.version.outputs.notes_file }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "GitHub release '${RELEASE_VERSION}' already exists."
+            exit 0
+          fi
+
+          gh release create "${RELEASE_VERSION}" \
+            --title "${RELEASE_VERSION}" \
+            --notes-file "${NOTES_FILE}"

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <!-- Keep Microsoft.OpenApi on 2.x: 2.8.0 avoids the deprecated transitive 2.0.0,
+         while 3.x is not compatible with Microsoft.AspNetCore.OpenApi 10.x source generation. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="[2.9.0, 3.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\IncidentCompass.Application\IncidentCompass.Application.csproj" />
+    <ProjectReference Include="..\IncidentCompass.Infrastructure\IncidentCompass.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

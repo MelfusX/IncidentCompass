@@ -1,0 +1,15 @@
+@host = http://localhost:5198
+
+GET {{host}}/api/v1/health
+Accept: application/json
+
+###
+
+GET {{host}}/api/v1/users/me
+Accept: application/json
+X-Demo-User-Id: alice
+X-Demo-Tenant-Id: local
+X-Demo-Roles: developer,admin
+X-Demo-Groups: demo,engineering
+
+###

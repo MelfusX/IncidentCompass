@@ -1,0 +1,242 @@
+using IncidentCompass.Application.Core.Embeddings;
+using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using WorkerService = IncidentCompass.Worker.Worker;
+
+namespace IncidentCompass.IntegrationTests;
+
+public sealed class HostCompositionTests
+{
+    public static IEnumerable<object[]> InvalidApplicationConfigurations =>
+    [
+        [new Dictionary<string, string?> { ["IncidentCompass:Application:ApiVersion"] = " " }],
+        [new Dictionary<string, string?> { ["IncidentCompass:Application:RunnerVersion"] = "" }]
+    ];
+
+    public static IEnumerable<object[]> InvalidModelGatewayConfigurations =>
+    [
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:DefaultModel"] = "" }],
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:StrongModel"] = " " }],
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:DefaultTemperature"] = "1.5" }],
+        [
+            new Dictionary<string, string?>
+            {
+                ["IncidentCompass:ModelGateway:MinTemperature"] = "0.8",
+                ["IncidentCompass:ModelGateway:MaxTemperature"] = "0.7"
+            }
+        ],
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:DefaultMaxOutputTokens"] = "0" }],
+        [
+            new Dictionary<string, string?>
+            {
+                ["IncidentCompass:ModelGateway:DefaultMaxOutputTokens"] = "4096",
+                ["IncidentCompass:ModelGateway:MaxOutputTokensLimit"] = "2048"
+            }
+        ],
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:MaxInputMessageCharacters"] = "0" }],
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:MaxCorrelationIdLength"] = "129" }],
+        [new Dictionary<string, string?> { ["IncidentCompass:ModelGateway:AllowedModels:0"] = " " }]
+    ];
+
+    public static IEnumerable<object[]> AcceptedProviderSpellings =>
+    [
+        ["Mock"],
+        ["OpenAiCompatible"],
+        ["OPENAI_COMPATIBLE"],
+        ["OPENAI-COMPATIBLE"]
+    ];
+
+    [Fact]
+    public void WorkerHostServices_CanBuildWithScopeValidation()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IncidentCompass:Application:ApiVersion"] = "v1",
+                ["IncidentCompass:Postgres:ConnectionStringName"] = "IncidentCompass"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTestApplication(configuration);
+        services.AddInfrastructure(configuration);
+        services.AddScoped<IUserContext>(
+            serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());
+        services.AddHostedService<WorkerService>();
+
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        Assert.Single(provider.GetServices<IHostedService>());
+
+        using var scope = provider.CreateScope();
+        var backgroundContext = scope.ServiceProvider.GetRequiredService<IBackgroundUserContext>();
+        var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();
+        Assert.Same(backgroundContext, userContext);
+        Assert.True(userContext.IsAuthenticated);
+        Assert.Equal("system", userContext.UserId);
+        Assert.Null(userContext.TenantId);
+        Assert.Contains("system", userContext.Roles);
+    }
+
+    [Fact]
+    public async Task HostServices_RejectUnsupportedModelGatewayProviderOnStart()
+    {
+        using var host = new HostBuilder()
+            .ConfigureAppConfiguration(configuration =>
+            {
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["IncidentCompass:ModelGateway:Provider"] = "TypoProvider"
+                });
+            })
+            .ConfigureServices((context, services) =>
+            {
+                services.AddLogging();
+                services.AddTestApplication(context.Configuration);
+                services.AddInfrastructure(context.Configuration);
+            })
+            .Build();
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync());
+
+        Assert.NotNull(exception);
+        Assert.Contains(
+            GetOptionsValidationFailures(exception),
+            failure => failure.Contains("unsupported", StringComparison.OrdinalIgnoreCase) &&
+                       failure.Contains("TypoProvider", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(AcceptedProviderSpellings))]
+    public async Task HostServices_AcceptsDocumentedProviderSpellings(string provider)
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:ModelGateway:Provider"] = provider,
+            ["IncidentCompass:ModelGateway:OpenAiCompatible:ApiKey"] = "test-api-key",
+            ["IncidentCompass:Embeddings:Provider"] = provider,
+            ["IncidentCompass:Embeddings:OpenAiCompatible:ApiKey"] = "test-api-key"
+        });
+
+        await host.StartAsync();
+
+        using var scope = host.Services.CreateScope();
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IAiModelClient>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IEmbeddingClient>());
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidApplicationConfigurations))]
+    public async Task HostServices_RejectInvalidApplicationOptionsOnStart(
+        IReadOnlyDictionary<string, string?> invalidConfiguration)
+    {
+        using var host = CreateHostWithConfiguration(invalidConfiguration);
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync());
+
+        // [OptionsValidator] (source-generated) emits one failure per failing property, formatted
+        // by the attribute's ErrorMessage. The invalidated field name appears in the failure
+        // text, which is what we anchor the assertion on now.
+        var expectedFieldName = invalidConfiguration.Keys.First().Split(':')[^1];
+        Assert.NotNull(exception);
+        Assert.Contains(
+            GetOptionsValidationFailures(exception),
+            failure => failure.Contains(expectedFieldName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task HostServices_RejectInvalidEmbeddingOptionsOnStart()
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Embeddings:DefaultModel"] = ""
+        });
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync());
+
+        // [OptionsValidator] (source-generated) emits one failure per failing property; the
+        // invalidated field name appears in the failure text.
+        Assert.NotNull(exception);
+        Assert.Contains(
+            GetOptionsValidationFailures(exception),
+            failure => failure.Contains("DefaultModel", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidModelGatewayConfigurations))]
+    public async Task HostServices_RejectInvalidModelGatewayOptionsOnStart(
+        IReadOnlyDictionary<string, string?> values)
+    {
+        using var host = CreateHostWithConfiguration(values);
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync());
+
+        Assert.NotNull(exception);
+        Assert.Contains(
+            GetOptionsValidationFailures(exception),
+            failure => failure.Contains("Model gateway configuration", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task MockEmbeddingClient_UsesConfiguredDimensions()
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Embeddings:MockDimensions"] = "1024"
+        });
+        await host.StartAsync();
+
+        var embeddingClient = host.Services.GetRequiredService<IEmbeddingClient>();
+        var response = await embeddingClient.CreateEmbeddingAsync(
+            new EmbeddingRequest("dimension test", "mock-embedding", CorrelationId: null),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(1024, response.Vector.Count);
+    }
+
+    private static IHost CreateHostWithConfiguration(
+        IReadOnlyDictionary<string, string?> values)
+    {
+        return new HostBuilder()
+            .ConfigureAppConfiguration(configuration =>
+            {
+                configuration.AddInMemoryCollection(values);
+            })
+            .ConfigureServices((context, services) =>
+            {
+                services.AddLogging();
+                services.AddTestApplication(context.Configuration);
+                services.AddInfrastructure(context.Configuration);
+            })
+            .Build();
+    }
+
+    private static IEnumerable<string> GetOptionsValidationFailures(Exception exception)
+    {
+        if (exception is OptionsValidationException optionsValidationException)
+        {
+            return optionsValidationException.Failures;
+        }
+
+        if (exception is AggregateException aggregateException)
+        {
+            return aggregateException
+                .Flatten()
+                .InnerExceptions
+                .OfType<OptionsValidationException>()
+                .SelectMany(static optionsValidationException => optionsValidationException.Failures);
+        }
+
+        return [];
+    }
+}

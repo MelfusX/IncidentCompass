@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IncidentCompass.Api/IncidentCompass.Api.csproj" />
+    <Project Path="src/IncidentCompass.Application/IncidentCompass.Application.csproj" />
+    <Project Path="src/IncidentCompass.Domain/IncidentCompass.Domain.csproj" />
+    <Project Path="src/IncidentCompass.Infrastructure/IncidentCompass.Infrastructure.csproj" />
+    <Project Path="src/IncidentCompass.Worker/IncidentCompass.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IncidentCompass.IntegrationTests/IncidentCompass.IntegrationTests.csproj" />
+    <Project Path="tests/IncidentCompass.UnitTests/IncidentCompass.UnitTests.csproj" />
+  </Folder>
+</Solution>
