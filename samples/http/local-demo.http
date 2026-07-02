@@ -13,3 +13,80 @@ X-Demo-Roles: developer,admin
 X-Demo-Groups: demo,engineering
 
 ###
+
+# Tester-sourced envelope: structured fields via `attributes`, deterministic demo data.
+POST {{host}}/api/v1/incidents
+Content-Type: application/json
+Accept: application/json
+
+{
+  "sourceKind": "tester",
+  "serviceName": "payments-api",
+  "environment": "prod",
+  "severity": "critical",
+  "observedAtUtc": "2026-07-01T12:00:00Z",
+  "correlation": { "traceId": "trace-0001", "spanId": "span-0001", "externalId": "evt-0001" },
+  "attributes": {
+    "errorType": "TimeoutException",
+    "errorMessage": "Checkout call to payments-api timed out after 30000ms",
+    "operationName": "POST /checkout",
+    "httpMethod": "POST",
+    "httpRoute": "/checkout",
+    "httpStatusCode": 504,
+    "durationMs": 30000
+  },
+  "payload": { "note": "synthetic tester envelope" }
+}
+
+###
+
+# Minimal OTel-shaped envelope: same structured convention as tester, sourceKind "otel".
+POST {{host}}/api/v1/incidents
+Content-Type: application/json
+Accept: application/json
+
+{
+  "sourceKind": "otel",
+  "serviceName": "payments-api",
+  "environment": "prod",
+  "severity": "error",
+  "correlation": { "traceId": "trace-0002", "spanId": "span-0002" },
+  "attributes": {
+    "errorType": "NullReferenceException",
+    "errorMessage": "Object reference not set to an instance of an object",
+    "operationName": "GET /orders/{id}"
+  }
+}
+
+###
+
+# User-report envelope: free text, no serviceName -> weak fingerprint, own fault every time.
+POST {{host}}/api/v1/incidents
+Content-Type: application/json
+Accept: application/json
+
+{
+  "sourceKind": "user",
+  "summary": "Site is down, checkout button does nothing",
+  "description": "Clicked checkout three times, nothing happens, no error shown."
+}
+
+###
+
+# Unknown source is rejected (400) — "webhook" has no registered normalizer / is not in AllowedSources.
+POST {{host}}/api/v1/incidents
+Content-Type: application/json
+Accept: application/json
+
+{
+  "sourceKind": "webhook",
+  "summary": "Should be rejected"
+}
+
+###
+
+# Replace with a real fault id returned by one of the POSTs above.
+GET {{host}}/api/v1/faults/00000000-0000-0000-0000-000000000000
+Accept: application/json
+
+###

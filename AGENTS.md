@@ -28,9 +28,10 @@ Before making non-trivial changes, read the relevant public docs:
   boundaries are by convention + `ArchitectureTests`, not enforced module assemblies).
 - `Domain` must not depend on `Application`, `Infrastructure`, `Api`, `Worker`, provider SDKs or persistence libraries.
 - `Application` is a single project with internal feature folders: `Core/`, `Intake/`, `Investigation/`,
-  `Memory/`, `Governance/`. Only `Core/` and `Governance/` are populated today; the others are reserved
-  for later phases.
+  `Memory/`, `Governance/`. `Core/`, `Governance/` and `Intake/` are populated today;
+  `Investigation/` and `Memory/` are reserved for later phases.
 - `Core/` holds the dispatcher, identity/correlation, model/embedding gateway abstractions and shared options.
+- `Intake/` holds source normalization, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts.
 - `Governance/` holds the governed tool-execution/policy/audit primitive (`GovernedAgentToolExecutor`,
   `ToolPolicy`, `AgentToolAuditLogWriter`). It is currently uncalled library code; a future phase wires a caller.
 - `Infrastructure` implements persistence, model clients, embedding clients and other adapters.
@@ -53,7 +54,8 @@ Before making non-trivial changes, read the relevant public docs:
 - Auth: foreground `IUserContext` for API callers, `IBackgroundUserContext`
   for Worker/system jobs, and demo header auth only for local/sample use.
 - Providers: deterministic mock providers by default; OpenAI-compatible adapters are replaceable infrastructure adapters.
-- Governance: tool execution is deterministic backend behavior gated by policy; the executor has no caller yet (Phase 0 ships it as a primitive only).
+- Governance: tool execution is deterministic backend behavior gated by policy; the executor remains uncalled library code until a later phase wires a caller.
+- Intake fingerprinting: a strong fingerprint requires both a real non-`unknown` service name and structured `errorType`. A user/manual report with only an operator-entered `serviceName` remains weak and opens its own fault.
 
 ## Safety Rules
 

@@ -4,11 +4,10 @@ A governed incident-triage agent backend. The intended shape: ingest a signal, a
 orchestrator delegates to scoped workers under policy/audit/budget rails, and the
 system produces a grounded report.
 
-This is reference-quality software, not a production system. Phase 0 (this snapshot)
-is a repository bootstrap: it carries over the layered .NET structure, the model/embedding
-gateway, and a governed tool-execution/policy/audit primitive from its upstream starter
-kit, with all chat/RAG/evaluation/usage/MCP product surface stripped out. No intake
-endpoint, agent loop, or ledger exists yet — those are later-phase work.
+This is reference-quality software, not a production system. This snapshot includes the
+Phase 0 repository bootstrap plus Phase 1 intake: a governed signal-ingestion endpoint,
+fault grouping, triage-job seeding, config snapshots and grounded intake artifacts. The
+agent loop and final report ledger are later-phase work.
 
 ## What This Is
 
@@ -16,6 +15,9 @@ endpoint, agent loop, or ledger exists yet — those are later-phase work.
   application pipeline.
 - A model/embedding gateway abstraction with deterministic mock providers (default) and
   OpenAI-compatible adapters behind the same ports.
+- A Phase 1 intake pipeline (`Intake`) with `POST /api/v1/incidents`, `GET /api/v1/faults/{id}`,
+  source normalizers, redaction, fingerprinting, fault grouping, triage-job creation and
+  grounded intake artifacts.
 - A governed tool-execution/policy/audit subsystem (`Governance`): typed tool schemas,
   backend policy decisions (allow/require-approval/forbid), and an audit log writer. It is
   currently uncalled library code — its previous caller (a chat loop) was removed along
@@ -46,12 +48,12 @@ flowchart LR
 ```
 
 `IncidentCompass.Application` is a single project organized by feature folder: `Core/`
-(dispatcher, identity/correlation, model/embedding gateway abstractions, options) and
-`Governance/` (the kept tool-execution/policy/audit primitive) are populated today;
-`Intake/`, `Investigation/`, and `Memory/` are reserved for later phases and intentionally
-empty. `Infrastructure` implements persistence and provider adapters. `Api` maps HTTP
-input/output only. `Worker` runs a placeholder background host pending Phase 2's job-claim
-loop.
+(dispatcher, identity/correlation, model/embedding gateway abstractions, options),
+`Governance/` (the kept tool-execution/policy/audit primitive) and `Intake/` (signal
+normalization, redaction, fingerprinting, fault grouping and triage-job orchestration) are
+populated today. `Investigation/` and `Memory/` remain reserved for later phases.
+`Infrastructure` implements persistence and provider adapters. `Api` maps HTTP input/output
+only. `Worker` runs a placeholder background host pending Phase 2's job-claim loop.
 
 Start here:
 
@@ -122,7 +124,8 @@ $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=inc
 dotnet run --project src/IncidentCompass.Worker
 ```
 
-Sample HTTP requests (health check and current-user lookup) are available in
+Sample HTTP requests (health check, current-user lookup, incident ingestion, source rejection
+and fault lookup) are available in
 [src/IncidentCompass.Api/IncidentCompass.Api.http](src/IncidentCompass.Api/IncidentCompass.Api.http)
 and [samples/http/local-demo.http](samples/http/local-demo.http).
 

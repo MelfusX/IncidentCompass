@@ -27,6 +27,10 @@ Docker Compose, but plain `dotnet run` does not load `.env` automatically unless
 your shell/tooling does that for you. Values in `.env.example` are local-only
 Docker/demo placeholders.
 
+Phase 1 intake also loads `config/incidentcompass.config.json`, including instruction
+file references used to compute the persisted `config_hash`. API and Worker appsettings
+point at that checked-in file for the local demo path.
+
 ## Build And Test
 
 ```powershell
@@ -48,10 +52,11 @@ docker compose up -d postgres
 ```
 
 The local PostgreSQL image applies the init scripts under `infra/postgres/init`
-when the Docker volume is first created, including observability/cost tracking
-and tool audit logging. If you are reusing an older local Docker volume,
-recreate it with `docker compose down -v` or apply the missing numbered SQL
-scripts manually.
+when the Docker volume is first created, including observability/cost tracking,
+tool audit logging and Phase 1 intake tables (`signals`, `faults`, `triage_jobs`,
+`triage_config_snapshots`, `triage_artifacts`). If you are reusing an older local
+Docker volume, recreate it with `docker compose down -v` or apply the missing
+numbered SQL scripts manually.
 
 Run the API:
 
@@ -75,6 +80,8 @@ Useful local endpoints:
 
 - `GET http://localhost:5198/api/v1/health`
 - `GET http://localhost:5198/api/v1/users/me`
+- `POST http://localhost:5198/api/v1/incidents`
+- `GET http://localhost:5198/api/v1/faults/{id}`
 
 Sample HTTP requests are available in
 [src/IncidentCompass.Api/IncidentCompass.Api.http](../src/IncidentCompass.Api/IncidentCompass.Api.http)
@@ -117,6 +124,36 @@ Invoke-RestMethod `
   -Uri http://localhost:5198/api/v1/users/me
 ```
 
+Ingest a structured tester signal:
+
+```powershell
+$body = @{
+  sourceKind = "tester"
+  serviceName = "payments-api"
+  environment = "prod"
+  severity = "critical"
+  observedAtUtc = "2026-07-01T12:00:00Z"
+  correlation = @{ traceId = "trace-0001"; spanId = "span-0001"; externalId = "evt-0001" }
+  attributes = @{
+    errorType = "TimeoutException"
+    errorMessage = "Checkout call timed out after 30000ms"
+    operationName = "POST /checkout"
+    httpRoute = "/checkout"
+    httpStatusCode = 504
+  }
+  payload = @{ note = "synthetic tester envelope" }
+} | ConvertTo-Json -Depth 8
+
+$ingested = Invoke-RestMethod -Method Post -ContentType "application/json" -Body $body -Uri http://localhost:5198/api/v1/incidents
+$ingested
+```
+
+Fetch the created fault:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri "http://localhost:5198/api/v1/faults/$($ingested.faultId)"
+```
+
 ## Provider Overrides
 
 To use an OpenAI-compatible chat completions endpoint, override configuration
@@ -153,3 +190,5 @@ phase that calls them end-to-end from the API.
 5. `dotnet run --project src/IncidentCompass.Worker`
 6. `GET /api/v1/health`
 7. `GET /api/v1/users/me`
+8. `POST /api/v1/incidents`
+9. `GET /api/v1/faults/{id}`
