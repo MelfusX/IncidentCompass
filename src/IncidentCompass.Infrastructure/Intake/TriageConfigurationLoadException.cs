@@ -15,7 +15,7 @@ internal sealed class TriageConfigurationLoadException : InvalidOperationExcepti
     public static TriageConfigurationLoadException UnsupportedKind(string kind)
     {
         return new TriageConfigurationLoadException(
-            $"Triage configuration source kind '{kind}' is not supported (only 'File' is supported in Phase 1).");
+            $"Triage configuration source kind '{kind}' is not supported (only 'File' is supported in Phase 2).");
     }
 
     public static TriageConfigurationLoadException ConfigFileMissing(string path)
@@ -30,10 +30,35 @@ internal sealed class TriageConfigurationLoadException : InvalidOperationExcepti
             $"Triage configuration references '{refValue}' which resolves to a missing file at '{resolvedPath}'.");
     }
 
+    public static TriageConfigurationLoadException SnapshotReferenceMissing(string refValue)
+    {
+        return new TriageConfigurationLoadException(
+            $"Triage configuration snapshot is missing resolved content for reference '{refValue}'.");
+    }
+
+    public static TriageConfigurationLoadException MissingSection(string sectionName)
+    {
+        return new TriageConfigurationLoadException(
+            $"Triage configuration is missing required section '{sectionName}'.");
+    }
+
     public static TriageConfigurationLoadException InvalidJson(string path, Exception innerException)
     {
         return new TriageConfigurationLoadException(
-            $"Triage configuration file at '{path}' is not valid JSON.",
+            $"Triage configuration at '{path}' is not valid JSON.",
+            innerException);
+    }
+
+    public static TriageConfigurationLoadException InvalidSnapshot(string columnName)
+    {
+        return new TriageConfigurationLoadException(
+            $"Triage configuration snapshot column '{columnName}' is not a valid JSON document.");
+    }
+
+    public static TriageConfigurationLoadException InvalidSnapshot(string columnName, Exception innerException)
+    {
+        return new TriageConfigurationLoadException(
+            $"Triage configuration snapshot column '{columnName}' is not valid JSON.",
             innerException);
     }
 

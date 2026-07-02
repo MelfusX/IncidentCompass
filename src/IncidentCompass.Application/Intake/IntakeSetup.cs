@@ -13,10 +13,10 @@ internal static class IntakeSetup
 {
     public static IServiceCollection AddIntakeCore(this IServiceCollection services)
     {
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<ISignalNormalizer, TesterSignalNormalizer>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<ISignalNormalizer, OtelShapedSignalNormalizer>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<ISignalNormalizer, UserReportSignalNormalizer>());
-        services.TryAddScoped<SignalNormalizerRegistry>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISignalNormalizer, TesterSignalNormalizer>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISignalNormalizer, OtelShapedSignalNormalizer>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<ISignalNormalizer, UserReportSignalNormalizer>());
+        services.TryAddSingleton<SignalNormalizerRegistry>();
 
         services.TryAddScoped<GroundedFactsAssembler>();
         services.TryAddScoped<FaultGroupingCoordinator>();

@@ -1,14 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Infrastructure.Configuration;
-using IncidentCompass.Infrastructure.Postgres;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Intake;
 
@@ -16,29 +13,42 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
 {
     private readonly IHostEnvironment hostEnvironment;
     private readonly IOptions<TriageConfigSourceOptions> configSourceOptions;
-    private readonly PostgresDataSourceProvider dataSourceProvider;
-    private readonly TimeProvider timeProvider;
-    private readonly ILogger<FileTriageConfigurationRepository> logger;
+    private readonly TriageConfigurationMaterializer materializer;
+    private readonly TriageConfigurationSnapshotStore snapshotStore;
     private readonly Lazy<Task<TriageConfiguration>> lazyConfiguration;
 
     public FileTriageConfigurationRepository(
         IHostEnvironment hostEnvironment,
         IOptions<TriageConfigSourceOptions> configSourceOptions,
-        PostgresDataSourceProvider dataSourceProvider,
-        TimeProvider timeProvider,
-        ILogger<FileTriageConfigurationRepository> logger)
+        TriageConfigurationMaterializer materializer,
+        TriageConfigurationSnapshotStore snapshotStore)
     {
         this.hostEnvironment = hostEnvironment;
         this.configSourceOptions = configSourceOptions;
-        this.dataSourceProvider = dataSourceProvider;
-        this.timeProvider = timeProvider;
-        this.logger = logger;
+        this.materializer = materializer;
+        this.snapshotStore = snapshotStore;
         lazyConfiguration = new Lazy<Task<TriageConfiguration>>(LoadAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public async Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken)
     {
         return await lazyConfiguration.Value.WaitAsync(cancellationToken);
+    }
+
+    public async Task<TriageConfiguration> GetByHashAsync(string configHash, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(configHash))
+        {
+            throw new ArgumentException("Config hash must be non-blank.", nameof(configHash));
+        }
+
+        var snapshot = await snapshotStore.GetAsync(configHash, cancellationToken);
+        if (snapshot is null)
+        {
+            throw new NotFoundException($"Triage configuration snapshot with config_hash '{configHash}' was not found.");
+        }
+
+        return materializer.Materialize(configHash, snapshot.SerializedConfig, snapshot.Instructions);
     }
 
     private async Task<TriageConfiguration> LoadAsync()
@@ -57,18 +67,14 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
 
         var configNode = await ReadConfigNodeAsync(absolutePath);
         var instructionsNode = await BuildInstructionsNodeAsync(configNode, absolutePath);
-
         var configHash = CanonicalJsonSerializer.ComputeSha256Hex(
             CanonicalJsonSerializer.Canonicalize(configNode),
             CanonicalJsonSerializer.Canonicalize(instructionsNode));
+        var configuration = materializer.Materialize(configHash, configNode, instructionsNode);
 
-        await PersistSnapshotAsync(configHash, configNode, instructionsNode);
+        await snapshotStore.PersistAsync(configHash, configNode, instructionsNode, CancellationToken.None);
 
-        var ingestionSettings = Deserialize<IngestionSettings>(configNode["Ingestion"]);
-        var faultGroupingSettings = Deserialize<FaultGroupingSettings>(configNode["FaultGrouping"]);
-        ValidateFaultGroupingSettings(faultGroupingSettings);
-
-        return new TriageConfiguration(configHash, ingestionSettings, faultGroupingSettings);
+        return configuration;
     }
 
     private static async Task<JsonNode> ReadConfigNodeAsync(string absolutePath)
@@ -135,57 +141,5 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
 
                 break;
         }
-    }
-
-    private async Task PersistSnapshotAsync(string configHash, JsonNode configNode, JsonObject instructionsNode)
-    {
-        // A missing connection-string configuration is a bootstrap concern distinct from "the
-        // triage config file is broken" -- real Api/Worker deployments always configure
-        // ConnectionStrings:IncidentCompass (every other repository needs it too), so this only
-        // fires for compositions that intentionally never wire Postgres (for example, host tests
-        // that exist solely to validate ModelGateway/Embeddings options). The loaded/hashed
-        // configuration is still valid and usable without the snapshot row; a real deployment's
-        // config_hash simply would not resolve from triage_config_snapshots until Postgres is
-        // configured, which is caught by other repositories' hard dependency on it at first use.
-        try
-        {
-            await using var connection = await dataSourceProvider.OpenConnectionAsync(CancellationToken.None);
-            await using var command = new NpgsqlCommand("""
-                INSERT INTO incidentcompass.triage_config_snapshots (config_hash, serialized_config, instructions, created_at_utc)
-                VALUES (@config_hash, @serialized_config::jsonb, @instructions::jsonb, @created_at_utc)
-                ON CONFLICT (config_hash) DO NOTHING;
-                """, connection);
-
-            command.Parameters.AddWithValue("config_hash", configHash);
-            command.Parameters.AddWithValue("serialized_config", NpgsqlDbType.Jsonb, configNode.ToJsonString());
-            command.Parameters.AddWithValue("instructions", NpgsqlDbType.Jsonb, instructionsNode.ToJsonString());
-            command.Parameters.AddWithValue("created_at_utc", timeProvider.GetUtcNow());
-
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-        }
-        catch (PostgresConnectionConfigurationException exception)
-        {
-            logger.LogWarning(
-                exception,
-                "Triage configuration snapshot for hash '{ConfigHash}' was not persisted because PostgreSQL is not configured.",
-                configHash);
-        }
-    }
-
-    private static void ValidateFaultGroupingSettings(FaultGroupingSettings settings)
-    {
-        if (!settings.MassIssue.TryGetMinimumFingerprintStrength(out _))
-        {
-            throw TriageConfigurationLoadException.InvalidSetting(
-                "FaultGrouping.MassIssue.MinFingerprintStrength",
-                settings.MassIssue.MinFingerprintStrength,
-                "one of: weak, strong");
-        }
-    }
-
-    private static T Deserialize<T>(JsonNode? node)
-    {
-        using var document = JsonDocument.Parse(node!.ToJsonString());
-        return JsonSerializer.Deserialize<T>(document.RootElement)!;
     }
 }

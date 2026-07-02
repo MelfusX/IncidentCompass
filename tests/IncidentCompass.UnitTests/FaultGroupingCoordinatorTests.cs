@@ -216,10 +216,11 @@ public sealed class FaultGroupingCoordinatorTests
         int lookbackMinutes = 15,
         int minNeighborCount = 5,
         string minFingerprintStrength = "strong") =>
-        new(
-            ConfigHash: "config-hash-1",
-            Ingestion: new IngestionSettings("local", ["tester", "user", "manual", "otel"]),
-            FaultGrouping: new FaultGroupingSettings(lookbackMinutes, silenceWindowMinutes, 1, new MassIssueSettings(minNeighborCount, minFingerprintStrength)));
+        TestTriageConfiguration.Create(
+            silenceWindowMinutes: silenceWindowMinutes,
+            lookbackMinutes: lookbackMinutes,
+            minNeighborCount: minNeighborCount,
+            minFingerprintStrength: minFingerprintStrength);
 
     private static Signal CreateDraftSignal(
         FingerprintStrength strength = FingerprintStrength.Strong,

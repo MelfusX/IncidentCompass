@@ -20,6 +20,9 @@ internal static class IntakeSetup
         // never overrides it; it only backstops raw ServiceCollection compositions.
         services.TryAddSingleton<IHostEnvironment, FallbackHostEnvironment>();
 
+        services.TryAddSingleton<TriageConfigurationLoadValidator>();
+        services.TryAddSingleton<TriageConfigurationMaterializer>();
+        services.TryAddSingleton<TriageConfigurationSnapshotStore>();
         services.TryAddSingleton<FileTriageConfigurationRepository>();
         services.TryAddSingleton<ITriageConfigurationRepository>(
             serviceProvider => serviceProvider.GetRequiredService<FileTriageConfigurationRepository>());

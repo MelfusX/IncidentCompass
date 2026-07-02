@@ -82,6 +82,27 @@ public sealed class MemoryOnlyCompositionTests
     {
         private static readonly TriageConfiguration Configuration = new(
             ConfigHash: "memory-only-test-hash",
+            Providers: new Dictionary<string, TriageProviderSettings>(StringComparer.Ordinal)
+            {
+                ["local-oai"] = new("OpenAICompatible", "http://localhost:1234/v1", "LOCAL_OAI_KEY")
+            },
+            Routes: new Dictionary<string, TriageRouteSettings>(StringComparer.Ordinal)
+            {
+                ["analysis-chat"] = new("Chat", "local-oai", "local-model", 0.1, 2000, 8192),
+                ["report-chat"] = new("Chat", "local-oai", "local-model", 0.2, 4000, 8192),
+                ["memory-embed"] = new("Embedding", "local-oai", "local-embedding-model", null, null, null)
+            },
+            Orchestrator: new OrchestratorSettings(
+                "orchestrator instructions",
+                "report-chat",
+                ["delegate", "publish_report"],
+                new OrchestratorBudgetSettings(6, 200000, 120)),
+            Roles: new Dictionary<string, TriageRoleSettings>(StringComparer.Ordinal)
+            {
+                ["analysis"] = new("analysis-chat", "analysis instructions", [], "analysis schema")
+            },
+            Tools: new Dictionary<string, TriageToolSettings>(StringComparer.Ordinal),
+            Rules: [],
             Ingestion: new IngestionSettings(DefaultTenant: "local", AllowedSources: ["tester"]),
             FaultGrouping: new FaultGroupingSettings(
                 LookbackMinutes: 15,
@@ -90,6 +111,9 @@ public sealed class MemoryOnlyCompositionTests
                 MassIssue: new MassIssueSettings(MinNeighborCount: 5, MinFingerprintStrength: "strong")));
 
         public Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(Configuration);
+
+        public Task<TriageConfiguration> GetByHashAsync(string configHash, CancellationToken cancellationToken) =>
             Task.FromResult(Configuration);
     }
 

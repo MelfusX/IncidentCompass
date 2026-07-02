@@ -11,14 +11,9 @@ public sealed class IngestSignalCommandValidatorTests
     public async Task ValidateAsync_AllowedSourceWithoutRegisteredNormalizer_ReturnsValidationFailure()
     {
         var validator = new IngestSignalCommandValidator(
-            new StubTriageConfigurationRepository(new TriageConfiguration(
-                ConfigHash: "hash",
-                Ingestion: new IngestionSettings("local", [SignalSourceKinds.Webhook]),
-                FaultGrouping: new FaultGroupingSettings(
-                    LookbackMinutes: 15,
-                    SilenceWindowMinutes: 30,
-                    FingerprintVersion: 1,
-                    MassIssue: new MassIssueSettings(5, "strong")))),
+            new StubTriageConfigurationRepository(TestTriageConfiguration.Create(
+                configHash: "hash",
+                allowedSources: [SignalSourceKinds.Webhook])),
             new SignalNormalizerRegistry([
                 new TesterSignalNormalizer(),
                 new OtelShapedSignalNormalizer(),
@@ -53,6 +48,9 @@ public sealed class IngestSignalCommandValidatorTests
         : ITriageConfigurationRepository
     {
         public Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(configuration);
+
+        public Task<TriageConfiguration> GetByHashAsync(string configHash, CancellationToken cancellationToken) =>
             Task.FromResult(configuration);
     }
 }

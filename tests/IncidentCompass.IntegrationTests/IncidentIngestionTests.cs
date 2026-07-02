@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using IncidentCompass.Application.Intake.Artifacts;
+using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,6 +57,26 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
             """,
             ("config_hash", ingested.ConfigHash!));
         Assert.True(snapshotExists);
+    }
+
+    [DockerAvailableFact]
+    public async Task TriageConfigurationRepository_GetByHashAsync_RehydratesPersistedSnapshot()
+    {
+        using var scope = await CreateScopeAsync();
+        const string configHash = "snapshot-rehydrate-test-hash";
+        await InsertSnapshotAsync(scope.ConnectionString, configHash);
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<ITriageConfigurationRepository>();
+
+        var configuration = await repository.GetByHashAsync(configHash, TestContext.Current.CancellationToken);
+
+        Assert.Equal(configHash, configuration.ConfigHash);
+        Assert.Equal("snapshot-analysis-model", configuration.Routes["analysis-chat"].Model);
+        Assert.Equal("snapshot orchestrator instructions", configuration.Orchestrator.Instructions);
+        Assert.Equal("snapshot analysis instructions", configuration.Roles["analysis"].Instructions);
+        Assert.Equal("{ \"type\": \"object\", \"additionalProperties\": false }", configuration.Roles["analysis"].OutputSchema);
+        Assert.Equal("attempt", Assert.Single(configuration.Rules).Scope);
     }
 
     [DockerAvailableFact]
@@ -450,6 +471,58 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         return rows;
     }
 
+    private static async Task InsertSnapshotAsync(string connectionString, string configHash)
+    {
+        await ExecuteAsync(
+            connectionString,
+            """
+            INSERT INTO incidentcompass.triage_config_snapshots (config_hash, serialized_config, instructions, created_at_utc)
+            VALUES (@config_hash, @serialized_config::jsonb, @instructions::jsonb, now())
+            ON CONFLICT (config_hash) DO UPDATE
+            SET serialized_config = EXCLUDED.serialized_config,
+                instructions = EXCLUDED.instructions;
+            """,
+            ("config_hash", configHash),
+            ("serialized_config", """
+                {
+                  "Providers": {
+                    "local-oai": { "Kind": "OpenAICompatible", "Endpoint": "http://localhost:1234/v1", "ApiKeySecretRef": "LOCAL_OAI_KEY" }
+                  },
+                  "Routes": {
+                    "analysis-chat": { "Kind": "Chat", "ProviderId": "local-oai", "Model": "snapshot-analysis-model", "Temperature": 0.1, "MaxOutputTokens": 2000, "ContextWindowTokens": 8192 },
+                    "report-chat": { "Kind": "Chat", "ProviderId": "local-oai", "Model": "snapshot-report-model", "Temperature": 0.2, "MaxOutputTokens": 4000, "ContextWindowTokens": 8192 },
+                    "memory-embed": { "Kind": "Embedding", "ProviderId": "local-oai", "Model": "snapshot-embedding-model" }
+                  },
+                  "Orchestrator": {
+                    "Instructions": "ref:instructions/orchestrator.md",
+                    "RouteId": "report-chat",
+                    "Tools": ["delegate", "publish_report"],
+                    "Budget": { "MaxWorkers": 6, "MaxTokens": 200000, "MaxWallClockSeconds": 120 }
+                  },
+                  "Roles": {
+                    "analysis": { "RouteId": "analysis-chat", "Instructions": "ref:instructions/analysis.md", "Tools": [], "OutputSchema": "ref:schemas/analysis.json" }
+                  },
+                  "Tools": {},
+                  "Rules": [
+                    { "Type": "rate_cap", "Tool": "*", "Max": 50 }
+                  ],
+                  "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"] },
+                  "FaultGrouping": {
+                    "LookbackMinutes": 15,
+                    "SilenceWindowMinutes": 30,
+                    "FingerprintVersion": 1,
+                    "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
+                  }
+                }
+                """),
+            ("instructions", """
+                {
+                  "ref:instructions/orchestrator.md": "snapshot orchestrator instructions",
+                  "ref:instructions/analysis.md": "snapshot analysis instructions",
+                  "ref:schemas/analysis.json": "{ \"type\": \"object\", \"additionalProperties\": false }"
+                }
+                """));
+    }
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);
