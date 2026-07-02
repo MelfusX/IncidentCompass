@@ -2,26 +2,52 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Health;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Worker;
 
-// Placeholder background loop. Phase 2 replaces this with the triage job-claim loop;
-// for now it only performs a startup health check and idles between polls.
 public sealed partial class Worker(
     ILogger<Worker> logger,
-    IServiceScopeFactory serviceScopeFactory)
+    IServiceScopeFactory serviceScopeFactory,
+    IOptions<WorkerOptions> options,
+    WorkerJobPump jobPump)
     : BackgroundService
 {
-    private const int PollIntervalSeconds = 30;
+    private readonly string workerId = $"{Environment.MachineName}:{Guid.NewGuid():N}";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await TryLogStartupStatusAsync(stoppingToken);
 
+        var consecutiveErrors = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
-            var delay = WorkerPollDelay.Calculate(PollIntervalSeconds, consecutiveErrors: 0, Random.Shared.NextDouble());
-            await Task.Delay(delay, stoppingToken);
+            try
+            {
+                await jobPump.ObserveCompletedAsync(stoppingToken);
+                await jobPump.FillAvailableSlotsAsync(workerId, options.Value, stoppingToken);
+                consecutiveErrors = 0;
+
+                var delay = WorkerPollDelay.Calculate(
+                    options.Value.PollIntervalSeconds,
+                    consecutiveErrors,
+                    Random.Shared.NextDouble());
+                await jobPump.WaitForNextWakeAsync(delay, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                consecutiveErrors++;
+                LogWorkerPollFailed(logger, exception);
+                var delay = WorkerPollDelay.Calculate(
+                    options.Value.PollIntervalSeconds,
+                    consecutiveErrors,
+                    Random.Shared.NextDouble());
+                await Task.Delay(delay, stoppingToken);
+            }
         }
     }
 
@@ -38,6 +64,8 @@ public sealed partial class Worker(
 
             LogWorkerStarted(
                 logger,
+                workerId,
+                options.Value.MaxConcurrentJobs,
                 health.Status,
                 health.CheckedAtUtc);
         }
@@ -54,9 +82,11 @@ public sealed partial class Worker(
     [LoggerMessage(
         EventId = 1001,
         Level = LogLevel.Information,
-        Message = "IncidentCompass Worker started with application status {Status} at {CheckedAtUtc}")]
+        Message = "IncidentCompass Worker {WorkerId} started with MaxConcurrentJobs {MaxConcurrentJobs}, application status {Status} at {CheckedAtUtc}")]
     private static partial void LogWorkerStarted(
         ILogger logger,
+        string workerId,
+        int maxConcurrentJobs,
         string status,
         DateTimeOffset checkedAtUtc);
 
@@ -65,6 +95,14 @@ public sealed partial class Worker(
         Level = LogLevel.Warning,
         Message = "Worker startup health check failed. Polling will continue.")]
     private static partial void LogStartupHealthCheckFailed(
+        ILogger logger,
+        Exception exception);
+
+    [LoggerMessage(
+        EventId = 1003,
+        Level = LogLevel.Warning,
+        Message = "Worker polling failed. Polling will continue after backoff.")]
+    private static partial void LogWorkerPollFailed(
         ILogger logger,
         Exception exception);
 }

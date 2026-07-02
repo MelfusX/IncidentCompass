@@ -7,6 +7,7 @@ using IncidentCompass.Application.Core.Health;
 using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Intake;
+using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Governance;
 using Microsoft.Extensions.Configuration;
@@ -32,6 +33,7 @@ public static class Setup
         services.AddHealthCore();
         services.AddUsersCore();
         services.AddIntakeCore();
+        services.AddInvestigationCore();
 
         services.TryAddScoped<ModelGatewayRequestPolicy>();
         services.TryAddScoped<IAiModelRequestLogger, NoopAiModelRequestLogger>();

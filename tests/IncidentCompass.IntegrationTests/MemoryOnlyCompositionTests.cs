@@ -4,6 +4,7 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Artifacts;
+using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Domain.Governance;
@@ -44,6 +45,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<IIntakeUnitOfWork, InMemoryIntakeUnitOfWork>();
         services.AddSingleton<ITriageJobRepository, InMemoryTriageJobRepository>();
         services.AddSingleton<ITriageArtifactRepository, InMemoryTriageArtifactRepository>();
+        services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
@@ -191,6 +193,19 @@ public sealed class MemoryOnlyCompositionTests
         public Task InsertAsync(TriageArtifact artifact, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
+    private sealed class InMemoryTriageJobRuntimeRepository : ITriageJobRuntimeRepository
+    {
+        public Task<TriageJob?> ClaimNextAsync(
+            string workerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) => Task.FromResult<TriageJob?>(null);
+
+        public Task RecordAttemptFailureAsync(
+            TriageJob job,
+            string workerId,
+            TriageJobAttemptFailure failure,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+    }
     private sealed class InMemoryPriorReportSummaryProvider : IPriorReportSummaryProvider
     {
         public Task<PriorReportSummary?> FindLatestAsync(Guid faultId, CancellationToken cancellationToken) =>

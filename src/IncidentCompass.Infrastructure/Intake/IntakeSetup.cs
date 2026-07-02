@@ -1,6 +1,7 @@
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
+using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Infrastructure.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +33,7 @@ internal static class IntakeSetup
         services.TryAddScoped<ISignalRepository, PostgresSignalRepository>();
         services.TryAddScoped<IFaultRepository, PostgresFaultRepository>();
         services.TryAddScoped<ITriageJobRepository, PostgresTriageJobRepository>();
+        services.TryAddScoped<ITriageJobRuntimeRepository, PostgresTriageJobRuntimeRepository>();
         services.TryAddScoped<ITriageArtifactRepository, PostgresTriageArtifactRepository>();
         services.TryAddScoped<IPriorReportSummaryProvider, NoPriorReportSummaryProvider>();
 

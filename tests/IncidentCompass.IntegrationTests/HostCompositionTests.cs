@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using IncidentCompass.Worker;
 using WorkerService = IncidentCompass.Worker.Worker;
 
 namespace IncidentCompass.IntegrationTests;
@@ -67,9 +68,7 @@ public sealed class HostCompositionTests
         services.AddLogging();
         services.AddTestApplication(configuration);
         services.AddInfrastructure(configuration);
-        services.AddScoped<IUserContext>(
-            serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());
-        services.AddHostedService<WorkerService>();
+        services.AddWorker(configuration);
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {

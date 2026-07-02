@@ -206,7 +206,7 @@ public sealed class ArchitectureTests
             new(
                 "IncidentCompass.Application",
                 "IncidentCompass.Application",
-                ["Core", "Governance", "Intake"])
+                ["Core", "Governance", "Intake", "Investigation"])
         ];
 
     private static IEnumerable<string> EnumerateSourceFiles(string directory) =>
