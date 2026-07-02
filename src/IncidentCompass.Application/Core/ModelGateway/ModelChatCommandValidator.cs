@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using FluentValidation;
 using Microsoft.Extensions.Options;
 
-namespace IncidentCompass.Application.Generation.ModelGateway;
+namespace IncidentCompass.Application.Core.ModelGateway;
 
 /// <summary>
 /// Base FluentValidation rules shared by chat-style commands targeting the model gateway

@@ -3,7 +3,7 @@ using IncidentCompass.Infrastructure.Observability.Pricing;
 using IncidentCompass.Infrastructure.Observability.Logging;
 using IncidentCompass.Domain.Observability;
 using System.Net;
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Core.Configuration;

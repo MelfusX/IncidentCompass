@@ -1,5 +1,5 @@
 using IncidentCompass.Application.Core.ModelClients;
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 
 namespace IncidentCompass.Infrastructure.Observability.Logging;
 

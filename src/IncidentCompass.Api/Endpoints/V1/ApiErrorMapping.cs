@@ -1,5 +1,5 @@
 using IncidentCompass.Application.Core.Errors;
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Domain.Exceptions;
 

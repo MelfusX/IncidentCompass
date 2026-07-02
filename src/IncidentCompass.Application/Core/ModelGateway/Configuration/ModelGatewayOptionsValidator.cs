@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 
-namespace IncidentCompass.Application.Generation.ModelGateway;
+namespace IncidentCompass.Application.Core.ModelGateway;
 
 internal sealed class ModelGatewayOptionsValidator : IValidateOptions<ModelGatewayOptions>
 {

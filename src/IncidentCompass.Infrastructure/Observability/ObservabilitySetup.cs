@@ -1,4 +1,4 @@
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Infrastructure.Observability.Logging;
 using IncidentCompass.Infrastructure.Observability.Pricing;
 using Microsoft.Extensions.Configuration;

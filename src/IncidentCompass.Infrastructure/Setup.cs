@@ -1,6 +1,6 @@
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Core.Embeddings;
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Infrastructure.Configuration;

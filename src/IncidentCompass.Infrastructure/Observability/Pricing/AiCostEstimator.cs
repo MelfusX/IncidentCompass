@@ -1,5 +1,5 @@
 using IncidentCompass.Domain.Observability;
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.Observability;
 

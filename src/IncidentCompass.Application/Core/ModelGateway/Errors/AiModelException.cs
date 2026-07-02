@@ -1,7 +1,7 @@
 using System.Net;
 using IncidentCompass.Application.Core.Errors;
 
-namespace IncidentCompass.Application.Generation.ModelGateway;
+namespace IncidentCompass.Application.Core.ModelGateway;
 
 public sealed class AiModelException : ProviderException
 {

@@ -1,4 +1,4 @@
-namespace IncidentCompass.Application.Generation.ModelGateway;
+namespace IncidentCompass.Application.Core.ModelGateway;
 
 /// <summary>
 /// Shape shared by chat-style commands that target the model gateway. Lets a single

@@ -1,6 +1,6 @@
 using IncidentCompass.Application.Core.ModelClients;
 
-namespace IncidentCompass.Application.Generation.ModelGateway;
+namespace IncidentCompass.Application.Core.ModelGateway;
 
 internal sealed class NoopAiModelRequestLogger : IAiModelRequestLogger
 {

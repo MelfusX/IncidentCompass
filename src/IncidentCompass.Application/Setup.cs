@@ -5,7 +5,7 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.Health;
 using IncidentCompass.Application.Core.Users;
-using IncidentCompass.Application.Generation.ModelGateway;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Domain.Governance;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

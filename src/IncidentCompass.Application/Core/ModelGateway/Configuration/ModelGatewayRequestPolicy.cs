@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using IncidentCompass.Application.Core.ModelClients;
 using Microsoft.Extensions.Options;
 
-namespace IncidentCompass.Application.Generation.ModelGateway;
+namespace IncidentCompass.Application.Core.ModelGateway;
 
 public sealed partial class ModelGatewayRequestPolicy(IOptions<ModelGatewayOptions> options)
 {
