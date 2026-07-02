@@ -27,9 +27,11 @@ Docker Compose, but plain `dotnet run` does not load `.env` automatically unless
 your shell/tooling does that for you. Values in `.env.example` are local-only
 Docker/demo placeholders.
 
-Phase 1 intake also loads `config/incidentcompass.config.json`, including instruction
+The triage runtime also loads `config/incidentcompass.config.json`, including instruction
 file references used to compute the persisted `config_hash`. API and Worker appsettings
-point at that checked-in file for the local demo path.
+point at that checked-in file for the local demo path. The Worker rehydrates claimed jobs
+from persisted config snapshots by `config_hash`; its own concurrency/lease settings live
+in appsettings, not in the hashed triage snapshot.
 
 ## Build And Test
 
@@ -53,8 +55,9 @@ docker compose up -d postgres
 
 The local PostgreSQL image applies the init scripts under `infra/postgres/init`
 when the Docker volume is first created, including observability/cost tracking,
-tool audit logging and Phase 1 intake tables (`signals`, `faults`, `triage_jobs`,
-`triage_config_snapshots`, `triage_artifacts`). If you are reusing an older local
+tool audit logging, Phase 1 intake tables (`signals`, `faults`, `triage_jobs`,
+`triage_config_snapshots`, `triage_artifacts`) and Phase 2 `triage_ledger` plus
+`triage_reports`. If you are reusing an older local
 Docker volume, recreate it with `docker compose down -v` or apply the missing
 numbered SQL scripts manually.
 
@@ -65,11 +68,14 @@ $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=inc
 dotnet run --project src/IncidentCompass.Api --launch-profile http
 ```
 
-In a second terminal, run the background worker host. It currently runs a
-startup health check and idles on a fixed poll interval; a future phase
-replaces the idle loop with the triage job-claim loop. Set the connection
-string again in this terminal; PowerShell process environment variables do not
-carry into a new window:
+In a second terminal, run the background worker host. It performs a startup health check,
+then polls PostgreSQL for pending triage jobs, claiming at most the configured
+`IncidentCompass:Worker:MaxConcurrentJobs` per process. Each claimed job rehydrates its
+persisted triage config by `config_hash`, runs the governed orchestrator with only
+`delegate` and `publish_report`, records live ledger events, stores the analysis worker
+output as an attempt-level artifact and writes a minimal report row before marking the job
+terminal. Set the connection string again in this terminal; PowerShell process environment
+variables do not carry into a new window:
 
 ```powershell
 $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=incidentcompass;Username=incidentcompass;Password=incidentcompass_dev_password"
@@ -177,9 +183,7 @@ OpenAI-compatible provider URLs must use HTTPS by default. For a local loopback
 test server only, set
 `IncidentCompass__ModelGateway__OpenAiCompatible__AllowInsecureHttpForLoopback=true`.
 
-The model and embedding gateways are currently exercised through Infrastructure
-and integration tests; there is no chat or document-ingestion endpoint in this
-phase that calls them end-to-end from the API.
+The model gateway is exercised by the Worker investigation loop after an incident is ingested. The embedding gateway remains adapter-level only in this phase because the memory/RAG worker is later work. There is no chat or document-ingestion endpoint.
 
 ## Demo Flow Checklist
 

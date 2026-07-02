@@ -122,9 +122,9 @@ public sealed class AgentToolPolicyTests
 
     // The original demo tool implementations (CreateSupportTicketTool, DraftEmailTool,
     // GetCurrentUserProfileTool) were removed along with the demo agentic chat loop.
-    // The Governance tool-policy/execution subsystem is still kept and currently uncalled,
-    // so these synthetic tools stand in to exercise its policy classification, schema
-    // validation, and sanitization behavior with the same shapes the demo tools used.
+    // The reusable Governance tool-policy/execution subsystem is not exercised by the
+    // Phase 2 no-tool analysis role, so these synthetic tools stand in to verify policy
+    // classification, schema validation and sanitization behavior.
     private static IAgentTool GetSyntheticTool(string name)
     {
         return name switch

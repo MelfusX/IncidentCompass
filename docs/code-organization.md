@@ -65,7 +65,7 @@ IncidentCompass.Application/
     Validation/
 ```
 
-`Core/`, `Governance/` and `Intake/` are the current folders. `Investigation/` and `Memory/` are reserved for future phases and do not exist yet.
+`Core/`, `Governance/`, `Intake/` and `Investigation/` are the current folders. `Memory/` is reserved for a later phase and does not exist yet.
 
 Use `Query.cs` instead of `Command.cs` when the use case is read-only. Avoid repeating the full folder context in file names, such as `GetCurrentUserQuery.cs`, when `Users/GetCurrent/Query.cs` already communicates the intent.
 

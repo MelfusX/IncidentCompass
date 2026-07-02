@@ -5,9 +5,10 @@ orchestrator delegates to scoped workers under policy/audit/budget rails, and th
 system produces a grounded report.
 
 This is reference-quality software, not a production system. This snapshot includes the
-Phase 0 repository bootstrap plus Phase 1 intake: a governed signal-ingestion endpoint,
-fault grouping, triage-job seeding, config snapshots and grounded intake artifacts. The
-agent loop and final report ledger are later-phase work.
+Phase 0 repository bootstrap, Phase 1 intake and the Phase 2 governed investigation loop:
+typed triage configuration rehydration, a durable triage ledger writer, a bounded Worker
+claim loop, deterministic analysis delegation and a minimal `publish_report` closeout. The
+full grounded report pipeline remains later Phase 5 work.
 
 ## What This Is
 
@@ -19,9 +20,9 @@ agent loop and final report ledger are later-phase work.
   source normalizers, redaction, fingerprinting, fault grouping, triage-job creation and
   grounded intake artifacts.
 - A governed tool-execution/policy/audit subsystem (`Governance`): typed tool schemas,
-  backend policy decisions (allow/require-approval/forbid), and an audit log writer. It is
-  currently uncalled library code — its previous caller (a chat loop) was removed along
-  with the rest of the chat feature, and a future phase wires a new caller into it.
+  backend policy decisions (allow/require-approval/forbid), a durable triage ledger writer
+  and an older standalone tool-audit log writer. The Phase 2 investigation loop uses the
+  ledger for `Delegated`, `WorkerCompleted` and `ReportPublished` events.
 - Sanitized AI-request logging, cost estimation, and generic dispatch/health/security/user
   scaffolding over PostgreSQL.
 
@@ -49,11 +50,13 @@ flowchart LR
 
 `IncidentCompass.Application` is a single project organized by feature folder: `Core/`
 (dispatcher, identity/correlation, model/embedding gateway abstractions, options),
-`Governance/` (the kept tool-execution/policy/audit primitive) and `Intake/` (signal
-normalization, redaction, fingerprinting, fault grouping and triage-job orchestration) are
-populated today. `Investigation/` and `Memory/` remain reserved for later phases.
+`Governance/` (tool-execution policy plus the triage ledger), `Intake/` (signal
+normalization, redaction, fingerprinting, fault grouping and triage-job orchestration) and
+`Investigation/` (Worker claim/runtime orchestration, config rehydration and the governed
+Phase 2 processor) are populated today. `Memory/` remains reserved for later phases.
 `Infrastructure` implements persistence and provider adapters. `Api` maps HTTP input/output
-only. `Worker` runs a placeholder background host pending Phase 2's job-claim loop.
+only. `Worker` polls PostgreSQL, claims bounded triage jobs and runs the configured
+orchestrator with only `delegate` and `publish_report` available.
 
 Start here:
 
@@ -70,6 +73,7 @@ Start here:
 - [Cost tracking](docs/cost-tracking.md)
 - [Observability](docs/observability.md)
 - [Code organization](docs/code-organization.md)
+- [Phase 2 implementation report](docs/phase-2-implementation-report.md)
 
 ## Target Stack
 

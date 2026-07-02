@@ -1,4 +1,3 @@
-using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -19,6 +18,23 @@ internal sealed partial class MockAiModelClient : IAiModelClient
         var hasToolResult = request.Messages.Any(static message =>
             message.Role == AiMessageRole.Tool);
 
+        if (IsAnalysisWorkerRequest(request))
+        {
+            return Task.FromResult(CreateResponse(request, AnalysisWorkerJson(lastUserMessage), []));
+        }
+
+        if (IsIncidentCompassOrchestratorRequest(request))
+        {
+            var scriptedToolCall = hasToolResult
+                ? ToolCall("incidentcompass-publish-report-1", "publish_report", """
+                    {"report_json":{"status":"Completed","summary":"Mock analysis completed for the incident.","classification":"SimpleKnownError","confidence":"Medium","limitations":[],"recommendedNextAction":"Review the affected service logs and confirm the timeout path."}}
+                    """)
+                : ToolCall("incidentcompass-delegate-analysis-1", "delegate", """
+                    {"role":"analysis","task":"Extract key facts and propose a candidate classification from the grounded intake facts."}
+                    """);
+            return Task.FromResult(CreateResponse(request, "Mock IncidentCompass orchestrator step.", [scriptedToolCall]));
+        }
+
         var canProposeToolCalls = request.Tools is { Count: > 0 };
         var proposedToolCalls = hasToolResult || !canProposeToolCalls
             ? []
@@ -32,18 +48,58 @@ internal sealed partial class MockAiModelClient : IAiModelClient
                     ? "Mock model proposed a backend tool call."
                     : $"Mock model response: {lastUserMessage}";
 
+        return Task.FromResult(CreateResponse(request, content, proposedToolCalls));
+    }
+
+    private static AiModelResponse CreateResponse(
+        AiModelRequest request,
+        string content,
+        IReadOnlyList<AiToolCall> proposedToolCalls)
+    {
         var inputTokens = request.Messages.Sum(static message => CountApproximateTokens(message.Content));
         var outputTokens = CountApproximateTokens(content);
 
-        var response = new AiModelResponse(
+        return new AiModelResponse(
             Content: content,
             Model: request.Model,
             Provider: "mock",
             Usage: new AiModelUsage(inputTokens, outputTokens, inputTokens + outputTokens),
             CorrelationId: request.CorrelationId,
             ProposedToolCalls: proposedToolCalls);
+    }
 
-        return Task.FromResult(response);
+    private static bool IsIncidentCompassOrchestratorRequest(AiModelRequest request)
+    {
+        var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
+        return toolNames.SetEquals(["delegate", "publish_report"]);
+    }
+
+    private static bool IsAnalysisWorkerRequest(AiModelRequest request)
+    {
+        if (request.Tools is { Count: > 0 })
+        {
+            return false;
+        }
+
+        return request.Messages.Any(static message =>
+            message.Role == AiMessageRole.System &&
+            message.Content.Contains("analysis", StringComparison.OrdinalIgnoreCase) &&
+            message.Content.Contains("worker", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string AnalysisWorkerJson(string message)
+    {
+        var summary = message.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+            ? "The trigger signal reports a timeout on the affected service."
+            : "The trigger signal contains enough grounded intake facts for a first classification.";
+
+        return JsonSerializer.Serialize(new
+        {
+            keyFacts = new[] { summary, "The analysis worker used only grounded intake context." },
+            candidateClassification = "SimpleKnownError",
+            needsDeeperContext = false,
+            rationale = "The mock analysis found a bounded known-error style failure from the trigger signal."
+        });
     }
 
     private static IReadOnlyList<AiToolCall> ProposeToolCalls(string message)

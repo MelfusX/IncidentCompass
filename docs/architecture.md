@@ -20,17 +20,18 @@ flowchart LR
 - `IncidentCompass.Api`: HTTP endpoints, OpenAPI, demo auth adapter, request/response mapping.
 - `IncidentCompass.Application`: single application project with populated feature folders:
   - `Core/`: dispatcher, pipeline behaviors, identity/correlation contracts, shared configuration, base errors, health echo, current-user use case, and model/embedding gateway abstractions.
-  - `Governance/`: backend-governed tool-execution contracts, tool policy/audit orchestration and validation primitives. This subsystem is currently uncalled library code; a future phase wires a new caller into it.
+  - `Governance/`: backend-governed tool-execution contracts, tool policy/audit orchestration, validation primitives and the durable triage ledger append contract.
   - `Intake/`: source normalization, input limits, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts for the Phase 1 ingestion flow.
+  - `Investigation/`: Worker job claim/runtime seams that rehydrate claimed jobs by config hash and hand them to the governed investigation processor.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, sanitized AI request logging, pricing/cost estimation and other adapters.
-- `IncidentCompass.Worker`: DB-backed background job host.
+- `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, leases and per-process `MaxConcurrentJobs`.
 
 ## Phase 1 Intake Flow
 
 `POST /api/v1/incidents` accepts a small incident envelope. API mapping stays transport-only and dispatches `IngestSignalCommand`. Application validation checks configured source allow-list and payload size limits, normalizers produce a handler-ready signal shape, redaction removes obvious secrets while preserving null optional text fields, fingerprinting classifies signals as `Strong` only when both service name and structured `errorType` are present, and fault grouping either attaches to an open strong fault, suppresses a recent closed strong fault during the silence window, or opens a new fault and pending triage job.
 
-The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` currently carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`) for later worker phases.
+The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`) plus attempt-level `WorkerOutput` artifacts. Phase 2 adds `infra/postgres/init/008-triage-ledger.sql` for append-only DB-ordered triage events and `infra/postgres/init/009-triage-reports-minimal.sql` for the minimal report row that closes the job. The Worker claim loop leases pending/retryable jobs, rehydrates each job's triage configuration from `triage_config_snapshots` by `config_hash`, runs a governed orchestrator with only `delegate(role, task)` and `publish_report(report_json)`, validates `delegate.role` against the config-derived role set, executes the no-tool `analysis` worker sequentially, and flips the job/fault to terminal state on minimal report publication.
 
 ## Rules
 

@@ -1,4 +1,7 @@
 using IncidentCompass.Application.Governance.Ledger;
+using IncidentCompass.Infrastructure.Investigation;
+using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelGateway;
@@ -31,6 +34,7 @@ public static class Setup
         services.AddInfrastructureOptions(configuration);
         services.AddModelGatewayAdapters();
         services.AddEmbeddingAdapters();
+        services.Replace(ServiceDescriptor.Scoped<IClaimedTriageJobProcessor, GovernedTriageInvestigationProcessor>());
         services.AddObservabilityInfrastructure(configuration);
         services.AddPersistenceAdapters();
         services.AddIntakeInfrastructure(configuration);
@@ -150,6 +154,8 @@ public static class Setup
             serviceProvider => serviceProvider.GetRequiredService<PostgresObservabilityRepository>());
         services.TryAddScoped<IToolAuditLogRepository, PostgresToolAuditLogRepository>();
         services.TryAddScoped<ITriageLedgerWriter, PostgresTriageLedgerWriter>();
+        services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
+        services.TryAddScoped<IMinimalTriageReportRepository, PostgresMinimalTriageReportRepository>();
 
         return services;
     }
