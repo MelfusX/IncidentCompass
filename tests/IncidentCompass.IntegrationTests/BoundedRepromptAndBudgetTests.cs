@@ -1,0 +1,374 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Investigation.Jobs;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
+
+namespace IncidentCompass.IntegrationTests;
+
+[Collection(PostgresRepositoryCollection.CollectionName)]
+public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture postgres)
+{
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_InvalidWorkerOutputRepromptsAtMostConfiguredLimitThenFailsClosed()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.InvalidWorkerOutput, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var workerModelCalls = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'ModelCall' AND role = 'analysis';",
+            ("job_id", ingested.JobId.Value));
+
+        var workerDeltas = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COALESCE(SUM(workers_delta), 0) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent';",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Equal(2, workerModelCalls);
+        Assert.Equal(1, workerDeltas);
+        Assert.Contains("bounded reprompts", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_NoToolOrchestratorTurnRepromptsAtMostConfiguredLimitThenFailsClosed()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.NoOrchestratorTool, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var orchestratorModelCalls = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'ModelCall' AND role IS NULL;",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Equal(2, orchestratorModelCalls);
+        Assert.Contains("did not propose", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_TokenBudgetStopsBeforeNextCallAfterOneCallOvershoot()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.NoOrchestratorTool, maxReprompts: 2, maxTokens: 10, contextWindowTokens: 8192);
+        var ingested = await RunOneAsync(scope);
+
+        var budgetEvents = await ReadBudgetRationalesAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var tokens = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COALESCE(SUM(tokens_delta), 0) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent';",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.True(tokens > 0);
+        Assert.Contains(budgetEvents, value => value.Contains("max_tokens_overshot_after_call", StringComparison.Ordinal));
+        Assert.Contains(budgetEvents, value => value.Contains("max_tokens_reached_before_call", StringComparison.Ordinal));
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_ContextWindowGuardDeniesOversizedPromptWithBudgetEvent()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.Valid, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 2);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var budgetEvents = await ReadBudgetRationalesAsync(scope.ConnectionString, ingested.JobId.Value);
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Contains(budgetEvents, value => value.Contains("context_window_exceeded", StringComparison.Ordinal));
+    }
+
+    private async Task<TestScope> CreateScopeAsync(
+        RepromptScenario scenario,
+        int maxReprompts,
+        int maxTokens,
+        int contextWindowTokens)
+    {
+        var connectionString = await postgres.GetConnectionStringAsync();
+        await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
+        await PostgresTriageJobTestIsolation.CompleteClaimableJobsAsync(connectionString);
+        var configPath = await CreateConfigurationAsync(maxReprompts, maxTokens, contextWindowTokens);
+
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IAiModelClient>();
+                services.AddScoped<IAiModelClient>(_ => new RepromptModelClient(scenario));
+            });
+        });
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        return new TestScope(factory, client, connectionString);
+    }
+
+    private static async Task<IngestSignalResponseDto> RunOneAsync(TestScope scope)
+    {
+        var unique = Guid.NewGuid().ToString("N");
+        var response = await scope.Client.PostAsJsonAsync(
+            "/api/v1/incidents",
+            new TesterEnvelopeDto(
+                "tester",
+                "reprompt-budget-svc-" + unique,
+                "prod",
+                DateTimeOffset.UtcNow,
+                new TesterAttributesDto("TimeoutException", "Reprompt probe timed out " + unique, "/reprompt")),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var ingested = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
+        Assert.NotNull(ingested);
+        Assert.NotNull(ingested.JobId);
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
+        var claimed = await runner.ClaimNextAsync("worker-reprompt", TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+        await runner.ProcessClaimedAsync(
+            claimed,
+            "worker-reprompt",
+            new TriageJobProcessingSettings(MaxAttempts: 1, RetryDelay: TimeSpan.FromSeconds(1)),
+            TestContext.Current.CancellationToken);
+        return ingested;
+    }
+
+    private static async Task<string> CreateConfigurationAsync(int maxReprompts, int maxTokens, int contextWindowTokens)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "incidentcompass-reprompt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(directory, "instructions"));
+        Directory.CreateDirectory(Path.Combine(directory, "schemas"));
+        await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "orchestrator.md"), "Delegate analysis then publish a report.");
+        await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "analysis.md"), "Return JSON only. keyFacts must be an array of strings.");
+        await File.WriteAllTextAsync(Path.Combine(directory, "schemas", "analysis.json"), AnalysisSchema());
+
+        var config = new JsonObject
+        {
+            ["Providers"] = new JsonObject { ["local-oai"] = new JsonObject { ["Kind"] = "Mock" } },
+            ["Routes"] = new JsonObject
+            {
+                ["analysis-chat"] = ChatRoute(contextWindowTokens),
+                ["report-chat"] = ChatRoute(contextWindowTokens)
+            },
+            ["Orchestrator"] = new JsonObject
+            {
+                ["Instructions"] = "ref:instructions/orchestrator.md",
+                ["RouteId"] = "report-chat",
+                ["Tools"] = new JsonArray("delegate", "publish_report"),
+                ["Budget"] = new JsonObject
+                {
+                    ["MaxWorkers"] = 2,
+                    ["MaxTokens"] = maxTokens,
+                    ["MaxWallClockSeconds"] = 120,
+                    ["MaxReprompts"] = maxReprompts
+                }
+            },
+            ["Roles"] = new JsonObject
+            {
+                ["analysis"] = new JsonObject
+                {
+                    ["RouteId"] = "analysis-chat",
+                    ["Instructions"] = "ref:instructions/analysis.md",
+                    ["Tools"] = new JsonArray(),
+                    ["OutputSchema"] = "ref:schemas/analysis.json"
+                }
+            },
+            ["Tools"] = new JsonObject(),
+            ["Rules"] = new JsonArray(),
+            ["Ingestion"] = new JsonObject { ["DefaultTenant"] = "local", ["AllowedSources"] = new JsonArray("otel", "user", "tester", "manual") },
+            ["FaultGrouping"] = new JsonObject
+            {
+                ["LookbackMinutes"] = 15,
+                ["SilenceWindowMinutes"] = 30,
+                ["FingerprintVersion"] = 1,
+                ["MassIssue"] = new JsonObject { ["MinNeighborCount"] = 5, ["MinFingerprintStrength"] = "strong" }
+            }
+        };
+
+        var path = Path.Combine(directory, "incidentcompass.config.json");
+        await File.WriteAllTextAsync(path, config.ToJsonString());
+        return path;
+    }
+
+    private static JsonObject ChatRoute(int contextWindowTokens)
+    {
+        return new JsonObject
+        {
+            ["Kind"] = "Chat",
+            ["ProviderId"] = "local-oai",
+            ["Model"] = "reprompt-model",
+            ["Temperature"] = 0.0,
+            ["MaxOutputTokens"] = 1000,
+            ["ContextWindowTokens"] = contextWindowTokens
+        };
+    }
+
+    private static string AnalysisSchema()
+    {
+        return """
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "keyFacts": { "type": "array", "items": { "type": "string" } },
+                "candidateClassification": { "type": "string", "enum": ["KnownIncident", "LikelyRegression", "SimpleKnownError", "Unknown", "Noise"] },
+                "needsDeeperContext": { "type": "boolean" },
+                "rationale": { "type": "string" }
+              },
+              "required": ["keyFacts", "candidateClassification", "needsDeeperContext"]
+            }
+            """;
+    }
+
+    private static async Task<JobRow> ReadJobAsync(string connectionString, Guid jobId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("SELECT status, last_error_message FROM incidentcompass.triage_jobs WHERE id = @job_id;", connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new JobRow(reader.GetString(0), reader.IsDBNull(1) ? string.Empty : reader.GetString(1));
+    }
+
+    private static async Task<IReadOnlyList<string>> ReadBudgetRationalesAsync(string connectionString, Guid jobId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("SELECT rationale FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent' ORDER BY id;", connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        var rows = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(reader.GetString(0));
+        }
+
+        return rows;
+    }
+
+    private static async Task<T> ScalarAsync<T>(string connectionString, string sql, params (string Name, object Value)[] parameters)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        return (T)(await command.ExecuteScalarAsync())!;
+    }
+
+    private sealed class RepromptModelClient(RepromptScenario scenario) : IAiModelClient
+    {
+        private int orchestratorCalls;
+
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            if (IsOrchestrator(request))
+            {
+                return Task.FromResult(OrchestratorResponse(request));
+            }
+
+            return Task.FromResult(WorkerResponse(request));
+        }
+
+        private AiModelResponse OrchestratorResponse(AiModelRequest request)
+        {
+            orchestratorCalls++;
+            if (scenario == RepromptScenario.NoOrchestratorTool)
+            {
+                if (orchestratorCalls > 1 && !request.Messages.Any(message => message.Content.Contains("Validation error", StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException("No-tool reprompt did not include validation error.");
+                }
+
+                return Response(request, "I will answer without a tool.", []);
+            }
+
+            if (orchestratorCalls == 1)
+            {
+                return Response(request, "delegate", [ToolCall("delegate-analysis", "delegate", "{\"role\":\"analysis\",\"task\":\"Analyze the signal.\"}")]);
+            }
+
+            return Response(request, "publish", [ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Reprompt run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"limitations\":[],\"recommendedNextAction\":\"Review logs.\"}}")]);
+        }
+
+        private AiModelResponse WorkerResponse(AiModelRequest request)
+        {
+            if (scenario == RepromptScenario.InvalidWorkerOutput)
+            {
+                if (request.Messages.Count > 2 && !request.Messages.Any(message => message.Content.Contains("Validation error", StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException("Worker reprompt did not include validation error.");
+                }
+
+                return Response(request, "{\"keyFacts\":[{\"bad\":true}],\"candidateClassification\":\"Unknown\",\"needsDeeperContext\":false}", []);
+            }
+
+            return Response(request, JsonSerializer.Serialize(new
+            {
+                keyFacts = new[] { "Valid worker output." },
+                candidateClassification = "SimpleKnownError",
+                needsDeeperContext = false,
+                rationale = "Valid worker output."
+            }), []);
+        }
+
+        private static bool IsOrchestrator(AiModelRequest request)
+        {
+            var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
+            return toolNames.SetEquals(["delegate", "publish_report"]);
+        }
+
+        private static AiModelResponse Response(AiModelRequest request, string content, IReadOnlyList<AiToolCall> toolCalls)
+        {
+            return new AiModelResponse(content, request.Model, "reprompt-test", new AiModelUsage(10, 5, 15), request.CorrelationId, toolCalls);
+        }
+
+        private static AiToolCall ToolCall(string id, string name, string argumentsJson)
+        {
+            using var arguments = JsonDocument.Parse(argumentsJson);
+            return new AiToolCall(id, name, "v1", arguments.RootElement.Clone());
+        }
+    }
+
+    private enum RepromptScenario { Valid, InvalidWorkerOutput, NoOrchestratorTool }
+
+    private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable
+    {
+        public void Dispose()
+        {
+            Client.Dispose();
+            Factory.Dispose();
+        }
+    }
+
+    private sealed record TesterAttributesDto(string ErrorType, string ErrorMessage, string HttpRoute);
+
+    private sealed record TesterEnvelopeDto(
+        string SourceKind,
+        string ServiceName,
+        string Environment,
+        DateTimeOffset ObservedAtUtc,
+        TesterAttributesDto Attributes);
+
+    private sealed record IngestSignalResponseDto(
+        Guid SignalId,
+        Guid FaultId,
+        bool IsNewFault,
+        bool IsNewJob,
+        bool IsSuppressed,
+        Guid? JobId,
+        string? ConfigHash);
+
+    private sealed record JobRow(string Status, string LastErrorMessage);
+}

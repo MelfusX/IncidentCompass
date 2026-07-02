@@ -107,12 +107,12 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         Directory.CreateDirectory(Path.Combine(directory, "schemas"));
 
         await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "orchestrator.md"), """
-            You are the IncidentCompass Phase 2 smoke orchestrator. You have only delegate and publish_report.
+            You are the IncidentCompass Phase 3 smoke orchestrator. /no_think You have only delegate and publish_report.
             First call delegate with role analysis and a short task. After the tool result, call publish_report with report_json.
             The report_json status must be Completed or InsufficientEvidence, summary must be non-empty, classification must be one of KnownIncident, LikelyRegression, SimpleKnownError, Unknown, or Noise, and confidence must be Low, Medium, or High.
             """);
         await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "analysis.md"), """
-            You are the analysis worker. Return only JSON with keyFacts, candidateClassification, needsDeeperContext, and optional rationale.
+            You are the analysis worker. /no_think Return only JSON with keyFacts, candidateClassification, needsDeeperContext, and optional rationale. keyFacts must be an array of plain strings, never objects.
             Use SimpleKnownError when the trigger signal describes a timeout; use Unknown when there is not enough evidence.
             """);
         await File.WriteAllTextAsync(Path.Combine(directory, "schemas", "analysis.json"), """
@@ -142,8 +142,8 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             },
             ["Routes"] = new JsonObject
             {
-                ["analysis-chat"] = ChatRoute(model, 0.1, 1200),
-                ["report-chat"] = ChatRoute(model, 0.1, 1200),
+                ["analysis-chat"] = ChatRoute(model, 0.1, 4096),
+                ["report-chat"] = ChatRoute(model, 0.1, 8192),
                 ["memory-embed"] = new JsonObject
                 {
                     ["Kind"] = "Embedding",
@@ -160,7 +160,8 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
                 {
                     ["MaxWorkers"] = 1,
                     ["MaxTokens"] = 12000,
-                    ["MaxWallClockSeconds"] = 180
+                    ["MaxWallClockSeconds"] = 180,
+                    ["MaxReprompts"] = 2
                 }
             },
             ["Roles"] = new JsonObject
@@ -269,7 +270,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         var reached = outcomes.Count(static outcome => outcome.ReachedPublishReport);
         var lines = new List<string>
         {
-            "# Phase 2 Real Local LLM Smoke Result",
+            "# Phase 3 Real Local LLM Smoke Result",
             "",
             "- GeneratedUtc: " + DateTimeOffset.UtcNow.ToString("O"),
             "- Endpoint: " + settings.BaseUrl,

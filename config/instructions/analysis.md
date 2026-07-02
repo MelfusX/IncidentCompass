@@ -5,5 +5,5 @@ signal, and the grounded facts you were given in your task.
 
 Extract the key facts (what failed, where, how often), propose a candidate classification, and say
 explicitly whether the orchestrator needs deeper context (for example, a runbook or known-incident
-lookup) before it can conclude. Return your structured output only — do not fabricate evidence you
+lookup) before it can conclude. Return your structured output only. `keyFacts` must be an array of plain strings, never objects. Do not fabricate evidence you
 were not given.

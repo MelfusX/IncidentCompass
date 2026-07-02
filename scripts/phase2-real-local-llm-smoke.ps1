@@ -19,7 +19,7 @@ function Write-SmokeResultUnavailable {
     $resultDirectory = Split-Path -Parent $absoluteResultPath
     New-Item -ItemType Directory -Force -Path $resultDirectory | Out-Null
     @(
-        "# Phase 2 Real Local LLM Smoke Result",
+        "# Phase 3 Real Local LLM Smoke Result",
         "",
         "- GeneratedUtc: $([DateTimeOffset]::UtcNow.ToString('O'))",
         "- Endpoint: $BaseUrl",
