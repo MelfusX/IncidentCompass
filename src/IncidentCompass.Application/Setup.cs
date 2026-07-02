@@ -6,6 +6,8 @@ using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.Health;
 using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Application.Intake;
+using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Governance;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +31,7 @@ public static class Setup
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(RequestValidationBehavior<,>));
         services.AddHealthCore();
         services.AddUsersCore();
+        services.AddIntakeCore();
 
         services.TryAddScoped<ModelGatewayRequestPolicy>();
         services.TryAddScoped<IAiModelRequestLogger, NoopAiModelRequestLogger>();
@@ -67,6 +70,10 @@ public static class Setup
         services.TryAddEnumerable(ServiceDescriptor.Singleton<
             IValidateOptions<EmbeddingOptions>,
             EmbeddingOptionsValidator>());
+
+        services
+            .AddOptions<IngestionLimitsOptions>()
+            .Bind(configuration.GetSection(IngestionLimitsOptions.SectionName));
 
         return services;
     }

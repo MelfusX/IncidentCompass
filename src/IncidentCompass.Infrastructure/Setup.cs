@@ -5,6 +5,7 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Governance;
+using IncidentCompass.Infrastructure.Intake;
 using IncidentCompass.Infrastructure.Observability;
 using IncidentCompass.Infrastructure.Postgres;
 using IncidentCompass.Infrastructure.Security;
@@ -31,6 +32,7 @@ public static class Setup
         services.AddEmbeddingAdapters();
         services.AddObservabilityInfrastructure(configuration);
         services.AddPersistenceAdapters();
+        services.AddIntakeInfrastructure(configuration);
         // Infrastructure supplies the background identity used by Worker hosts.
         // API foreground auth must bind IUserContext explicitly.
         services.TryAddScoped<IBackgroundUserContext, SystemUserContext>();

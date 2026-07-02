@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
@@ -76,7 +77,10 @@ public sealed class HostCompositionTests
             ValidateScopes = true
         });
 
-        Assert.Single(provider.GetServices<IHostedService>());
+        // Worker + the Infrastructure-registered TriageConfigurationWarmupHostedService (Phase 1
+        // ingestion config warmup, added alongside AddInfrastructure's intake registrations).
+        Assert.Equal(2, provider.GetServices<IHostedService>().Count());
+        Assert.Contains(provider.GetServices<IHostedService>(), service => service is WorkerService);
 
         using var scope = provider.CreateScope();
         var backgroundContext = scope.ServiceProvider.GetRequiredService<IBackgroundUserContext>();
@@ -207,10 +211,19 @@ public sealed class HostCompositionTests
     private static IHost CreateHostWithConfiguration(
         IReadOnlyDictionary<string, string?> values)
     {
+        // These hosts exercise ModelGateway/Embeddings option validation only, but AddInfrastructure
+        // now also registers Phase 1 intake infrastructure, whose warmup hosted service needs a
+        // real triage config file to resolve at StartAsync -- point it at the repo's checked-in
+        // config so these unrelated tests do not need to know about intake at all.
+        var configurationOverrides = new Dictionary<string, string?>(values)
+        {
+            ["IncidentCompass:ConfigSource:Path"] = Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.config.json")
+        };
+
         return new HostBuilder()
             .ConfigureAppConfiguration(configuration =>
             {
-                configuration.AddInMemoryCollection(values);
+                configuration.AddInMemoryCollection(configurationOverrides);
             })
             .ConfigureServices((context, services) =>
             {
@@ -219,6 +232,22 @@ public sealed class HostCompositionTests
                 services.AddInfrastructure(context.Configuration);
             })
             .Build();
+    }
+
+    private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")
+    {
+        var directory = new FileInfo(sourceFilePath).Directory;
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not find repository root.");
     }
 
     private static IEnumerable<string> GetOptionsValidationFailures(Exception exception)

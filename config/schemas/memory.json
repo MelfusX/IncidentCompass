@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MemoryWorkerOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "matched": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": { "type": "string" },
+          "title": { "type": "string" },
+          "quote": { "type": "string" },
+          "score": { "type": "number" }
+        },
+        "required": ["artifactId", "title"]
+      }
+    },
+    "noMatchReason": {
+      "type": "string"
+    }
+  },
+  "required": ["matched", "items"]
+}

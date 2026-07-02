@@ -110,6 +110,14 @@ public sealed class ArchitectureTests
                     failures.Add(
                         $"{rule.ProjectName}/{relativePath} is outside allowed folders [{string.Join(", ", rule.AllowedTopLevelFolders)}].");
                 }
+
+                if (rule.AllowedTopLevelFolders.Count > 0 &&
+                    TryGetExpectedFolderNamespace(rule, relativePath, out var expectedFolderNamespace) &&
+                    !declaredNamespace.StartsWith(expectedFolderNamespace, StringComparison.Ordinal))
+                {
+                    failures.Add(
+                        $"{rule.ProjectName}/{relativePath} declares {declaredNamespace}; expected {expectedFolderNamespace}.");
+                }
             }
         }
 
@@ -198,7 +206,7 @@ public sealed class ArchitectureTests
             new(
                 "IncidentCompass.Application",
                 "IncidentCompass.Application",
-                ["Core", "Governance"])
+                ["Core", "Governance", "Intake"])
         ];
 
     private static IEnumerable<string> EnumerateSourceFiles(string directory) =>
@@ -231,6 +239,23 @@ public sealed class ArchitectureTests
         return firstSegment.Equals("Setup.cs", StringComparison.Ordinal) ||
             firstSegment.Equals("AssemblyInfo.cs", StringComparison.Ordinal) ||
             allowedFolders.Contains(firstSegment);
+    }
+
+    private static bool TryGetExpectedFolderNamespace(
+        ModuleMembershipRule rule,
+        string relativePath,
+        out string expectedNamespace)
+    {
+        var firstSegment = relativePath.Split('/')[0];
+        if (firstSegment.EndsWith(".cs", StringComparison.Ordinal) ||
+            !rule.AllowedTopLevelFolders.Contains(firstSegment))
+        {
+            expectedNamespace = string.Empty;
+            return false;
+        }
+
+        expectedNamespace = $"{rule.NamespacePrefix}.{firstSegment}";
+        return true;
     }
 
     private static void AddForbiddenMarkers(

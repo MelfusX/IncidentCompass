@@ -24,7 +24,6 @@ internal sealed class RequestValidationBehavior<TRequest, TResponse>(
         // FluentValidation rules here are synchronous, so there is no parallelism to gain,
         // and awaiting Task.WhenAll would rethrow only the first exception while discarding
         // the rest. Sequential awaiting lets a validator that throws a typed exception
-        // (for example UploadDocumentValidator throwing DocumentTooLargeException for a 413)
         // propagate immediately and unambiguously, and accumulates AddFailure results in order.
         var context = new ValidationContext<TRequest>(request);
         var failures = new List<ValidationFailure>();

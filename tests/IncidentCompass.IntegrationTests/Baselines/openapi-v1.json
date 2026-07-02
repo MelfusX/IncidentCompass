@@ -36,7 +36,7 @@
         "tags": [
           "v1"
         ],
-        "summary": "Return the authenticated caller's identity (user id, tenant, roles, groups).",
+        "summary": "Return the authenticated caller\u0027s identity (user id, tenant, roles, groups).",
         "operationId": "GetCurrentUser",
         "responses": {
           "200": {
@@ -52,7 +52,90 @@
           "401": {
             "description": "Unauthorized",
             "content": {
-              "application/problem+json": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/incidents": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Ingest an incident signal envelope and resolve it to a fault and triage job.",
+        "operationId": "IngestIncidentSignal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentEnvelopeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestSignalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faults/{id}": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Return fault details, including its current triage job summary.",
+        "operationId": "GetFaultById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -104,6 +187,102 @@
           }
         }
       },
+      "FaultDetailsResponse": {
+        "required": [
+          "id",
+          "status",
+          "fingerprint",
+          "fingerprintVersion",
+          "fingerprintStrength",
+          "canGroup",
+          "serviceName",
+          "environment",
+          "severity",
+          "correlationId",
+          "triggerSignalId",
+          "recurrenceOf",
+          "createdAtUtc",
+          "completedAtUtc",
+          "job"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "fingerprintVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "fingerprintStrength": {
+            "type": "string"
+          },
+          "canGroup": {
+            "type": "boolean"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "severity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "correlationId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "triggerSignalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recurrenceOf": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "job": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TriageJobSummary"
+              }
+            ]
+          }
+        }
+      },
       "HealthStatus": {
         "required": [
           "status",
@@ -128,6 +307,166 @@
           }
         }
       },
+      "IncidentCorrelationRequest": {
+        "required": [
+          "traceId",
+          "spanId",
+          "externalId"
+        ],
+        "type": "object",
+        "properties": {
+          "traceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "spanId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "IncidentEnvelopeRequest": {
+        "required": [
+          "sourceKind",
+          "serviceName",
+          "environment",
+          "severity",
+          "summary",
+          "description",
+          "observedAtUtc",
+          "correlation",
+          "attributes",
+          "payload"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceKind": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "severity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "observedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "correlation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IncidentCorrelationRequest"
+              }
+            ]
+          },
+          "attributes": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonNode"
+              }
+            ]
+          },
+          "payload": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonNode"
+              }
+            ]
+          }
+        }
+      },
+      "IngestSignalResponse": {
+        "required": [
+          "signalId",
+          "faultId",
+          "isNewFault",
+          "isNewJob",
+          "isSuppressed",
+          "jobId",
+          "configHash"
+        ],
+        "type": "object",
+        "properties": {
+          "signalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "faultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isNewFault": {
+            "type": "boolean"
+          },
+          "isNewJob": {
+            "type": "boolean"
+          },
+          "isSuppressed": {
+            "type": "boolean"
+          },
+          "jobId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "configHash": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "JsonNode": {},
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -163,6 +502,40 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "TriageJobSummary": {
+        "required": [
+          "id",
+          "status",
+          "attempt",
+          "configHash",
+          "createdAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "attempt": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "configHash": {
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

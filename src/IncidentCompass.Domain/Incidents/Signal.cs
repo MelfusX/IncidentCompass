@@ -1,0 +1,36 @@
+using System.Text.Json;
+
+namespace IncidentCompass.Domain.Incidents;
+
+public sealed record Signal(
+    Guid Id,
+    string TenantId,
+    string Source,
+    Guid? FaultId,
+    string? Fingerprint,
+    int? FingerprintVersion,
+    FingerprintStrength FingerprintStrength,
+    bool CanGroup,
+    string? ExternalId,
+    bool IsSuppressed,
+    Guid? SuppressedByFaultId,
+    string? SuppressionReason,
+    string? TraceId,
+    string? SpanId,
+    string? ParentSpanId,
+    string ServiceName,
+    string Environment,
+    string? OperationName,
+    string? Severity,
+    string? ErrorType,
+    string? ErrorMessage,
+    string Summary,
+    string? Description,
+    string? HttpMethod,
+    string? HttpRoute,
+    int? HttpStatusCode,
+    int? DurationMs,
+    JsonElement Attributes,
+    JsonElement Body,
+    DateTimeOffset ObservedAtUtc,
+    DateTimeOffset ReceivedAtUtc);

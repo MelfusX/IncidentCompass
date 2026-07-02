@@ -8,6 +8,7 @@ internal static class ApiV1Endpoints
 
         api.MapHealthEndpoints();
         api.MapUserEndpoints();
+        api.MapIncidentEndpoints();
 
         return endpoints;
     }

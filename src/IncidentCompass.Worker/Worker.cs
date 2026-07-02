@@ -6,13 +6,13 @@ using Microsoft.Extensions.Logging;
 namespace IncidentCompass.Worker;
 
 // Placeholder background loop. Phase 2 replaces this with the triage job-claim loop;
-// for now it only performs a startup health check and idles on a fixed interval.
+// for now it only performs a startup health check and idles between polls.
 public sealed partial class Worker(
     ILogger<Worker> logger,
     IServiceScopeFactory serviceScopeFactory)
     : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(30);
+    private const int PollIntervalSeconds = 30;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -20,7 +20,8 @@ public sealed partial class Worker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await Task.Delay(PollInterval, stoppingToken);
+            var delay = WorkerPollDelay.Calculate(PollIntervalSeconds, consecutiveErrors: 0, Random.Shared.NextDouble());
+            await Task.Delay(delay, stoppingToken);
         }
     }
 
