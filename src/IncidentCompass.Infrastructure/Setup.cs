@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelGateway;
@@ -148,6 +149,7 @@ public static class Setup
         services.TryAddScoped<IPricingRepository>(
             serviceProvider => serviceProvider.GetRequiredService<PostgresObservabilityRepository>());
         services.TryAddScoped<IToolAuditLogRepository, PostgresToolAuditLogRepository>();
+        services.TryAddScoped<ITriageLedgerWriter, PostgresTriageLedgerWriter>();
 
         return services;
     }
