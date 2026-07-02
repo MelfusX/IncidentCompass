@@ -13,4 +13,7 @@ public sealed record TriageLedgerAppendRequest(
     TriageLedgerDecision? Decision,
     string? DecisionReason,
     string? PayloadRef,
-    string ConfigHash);
+    string ConfigHash,
+    TriageLedgerToolStatus? ToolStatus = null,
+    int? TokensDelta = null,
+    int? WorkersDelta = null);

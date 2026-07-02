@@ -40,10 +40,12 @@ internal sealed class PostgresTriageLedgerWriter(
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.triage_ledger (
                 fault_id, job_id, attempt, event_type, role, tool_name, rationale,
-                decision, decision_reason, payload_ref, config_hash, created_at_utc)
+                decision, decision_reason, tool_status, tokens_delta, workers_delta,
+                payload_ref, config_hash, created_at_utc)
             VALUES (
                 @fault_id, @job_id, @attempt, @event_type, @role, @tool_name, @rationale,
-                @decision, @decision_reason, @payload_ref, @config_hash, @created_at_utc)
+                @decision, @decision_reason, @tool_status, @tokens_delta, @workers_delta,
+                @payload_ref, @config_hash, @created_at_utc)
             RETURNING id;
             """, connection, transaction);
 
@@ -56,6 +58,9 @@ internal sealed class PostgresTriageLedgerWriter(
         AddParameter(command, "rationale", request.Rationale);
         AddParameter(command, "decision", request.Decision?.ToString());
         AddParameter(command, "decision_reason", request.DecisionReason);
+        AddParameter(command, "tool_status", request.ToolStatus?.ToString());
+        AddParameter(command, "tokens_delta", request.TokensDelta);
+        AddParameter(command, "workers_delta", request.WorkersDelta);
         AddParameter(command, "payload_ref", request.PayloadRef);
         AddParameter(command, "config_hash", request.ConfigHash);
         AddParameter(command, "created_at_utc", createdAtUtc);
@@ -75,7 +80,10 @@ internal sealed class PostgresTriageLedgerWriter(
             request.DecisionReason,
             request.PayloadRef,
             request.ConfigHash,
-            createdAtUtc);
+            createdAtUtc,
+            request.ToolStatus,
+            request.TokensDelta,
+            request.WorkersDelta);
     }
 
     private static void AddParameter(NpgsqlCommand command, string name, object? value)

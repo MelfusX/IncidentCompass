@@ -20,9 +20,14 @@ CREATE TABLE IF NOT EXISTS incidentcompass.triage_ledger (
     rationale text NULL,
     decision text NULL CHECK (decision IS NULL OR decision IN ('Allowed', 'Denied', 'ApprovalRequired')),
     decision_reason text NULL,
+    tool_status text NULL CHECK (tool_status IS NULL OR tool_status IN ('Succeeded', 'Failed')),
+    tokens_delta integer NULL,
+    workers_delta integer NULL,
     payload_ref text NULL,
     config_hash text NOT NULL REFERENCES incidentcompass.triage_config_snapshots (config_hash),
-    created_at_utc timestamptz NOT NULL
+    created_at_utc timestamptz NOT NULL,
+    CHECK ((event_type = 'ToolResult' AND tool_status IS NOT NULL) OR (event_type <> 'ToolResult' AND tool_status IS NULL)),
+    CHECK (event_type = 'BudgetEvent' OR (tokens_delta IS NULL AND workers_delta IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS ix_triage_ledger_job_order

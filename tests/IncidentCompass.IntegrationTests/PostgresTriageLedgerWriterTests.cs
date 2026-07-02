@@ -37,8 +37,30 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
                   AND indexdef LIKE '%(job_id, id)%'
             );
             """);
+        var hasToolStatusColumn = await ScalarAsync<bool>(
+            connectionString,
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'incidentcompass'
+                  AND table_name = 'triage_ledger'
+                  AND column_name = 'tool_status'
+            );
+            """);
+        var budgetDeltaColumns = await ScalarAsync<long>(
+            connectionString,
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_schema = 'incidentcompass'
+              AND table_name = 'triage_ledger'
+              AND column_name IN ('tokens_delta', 'workers_delta');
+            """);
 
         Assert.Equal("a", identityKind);
+        Assert.True(hasToolStatusColumn);
+        Assert.Equal(2, budgetDeltaColumns);
         Assert.True(hasJobOrderIndex);
     }
 
@@ -77,11 +99,45 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
                 PayloadRef: "artifact:00000000-0000-0000-0000-000000000001",
                 seed.ConfigHash),
             TestContext.Current.CancellationToken);
+        var toolResult = await writer.AppendAsync(
+            new TriageLedgerAppendRequest(
+                seed.FaultId,
+                seed.JobId,
+                Attempt: 1,
+                TriageLedgerEventType.ToolResult,
+                Role: "analysis",
+                ToolName: "tool_x",
+                Rationale: "Tool completed successfully.",
+                Decision: null,
+                DecisionReason: null,
+                PayloadRef: "artifact:00000000-0000-0000-0000-000000000002",
+                seed.ConfigHash,
+                TriageLedgerToolStatus.Succeeded),
+            TestContext.Current.CancellationToken);
+        var budgetEvent = await writer.AppendAsync(
+            new TriageLedgerAppendRequest(
+                seed.FaultId,
+                seed.JobId,
+                Attempt: 1,
+                TriageLedgerEventType.BudgetEvent,
+                Role: null,
+                ToolName: null,
+                Rationale: "model_call_charged: charged model tokens to the attempt budget.",
+                Decision: null,
+                DecisionReason: null,
+                PayloadRef: null,
+                seed.ConfigHash,
+                ToolStatus: null,
+                TokensDelta: 42,
+                WorkersDelta: 1),
+            TestContext.Current.CancellationToken);
 
         var rows = await ReadLedgerRowsAsync(scope.ConnectionString, seed.JobId);
 
         Assert.True(delegated.Id > 0);
         Assert.True(completed.Id > delegated.Id);
+        Assert.True(toolResult.Id > completed.Id);
+        Assert.True(budgetEvent.Id > toolResult.Id);
         Assert.Collection(
             rows,
             row =>
@@ -90,6 +146,9 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
                 Assert.Equal("Delegated", row.EventType);
                 Assert.Equal("analysis", row.Role);
                 Assert.Equal("delegate", row.ToolName);
+                Assert.Null(row.ToolStatus);
+                Assert.Null(row.TokensDelta);
+                Assert.Null(row.WorkersDelta);
                 Assert.Equal(seed.ConfigHash, row.ConfigHash);
             },
             row =>
@@ -97,6 +156,31 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
                 Assert.Equal(completed.Id, row.Id);
                 Assert.Equal("WorkerCompleted", row.EventType);
                 Assert.Equal("analysis", row.Role);
+                Assert.Null(row.ToolStatus);
+                Assert.Null(row.TokensDelta);
+                Assert.Null(row.WorkersDelta);
+                Assert.Equal(seed.ConfigHash, row.ConfigHash);
+            },
+            row =>
+            {
+                Assert.Equal(toolResult.Id, row.Id);
+                Assert.Equal("ToolResult", row.EventType);
+                Assert.Equal("analysis", row.Role);
+                Assert.Equal("tool_x", row.ToolName);
+                Assert.Equal("Succeeded", row.ToolStatus);
+                Assert.Null(row.TokensDelta);
+                Assert.Null(row.WorkersDelta);
+                Assert.Equal(seed.ConfigHash, row.ConfigHash);
+            },
+            row =>
+            {
+                Assert.Equal(budgetEvent.Id, row.Id);
+                Assert.Equal("BudgetEvent", row.EventType);
+                Assert.Null(row.Role);
+                Assert.Null(row.ToolName);
+                Assert.Null(row.ToolStatus);
+                Assert.Equal(42, row.TokensDelta);
+                Assert.Equal(1, row.WorkersDelta);
                 Assert.Equal(seed.ConfigHash, row.ConfigHash);
             });
     }
@@ -229,7 +313,7 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
             """
-            SELECT id, event_type, role, tool_name, config_hash
+            SELECT id, event_type, role, tool_name, config_hash, tool_status, tokens_delta, workers_delta
             FROM incidentcompass.triage_ledger
             WHERE job_id = @job_id
             ORDER BY id;
@@ -246,7 +330,10 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
                 reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
-                reader.GetString(4)));
+                reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                reader.IsDBNull(7) ? null : reader.GetInt32(7)));
         }
 
         return rows;
@@ -289,5 +376,13 @@ public sealed class PostgresTriageLedgerWriterTests(PostgresRepositoryFixture po
 
     private sealed record JobSeed(Guid FaultId, Guid JobId, string ConfigHash);
 
-    private sealed record LedgerRow(long Id, string EventType, string? Role, string? ToolName, string ConfigHash);
+    private sealed record LedgerRow(
+        long Id,
+        string EventType,
+        string? Role,
+        string? ToolName,
+        string ConfigHash,
+        string? ToolStatus,
+        int? TokensDelta,
+        int? WorkersDelta);
 }

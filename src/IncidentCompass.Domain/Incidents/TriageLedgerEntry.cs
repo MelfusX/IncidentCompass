@@ -15,4 +15,7 @@ public sealed record TriageLedgerEntry(
     string? DecisionReason,
     string? PayloadRef,
     string ConfigHash,
-    DateTimeOffset CreatedAtUtc);
+    DateTimeOffset CreatedAtUtc,
+    TriageLedgerToolStatus? ToolStatus = null,
+    int? TokensDelta = null,
+    int? WorkersDelta = null);
