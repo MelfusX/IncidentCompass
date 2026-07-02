@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
@@ -10,9 +11,10 @@ using IncidentCompass.Domain.Incidents.Statuses;
 namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal sealed class AnalysisDelegateExecutor(
-    IAiModelClient modelClient,
     ITriageArtifactRepository artifactRepository,
     TriageLedgerAppender ledgerAppender,
+    ITriageLedgerReader ledgerReader,
+    WorkerRoleRunner workerRoleRunner,
     TimeProvider timeProvider)
 {
     public async Task<string> ExecuteAsync(
@@ -20,6 +22,7 @@ internal sealed class AnalysisDelegateExecutor(
         TriageConfiguration configuration,
         TriageJobInvestigationContext context,
         AiToolCall toolCall,
+        DateTimeOffset attemptStartedAtUtc,
         CancellationToken cancellationToken)
     {
         var (roleName, task) = ReadDelegateArguments(toolCall.Arguments);
@@ -28,16 +31,26 @@ internal sealed class AnalysisDelegateExecutor(
             return JsonSerializer.Serialize(new { errorCode = "unknown_role", role = roleName });
         }
 
-        if (role.Tools.Count > 0)
-        {
-            return JsonSerializer.Serialize(new { errorCode = "role_tools_not_supported_in_phase_2", role = roleName });
-        }
-
+        await EnsureWorkerBudgetAsync(job, configuration, roleName, cancellationToken);
         await ledgerAppender.AppendAsync(job, TriageLedgerEventType.Delegated, roleName, "delegate", task, null, cancellationToken);
-        var workerResponse = await CompleteWorkerAsync(job, configuration, context, roleName, role, task, cancellationToken);
-        AnalysisWorkerOutputSchemaValidator.Validate(workerResponse.Content, role.OutputSchema);
-        var output = AnalysisWorkerOutputParser.Parse(workerResponse.Content);
-        var artifact = await InsertWorkerOutputArtifactAsync(job, roleName, workerResponse.Content, cancellationToken);
+        await ledgerAppender.AppendBudgetEventAsync(
+            job,
+            "worker_started: accepted delegated worker for this attempt.",
+            tokensDelta: null,
+            workersDelta: 1,
+            cancellationToken: cancellationToken);
+
+        var workerContent = await workerRoleRunner.RunAsync(
+            job,
+            configuration,
+            context,
+            roleName,
+            role,
+            task,
+            attemptStartedAtUtc,
+            cancellationToken);
+        var output = AnalysisWorkerOutputParser.Parse(workerContent);
+        var artifact = await InsertWorkerOutputArtifactAsync(job, roleName, workerContent, cancellationToken);
 
         await ledgerAppender.AppendAsync(
             job,
@@ -59,30 +72,25 @@ internal sealed class AnalysisDelegateExecutor(
         });
     }
 
-    private async Task<AiModelResponse> CompleteWorkerAsync(
+    private async Task EnsureWorkerBudgetAsync(
         TriageJob job,
         TriageConfiguration configuration,
-        TriageJobInvestigationContext context,
         string roleName,
-        TriageRoleSettings role,
-        string task,
         CancellationToken cancellationToken)
     {
-        var route = configuration.Routes[role.RouteId];
-        return await modelClient.CompleteAsync(
-            new AiModelRequest(
-                CorrelationId: job.Id.ToString(),
-                Model: route.Model,
-                Messages:
-                [
-                    new AiChatMessage(AiMessageRole.System, role.Instructions),
-                    new AiChatMessage(
-                        AiMessageRole.User,
-                        TriageInvestigationPromptBuilder.BuildWorkerPrompt(roleName, task, job, context))
-                ],
-                Temperature: route.Temperature,
-                MaxOutputTokens: route.MaxOutputTokens),
-            cancellationToken);
+        var usage = await ledgerReader.ReadBudgetUsageAsync(job, cancellationToken);
+        if (usage.WorkerCalls < configuration.Orchestrator.Budget.MaxWorkers)
+        {
+            return;
+        }
+
+        await ledgerAppender.AppendBudgetEventAsync(
+            job,
+            "max_workers_reached: attempt worker budget was already reached.",
+            tokensDelta: null,
+            workersDelta: null,
+            cancellationToken: cancellationToken);
+        throw new InvalidOperationException("The triage attempt worker budget was reached before delegation.");
     }
 
     private async Task<TriageArtifact> InsertWorkerOutputArtifactAsync(

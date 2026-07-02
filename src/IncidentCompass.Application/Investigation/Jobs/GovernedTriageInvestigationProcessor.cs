@@ -1,33 +1,30 @@
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
-using IncidentCompass.Application.Governance.Ledger;
-using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
-using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobProcessor
 {
-    private readonly IAiModelClient modelClient;
     private readonly ITriageJobInvestigationContextRepository contextRepository;
+    private readonly InvestigationModelCaller modelCaller;
     private readonly AnalysisDelegateExecutor delegateExecutor;
     private readonly MinimalTriageReportPublisher reportPublisher;
+    private readonly TimeProvider timeProvider;
 
     public GovernedTriageInvestigationProcessor(
-        IAiModelClient modelClient,
         ITriageJobInvestigationContextRepository contextRepository,
-        ITriageArtifactRepository artifactRepository,
-        ITriageLedgerWriter ledgerWriter,
-        IMinimalTriageReportRepository reportRepository,
+        InvestigationModelCaller modelCaller,
+        AnalysisDelegateExecutor delegateExecutor,
+        MinimalTriageReportPublisher reportPublisher,
         TimeProvider timeProvider)
     {
-        var ledgerAppender = new TriageLedgerAppender(ledgerWriter);
-        this.modelClient = modelClient;
         this.contextRepository = contextRepository;
-        delegateExecutor = new AnalysisDelegateExecutor(modelClient, artifactRepository, ledgerAppender, timeProvider);
-        reportPublisher = new MinimalTriageReportPublisher(reportRepository, ledgerAppender);
+        this.modelCaller = modelCaller;
+        this.delegateExecutor = delegateExecutor;
+        this.reportPublisher = reportPublisher;
+        this.timeProvider = timeProvider;
     }
 
     public async Task ProcessAsync(
@@ -36,6 +33,7 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
         string workerId,
         CancellationToken cancellationToken)
     {
+        var attemptStartedAtUtc = timeProvider.GetUtcNow();
         var context = await contextRepository.GetAsync(job.Id, cancellationToken);
         var messages = new List<AiChatMessage>
         {
@@ -43,16 +41,37 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
             new(AiMessageRole.User, TriageInvestigationPromptBuilder.BuildOrchestratorPrompt(job, context))
         };
 
-        for (var turn = 0; turn < configuration.Orchestrator.Budget.MaxWorkers + 2; turn++)
+        var reprompts = 0;
+        var maxTurns = Math.Max(4, configuration.Orchestrator.Budget.MaxWorkers + configuration.Orchestrator.Budget.MaxReprompts + 4);
+        for (var turn = 0; turn < maxTurns; turn++)
         {
-            var response = await CompleteOrchestratorAsync(job, configuration, messages, cancellationToken);
-            var toolCall = response.ProposedToolCalls?.FirstOrDefault()
-                ?? throw new InvalidOperationException("Orchestrator did not propose delegate or publish_report.");
+            var response = await CompleteOrchestratorAsync(job, configuration, attemptStartedAtUtc, messages, cancellationToken);
+            var toolCall = response.ProposedToolCalls?.FirstOrDefault();
+            if (toolCall is null)
+            {
+                if (reprompts >= configuration.Orchestrator.Budget.MaxReprompts)
+                {
+                    throw new InvalidOperationException("Orchestrator did not propose delegate or publish_report after bounded reprompts.");
+                }
+
+                reprompts++;
+                messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content));
+                messages.Add(new AiChatMessage(
+                    AiMessageRole.User,
+                    "Validation error: the previous turn did not call delegate or publish_report. Call exactly one available tool."));
+                continue;
+            }
 
             messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content, ToolCalls: [toolCall]));
             if (string.Equals(toolCall.Name, "delegate", StringComparison.Ordinal))
             {
-                var toolResult = await delegateExecutor.ExecuteAsync(job, configuration, context, toolCall, cancellationToken);
+                var toolResult = await delegateExecutor.ExecuteAsync(
+                    job,
+                    configuration,
+                    context,
+                    toolCall,
+                    attemptStartedAtUtc,
+                    cancellationToken);
                 messages.Add(new AiChatMessage(AiMessageRole.Tool, toolResult, toolCall.Id));
                 continue;
             }
@@ -66,24 +85,22 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
             messages.Add(new AiChatMessage(AiMessageRole.Tool, UnknownToolResult(toolCall.Name), toolCall.Id));
         }
 
-        throw new InvalidOperationException("Orchestrator exceeded the Phase 2 turn limit before publish_report.");
+        throw new InvalidOperationException("Orchestrator exceeded the bounded investigation turn limit before publish_report.");
     }
 
     private async Task<AiModelResponse> CompleteOrchestratorAsync(
         TriageJob job,
         TriageConfiguration configuration,
+        DateTimeOffset attemptStartedAtUtc,
         IReadOnlyList<AiChatMessage> messages,
         CancellationToken cancellationToken)
     {
         var route = configuration.Routes[configuration.Orchestrator.RouteId];
-        return await modelClient.CompleteAsync(
-            new AiModelRequest(
-                CorrelationId: job.Id.ToString(),
-                Model: route.Model,
-                Messages: messages,
-                Temperature: route.Temperature,
-                MaxOutputTokens: route.MaxOutputTokens,
-                Tools: OrchestratorToolDefinitions.Create(configuration)),
+        return await modelCaller.CompleteAsync(
+            new TriageJobCallContext(job, configuration, attemptStartedAtUtc, configuration.Orchestrator.RouteId, "orchestrator"),
+            route,
+            messages,
+            OrchestratorToolDefinitions.Create(configuration),
             cancellationToken);
     }
 

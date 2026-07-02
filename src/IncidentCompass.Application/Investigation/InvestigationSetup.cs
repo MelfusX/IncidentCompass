@@ -10,6 +10,7 @@ internal static class InvestigationSetup
     {
         services.TryAddScoped<ITriageJobRunner, TriageJobRunner>();
         services.TryAddScoped<IClaimedTriageJobProcessor, DeferredClaimedTriageJobProcessor>();
+        services.TryAddScoped<ITriageToolResultCommitFaultInjector, NoopTriageToolResultCommitFaultInjector>();
 
         return services;
     }

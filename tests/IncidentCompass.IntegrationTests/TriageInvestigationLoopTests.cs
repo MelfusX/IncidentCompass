@@ -58,11 +58,16 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         Assert.Equal("SimpleKnownError", workerArtifact.CandidateClassification);
 
         var ledgerRows = await ReadLedgerRowsAsync(scope.ConnectionString, claimed.Id);
-        Assert.Collection(
-            ledgerRows,
-            row => AssertLedger(row, 0, "Delegated", "analysis", "delegate", ingested.ConfigHash!),
-            row => AssertLedger(row, 1, "WorkerCompleted", "analysis", null, ingested.ConfigHash!),
-            row => AssertLedger(row, 2, "ReportPublished", null, "publish_report", ingested.ConfigHash!));
+        Assert.Contains(ledgerRows, row => row.EventType == "ModelCall");
+        Assert.Contains(ledgerRows, row => row.EventType == "BudgetEvent");
+        var delegated = Assert.Single(ledgerRows, row => row.EventType == "Delegated");
+        var completed = Assert.Single(ledgerRows, row => row.EventType == "WorkerCompleted");
+        var published = Assert.Single(ledgerRows, row => row.EventType == "ReportPublished");
+        AssertLedger(delegated, 0, "Delegated", "analysis", "delegate", ingested.ConfigHash!);
+        AssertLedger(completed, 1, "WorkerCompleted", "analysis", null, ingested.ConfigHash!);
+        AssertLedger(published, 2, "ReportPublished", null, "publish_report", ingested.ConfigHash!);
+        Assert.True(delegated.Id < completed.Id);
+        Assert.True(completed.Id < published.Id);
         Assert.DoesNotContain(ledgerRows, row => row.EventType is "ToolProposed" or "PolicyDecision" or "ToolResult");
     }
 
@@ -93,8 +98,11 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         Assert.Equal("RetryPending", job.Status);
         Assert.Null(job.LockedBy);
 
-        var row = Assert.Single(await ReadLedgerRowsAsync(scope.ConnectionString, claimed.Id));
-        AssertLedger(row, 0, "Delegated", "analysis", "delegate", ingested.ConfigHash!);
+        var rows = await ReadLedgerRowsAsync(scope.ConnectionString, claimed.Id);
+        Assert.Contains(rows, row => row.EventType == "ModelCall");
+        Assert.Contains(rows, row => row.EventType == "BudgetEvent");
+        var delegated = Assert.Single(rows, row => row.EventType == "Delegated");
+        AssertLedger(delegated, 0, "Delegated", "analysis", "delegate", ingested.ConfigHash!);
     }
 
     private async Task<TestScope> CreateScopeAsync(Action<IServiceCollection>? configureServices = null)

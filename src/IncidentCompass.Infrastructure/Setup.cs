@@ -34,6 +34,7 @@ public static class Setup
         services.AddInfrastructureOptions(configuration);
         services.AddModelGatewayAdapters();
         services.AddEmbeddingAdapters();
+        services.AddGovernedInvestigationServices();
         services.Replace(ServiceDescriptor.Scoped<IClaimedTriageJobProcessor, GovernedTriageInvestigationProcessor>());
         services.AddObservabilityInfrastructure(configuration);
         services.AddPersistenceAdapters();
@@ -45,6 +46,19 @@ public static class Setup
         return services;
     }
 
+
+    private static IServiceCollection AddGovernedInvestigationServices(this IServiceCollection services)
+    {
+        services.TryAddScoped<TriageLedgerAppender>();
+        services.TryAddScoped<InvestigationModelCaller>();
+        services.TryAddScoped<WorkerToolRuleEngine>();
+        services.TryAddScoped<WorkerToolCallExecutor>();
+        services.TryAddScoped<WorkerRoleRunner>();
+        services.TryAddScoped<AnalysisDelegateExecutor>();
+        services.TryAddScoped<MinimalTriageReportPublisher>();
+
+        return services;
+    }
     private static IServiceCollection AddInfrastructureOptions(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -154,8 +168,10 @@ public static class Setup
             serviceProvider => serviceProvider.GetRequiredService<PostgresObservabilityRepository>());
         services.TryAddScoped<IToolAuditLogRepository, PostgresToolAuditLogRepository>();
         services.TryAddScoped<ITriageLedgerWriter, PostgresTriageLedgerWriter>();
+        services.TryAddScoped<ITriageLedgerReader, PostgresTriageLedgerReader>();
         services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
         services.TryAddScoped<IMinimalTriageReportRepository, PostgresMinimalTriageReportRepository>();
+        services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
 
         return services;
     }
