@@ -48,7 +48,7 @@ Application use cases call `IEmbeddingClient` through the Application layer. The
 - Model name is configurable.
 - Timeout is configurable.
 - Retry policy is supported or explicitly planned.
-- Token usage is captured when returned by the provider.
+- Token usage is captured when returned by the provider. Phase 3 budget accounting uses provider usage when present and a compact backend estimate otherwise, recording the source in the ledger.
 - Provider errors are normalized into application-level error types.
 - Request/response objects carry correlation IDs.
 - OpenAI-compatible chat completions include one `Idempotency-Key` header per
@@ -64,3 +64,7 @@ Routing is configuration-driven:
 - strong model;
 - cheap model;
 - evaluation model.
+
+## Investigation Budget Events
+
+Investigation model calls write compact redacted `ModelCall` metadata and a `BudgetEvent` charge. Budget decisions sum `BudgetEvent.tokens_delta` and `BudgetEvent.workers_delta`, never rendered prompts, full provider responses, `ModelCall` rows or `BudgetEvent` rationale text. `MaxTokens` prevents starting a call once the current-attempt token budget is already reached; one-call overshoot is possible and is recorded. `MaxWallClockSeconds` is checked between calls and passed into model calls through cancellation.

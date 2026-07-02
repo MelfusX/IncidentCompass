@@ -1,3 +1,4 @@
+using System.Text.Json;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
@@ -8,8 +9,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
 {
     private static readonly HashSet<string> RouteKinds = new(["Chat", "Embedding"], StringComparer.Ordinal);
     private static readonly HashSet<string> ProviderKinds = new(["Mock", "OpenAICompatible"], StringComparer.Ordinal);
-    private static readonly HashSet<string> RuleTypes = new(["rate_cap", "precondition", "grounding", "requires_approval"], StringComparer.Ordinal);
-    private static readonly HashSet<string> RuleScopes = new(["attempt", "job", "fault"], StringComparer.Ordinal);
+    private static readonly HashSet<string> ToolKinds = new(["internal"], StringComparer.Ordinal);
     private static readonly HashSet<string> OrchestratorTools = new(["delegate", "publish_report"], StringComparer.Ordinal);
 
     public void Validate(TriageConfiguration configuration)
@@ -21,7 +21,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         ValidateOrchestrator(configuration.Routes, configuration.Orchestrator);
         ValidateRoles(configuration.Routes, configuration.Tools, configuration.Roles);
         ValidateTools(configuration.Routes, configuration.Tools);
-        ValidateRules(configuration.Tools, configuration.Rules);
+        TriageRuleLoadValidator.Validate(configuration.Tools, configuration.Rules);
     }
 
     private static void ValidateFaultGroupingSettings(FaultGroupingSettings settings)
@@ -66,6 +66,16 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             {
                 throw Invalid("Routes." + routeId + ".ProviderId", route.ProviderId, "a configured provider id");
             }
+
+            if (route.MaxOutputTokens is <= 0)
+            {
+                throw Invalid("Routes." + routeId + ".MaxOutputTokens", route.MaxOutputTokens.Value.ToString(), "a positive integer when set");
+            }
+
+            if (route.ContextWindowTokens is <= 0)
+            {
+                throw Invalid("Routes." + routeId + ".ContextWindowTokens", route.ContextWindowTokens.Value.ToString(), "a positive integer when set");
+            }
         }
     }
 
@@ -86,6 +96,21 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         {
             throw Invalid("Orchestrator.Budget.MaxWorkers", orchestrator.Budget.MaxWorkers.ToString(), "a positive integer");
         }
+
+        if (orchestrator.Budget.MaxTokens <= 0)
+        {
+            throw Invalid("Orchestrator.Budget.MaxTokens", orchestrator.Budget.MaxTokens.ToString(), "a positive integer");
+        }
+
+        if (orchestrator.Budget.MaxWallClockSeconds <= 0)
+        {
+            throw Invalid("Orchestrator.Budget.MaxWallClockSeconds", orchestrator.Budget.MaxWallClockSeconds.ToString(), "a positive integer");
+        }
+
+        if (orchestrator.Budget.MaxReprompts < 0)
+        {
+            throw Invalid("Orchestrator.Budget.MaxReprompts", orchestrator.Budget.MaxReprompts.ToString(), "zero or a positive integer");
+        }
     }
 
     private static void ValidateRoles(
@@ -99,6 +124,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             RequireChatRoute(routes, role.RouteId, "Roles." + roleName + ".RouteId");
             RequireNonBlank("Roles." + roleName + ".Instructions", role.Instructions);
             RequireNonBlank("Roles." + roleName + ".OutputSchema", role.OutputSchema);
+            ValidateOutputSchema(roleName, role.OutputSchema);
             foreach (var toolName in role.Tools)
             {
                 if (!tools.ContainsKey(toolName))
@@ -116,7 +142,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         foreach (var (toolName, tool) in tools)
         {
             RequireKey(toolName, "Tools");
-            RequireNonBlank("Tools." + toolName + ".Kind", tool.Kind);
+            RequireKnown("Tools." + toolName + ".Kind", tool.Kind, ToolKinds);
             if (!string.IsNullOrWhiteSpace(tool.EmbeddingRouteId))
             {
                 RequireEmbeddingRoute(routes, tool.EmbeddingRouteId, "Tools." + toolName + ".EmbeddingRouteId");
@@ -124,24 +150,19 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         }
     }
 
-    private static void ValidateRules(
-        IReadOnlyDictionary<string, TriageToolSettings> tools,
-        IReadOnlyCollection<TriageRuleSettings> rules)
+    private static void ValidateOutputSchema(string roleName, string outputSchema)
     {
-        foreach (var rule in rules)
+        try
         {
-            RequireKnown("Rules.Type", rule.Type, RuleTypes);
-            RequireKnown("Rules.Scope", rule.Scope, RuleScopes);
-            if (!string.Equals(rule.Tool, "*", StringComparison.Ordinal) && !tools.ContainsKey(rule.Tool))
+            using var document = JsonDocument.Parse(outputSchema);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                throw Invalid("Rules.Tool", rule.Tool, "'*' or a configured worker tool id");
+                throw Invalid("Roles." + roleName + ".OutputSchema", "non-object", "a JSON object schema");
             }
-
-            if (!string.IsNullOrWhiteSpace(rule.RequiresSuccessfulToolResult) &&
-                !tools.ContainsKey(rule.RequiresSuccessfulToolResult))
-            {
-                throw Invalid("Rules.RequiresSuccessfulToolResult", rule.RequiresSuccessfulToolResult, "a configured worker tool id");
-            }
+        }
+        catch (JsonException exception)
+        {
+            throw TriageConfigurationLoadException.InvalidJson("Roles." + roleName + ".OutputSchema", exception);
         }
     }
 }

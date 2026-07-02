@@ -5,7 +5,7 @@ orchestrator delegates to scoped workers under policy/audit/budget rails, and th
 system produces a grounded report.
 
 This is reference-quality software, not a production system. This snapshot includes the
-Phase 0 repository bootstrap, Phase 1 intake and the Phase 2 governed investigation loop:
+Phase 0 repository bootstrap, Phase 1 intake, the Phase 2 governed investigation loop and Phase 3 governance rails:
 typed triage configuration rehydration, a durable triage ledger writer, a bounded Worker
 claim loop, deterministic analysis delegation and a minimal `publish_report` closeout. The
 full grounded report pipeline remains later Phase 5 work.
@@ -74,6 +74,7 @@ Start here:
 - [Observability](docs/observability.md)
 - [Code organization](docs/code-organization.md)
 - [Phase 2 implementation report](docs/phase-2-implementation-report.md)
+- [Phase 3 implementation report](docs/phase-3-implementation-report.md)
 
 ## Target Stack
 

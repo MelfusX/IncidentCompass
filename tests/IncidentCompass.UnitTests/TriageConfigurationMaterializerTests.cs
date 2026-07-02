@@ -63,6 +63,77 @@ public sealed class TriageConfigurationMaterializerTests
         Assert.Contains("Roles.analysis.RouteId", exception.Message, StringComparison.Ordinal);
     }
 
+
+    [Fact]
+    public void Materialize_RateCapWithoutPositiveMax_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        node["Rules"] = new JsonArray(new JsonObject
+        {
+            ["Type"] = "rate_cap",
+            ["Tool"] = "*",
+            ["Scope"] = "attempt",
+            ["Max"] = 0
+        });
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Rules.rate_cap.Max", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_PreconditionReferencingUnknownTool_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        node["Rules"] = new JsonArray(new JsonObject
+        {
+            ["Type"] = "precondition",
+            ["Tool"] = "memory_search",
+            ["Scope"] = "attempt",
+            ["RequiresSuccessfulToolResult"] = "unknown_tool"
+        });
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Rules.RequiresSuccessfulToolResult", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_NegativeMaxReprompts_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        var orchestrator = (JsonObject)node["Orchestrator"]!;
+        var budget = (JsonObject)orchestrator["Budget"]!;
+        budget["MaxReprompts"] = -1;
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Orchestrator.Budget.MaxReprompts", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("fault")]
+    [InlineData("bogus")]
+    public void Materialize_PostMvpOrUnknownRuleScope_FailsLoadValidation(string scope)
+    {
+        var node = ValidConfigNode();
+        node["Rules"] = new JsonArray(new JsonObject
+        {
+            ["Type"] = "rate_cap",
+            ["Tool"] = "*",
+            ["Scope"] = scope,
+            ["Max"] = 50
+        });
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Rules.rate_cap.Scope", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("attempt, job", exception.Message, StringComparison.Ordinal);
+    }
     private static TriageConfigurationMaterializer CreateMaterializer()
     {
         var registry = new SignalNormalizerRegistry([
