@@ -21,5 +21,36 @@ services:
       timeout: 5s
       retries: 5
 
+  api:
+    build:
+      context: .
+      dockerfile: src/IncidentCompass.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
+      IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
+      IncidentCompass__Memory__Seed__SourceDirectory: /app/samples
+    ports:
+      - "5198:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/IncidentCompass.Worker/Dockerfile
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
+      IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
+      IncidentCompass__Memory__Seed__SourceDirectory: /app/samples
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
 volumes:
   postgres-data:

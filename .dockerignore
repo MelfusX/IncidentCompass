@@ -1,0 +1,12 @@
+.git/
+.local/
+.claude/
+.vs/
+.idea/
+**/bin/
+**/obj/
+**/TestResults/
+.env
+*.user
+*.suo
+*.log
