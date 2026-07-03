@@ -5,7 +5,7 @@ param(
     [string] $ApiKey = "local-smoke-key",
     [int] $Runs = 3,
     [int] $TimeoutSeconds = 120,
-    [string] $ResultPath = "docs\phase-2-real-llm-smoke-result.md"
+    [string] $ResultPath = "docs\phase-5-real-llm-smoke-result.md"
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +19,7 @@ function Write-SmokeResultUnavailable {
     $resultDirectory = Split-Path -Parent $absoluteResultPath
     New-Item -ItemType Directory -Force -Path $resultDirectory | Out-Null
     @(
-        "# Phase 3 Real Local LLM Smoke Result",
+        "# Phase 5 Real Local LLM Grounded Report Smoke Result",
         "",
         "- GeneratedUtc: $([DateTimeOffset]::UtcNow.ToString('O'))",
         "- Endpoint: $BaseUrl",
@@ -27,7 +27,8 @@ function Write-SmokeResultUnavailable {
         "- Model: $Model",
         "- Runs requested: $Runs",
         "- Status: Not executed",
-        "- publish_report reach-rate: not measured",
+        "- full trajectory reach-rate: not measured",
+        "- Scenario: delegate -> memory -> memory_search -> publish_report -> grounded evidence",
         "- Reason: $Reason"
     ) | Set-Content -LiteralPath $absoluteResultPath -Encoding UTF8
 
@@ -39,7 +40,7 @@ $modelsUri = $BaseUrl.TrimEnd('/') + "/v1/models"
 try {
     Invoke-WebRequest -Uri $modelsUri -UseBasicParsing -TimeoutSec 5 | Out-Null
 } catch {
-    Write-SmokeResultUnavailable "OpenAI-compatible models endpoint unavailable at $modelsUri ($($_.Exception.Message))"
+    Write-SmokeResultUnavailable "OpenAI-compatible models endpoint unavailable at $modelsUri ($($_.Exception.GetType().Name))"
     exit 2
 }
 

@@ -75,13 +75,14 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
 
             var job = await ReadJobAsync(scope.ConnectionString, claimed.Id);
             var report = await ReadReportOrNullAsync(scope.ConnectionString, ingested.FaultId);
+            var reportHasEvidence = report is not null && await DidReportHaveResolvingEvidenceAsync(scope.ConnectionString, ingested.FaultId);
             var memoryWorkerReached = await DidMemoryWorkerProduceOutputAsync(scope.ConnectionString, claimed.Id);
             var memorySearchSucceeded = await DidMemorySearchSucceedAsync(scope.ConnectionString, claimed.Id);
-            var reached = job.Status == "Succeeded" && report is not null && memoryWorkerReached && memorySearchSucceeded;
+            var reached = job.Status == "Succeeded" && report is not null && reportHasEvidence && memoryWorkerReached && memorySearchSucceeded;
             var detail = reached
-                ? "delegate_memory_memory_search_publish_report_reached"
+                ? "delegate_memory_memory_search_publish_report_with_evidence_reached"
                 : job.Status + FormatFailure(job.LastErrorCode, job.LastErrorMessage) +
-                  FormatTrajectoryFailure(report is not null, memoryWorkerReached, memorySearchSucceeded);
+                  FormatTrajectoryFailure(report is not null, reportHasEvidence, memoryWorkerReached, memorySearchSucceeded);
             return new SmokeOutcome(index, reached, detail);
         }
         catch (Exception exception)
@@ -128,10 +129,11 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         Directory.CreateDirectory(Path.Combine(directory, "schemas"));
 
         await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "orchestrator.md"), """
-            You are the IncidentCompass Phase 4 smoke orchestrator. /no_think You have only delegate and publish_report.
+            You are the IncidentCompass Phase 5 smoke orchestrator. /no_think You have only delegate and publish_report.
             First call delegate with role analysis and a short task. After the analysis result, call delegate with role memory and ask it to search for checkout timeout runbook context.
             Do not call publish_report until the memory worker has returned. Then call publish_report with report_json.
             The report_json status must be Completed or InsufficientEvidence, summary must be non-empty, classification must be one of KnownIncident, LikelyRegression, SimpleKnownError, Unknown, or Noise, and confidence must be Low, Medium, or High.
+            The report_json evidence array must cite citable artifactId values exactly. Include a trigger or neighbor artifact from the job context and include a memory artifactId from the memory worker items when memory matched. Copy quote text exactly from the cited artifact text or omit the quote.
             """);
         await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "analysis.md"), """
             You are the analysis worker. /no_think Return only JSON with keyFacts, candidateClassification, needsDeeperContext, and optional rationale. keyFacts must be an array of plain strings, never objects.
@@ -319,6 +321,22 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         return status is null ? null : new ReportRow(status.ToString()!);
     }
 
+    private static async Task<bool> DidReportHaveResolvingEvidenceAsync(string connectionString, Guid faultId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM incidentcompass.triage_reports r
+                JOIN incidentcompass.triage_evidence e ON e.report_id = r.id
+                WHERE r.fault_id = @fault_id
+                  AND e.kind IN ('TriggerSignal', 'NeighborSet', 'PriorReport', 'RetrievedItem', 'Runbook', 'KnownIncident', 'ToolResult'));
+            """, connection);
+        command.Parameters.AddWithValue("fault_id", faultId);
+        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
     private static async Task<bool> DidMemoryWorkerProduceOutputAsync(string connectionString, Guid jobId)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -429,7 +447,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
     {
         var lines = new List<string>
         {
-            "# Phase 4 Real Local LLM Memory Smoke Result",
+            "# Phase 5 Real Local LLM Grounded Report Smoke Result",
             "",
             "- GeneratedUtc: " + DateTimeOffset.UtcNow.ToString("O"),
             "- Status: not executed",
@@ -437,7 +455,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             "- Endpoint: " + CreateModelsEndpointUri(settings),
             "- ChatCompletionsPath: " + settings.ChatCompletionsPath,
             "- Model: " + settings.Model,
-            "- Scenario: delegate -> memory -> memory_search -> publish_report"
+            "- Scenario: delegate -> memory -> memory_search -> publish_report -> grounded evidence"
         };
 
         Directory.CreateDirectory(Path.GetDirectoryName(settings.ResultPath)!);
@@ -448,10 +466,10 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         RealLocalLlmSmokeSettings settings,
         IReadOnlyCollection<SmokeOutcome> outcomes)
     {
-        var reached = outcomes.Count(static outcome => outcome.ReachedPublishReport);
+        var reached = outcomes.Count(static outcome => outcome.ReachedGroundedReport);
         var lines = new List<string>
         {
-            "# Phase 4 Real Local LLM Memory Smoke Result",
+            "# Phase 5 Real Local LLM Grounded Report Smoke Result",
             "",
             "- GeneratedUtc: " + DateTimeOffset.UtcNow.ToString("O"),
             "- Status: executed",
@@ -460,14 +478,14 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             "- ChatCompletionsPath: " + settings.ChatCompletionsPath,
             "- Model: " + settings.Model,
             "- Runs: " + outcomes.Count,
-            "- Scenario: delegate -> memory -> memory_search -> publish_report",
+            "- Scenario: delegate -> memory -> memory_search -> publish_report -> grounded evidence",
             "- full trajectory reach-rate: " + reached + "/" + outcomes.Count,
             "",
             "## Outcomes"
         };
 
         lines.AddRange(outcomes.Select(static outcome =>
-            "- Run " + outcome.RunIndex + ": " + (outcome.ReachedPublishReport ? "reached" : "missed") + " - " + outcome.Detail));
+            "- Run " + outcome.RunIndex + ": " + (outcome.ReachedGroundedReport ? "reached" : "missed") + " - " + outcome.Detail));
         Directory.CreateDirectory(Path.GetDirectoryName(settings.ResultPath)!);
         await File.WriteAllLinesAsync(settings.ResultPath, lines, TestContext.Current.CancellationToken);
     }
@@ -481,7 +499,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         }
     }
 
-    private sealed record SmokeOutcome(int RunIndex, bool ReachedPublishReport, string Detail);
+    private sealed record SmokeOutcome(int RunIndex, bool ReachedGroundedReport, string Detail);
 
     private sealed record EndpointProbeResult(bool IsReachable, string Detail);
 
@@ -497,10 +515,12 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
 
     private static string FormatTrajectoryFailure(
         bool reportWritten,
+        bool reportHasEvidence,
         bool memoryWorkerReached,
         bool memorySearchSucceeded)
     {
         return " trajectory(report=" + reportWritten +
+               ", evidence=" + reportHasEvidence +
                ", memory_worker=" + memoryWorkerReached +
                ", memory_search=" + memorySearchSucceeded + ")";
     }
@@ -591,7 +611,7 @@ internal sealed record RealLocalLlmSmokeSettings(
             ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS", 3),
             ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_LEASE_SECONDS", 180),
             ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS", 120),
-            Path.GetFullPath(Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH", Path.Combine(FindRepositoryRoot(), "docs", "phase-4-real-llm-smoke-result.md"))));
+            Path.GetFullPath(Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH", Path.Combine(FindRepositoryRoot(), "docs", "phase-5-real-llm-smoke-result.md"))));
     }
 
     private static string Read(string name, string fallback)

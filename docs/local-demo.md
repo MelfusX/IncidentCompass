@@ -26,9 +26,9 @@ OpenAI-compatible model and embedding adapters are included behind Application p
 - User/manual reports require `summary` or `description` and produce weak fingerprints when they lack structured error data.
 - Strong fingerprints require both a real service name and structured `errorType`; a user report with only `serviceName` still opens its own fault.
 - Duplicate strong signals attach to one open fault. A recently closed strong fault suppresses matching signals during the silence window.
-- Each new fault creates a pending triage job and job-level intake artifacts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`). Running the Worker claims that job, delegates to the mock `analysis` role, delegates timeout/null-reference patterns to the `memory` role, executes governed `memory_search`, and writes a minimal report row.
+- Each new fault creates a pending triage job and job-level intake artifacts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`). Running the Worker claims that job, delegates to the mock `analysis` role, delegates timeout/null-reference patterns to the `memory` role, executes governed `memory_search`, and writes a grounded report with backend-validated evidence rows.
 - A seeded checkout timeout can retrieve a runbook as a `RetrievedItem` artifact. An unknown error with no matching memory returns an explicit no-match rather than an error.
 
 ## Summary
 
-The .NET-native IncidentCompass backend now demonstrates the Phase 1 intake pipeline, model/embedding gateway abstraction, sanitized AI request logging and cost tracking, and the Phase 4 governed investigation loop that closes jobs through orchestrator -> analysis -> optional memory_search -> `publish_report`, with memory retrieval governed by ledger policy and exact embedding filters.
+The .NET-native IncidentCompass backend now demonstrates the Phase 1 intake pipeline, model/embedding gateway abstraction, sanitized AI request logging and cost tracking, and the Phase 5 governed investigation loop that closes jobs through orchestrator -> analysis -> optional memory_search -> grounded `publish_report`, with memory retrieval governed by ledger policy, exact embedding filters and report evidence validated against persisted artifacts.

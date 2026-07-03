@@ -56,8 +56,8 @@ docker compose up -d postgres
 The local PostgreSQL image applies the init scripts under `infra/postgres/init`
 when the Docker volume is first created, including observability/cost tracking,
 tool audit logging, Phase 1 intake tables (`signals`, `faults`, `triage_jobs`,
-`triage_config_snapshots`, `triage_artifacts`) and Phase 2 `triage_ledger` plus
-`triage_reports`. If you are reusing an older local
+`triage_config_snapshots`, `triage_artifacts`) and triage ledger/report tables
+(`triage_ledger`, `triage_reports`, `triage_evidence`). If you are reusing an older local
 Docker volume, recreate it with `docker compose down -v` or apply the missing
 numbered SQL scripts manually.
 
@@ -86,8 +86,7 @@ In a second terminal, run the background worker host. It performs a startup heal
 then polls PostgreSQL for pending triage jobs, claiming at most the configured
 `IncidentCompass:Worker:MaxConcurrentJobs` per process. Each claimed job rehydrates its
 persisted triage config by `config_hash`, runs the governed orchestrator with only
-`delegate` and `publish_report`, records live ledger events, stores the analysis worker
-output as an attempt-level artifact and writes a minimal report row before marking the job
+`delegate` and `publish_report`, records live ledger events, stores worker output and retrieved memory as attempt-level artifacts, and writes a grounded report plus evidence rows before marking the job
 terminal. Set the connection string again in this terminal; PowerShell process environment
 variables do not carry into a new window:
 
@@ -102,6 +101,7 @@ Useful local endpoints:
 - `GET http://localhost:5198/api/v1/users/me`
 - `POST http://localhost:5198/api/v1/incidents`
 - `GET http://localhost:5198/api/v1/faults/{id}`
+- `GET http://localhost:5198/api/v1/triage-reports/{id}`
 
 Sample HTTP requests are available in
 [src/IncidentCompass.Api/IncidentCompass.Api.http](../src/IncidentCompass.Api/IncidentCompass.Api.http)
