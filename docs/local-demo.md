@@ -1,34 +1,85 @@
 # Local Demo Walkthrough
 
-This walkthrough is the recommended path for reviewing the project locally.
+This walkthrough is the recommended review path for the Phase 6 MVP demo. It runs PostgreSQL,
+the API, the Worker and the deterministic Tester from Docker Compose, then prints a table for the
+four public demo scenarios.
 
-## What To Run First
+## One Command
 
-- Start PostgreSQL with Docker Compose.
-- Run the API host.
-- Call the health endpoint.
-- Call `/api/v1/users/me` with demo identity headers.
-- Optionally seed sample memory from `samples/runbooks` and `samples/incidents`.
-- Ingest a structured tester signal with `POST /api/v1/incidents`.
-- Read the created fault with `GET /api/v1/faults/{id}`.
+~~~powershell
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
+~~~
 
-See `docs/quickstart.md` for the full step-by-step commands and `samples/http/local-demo.http` for copy-ready requests.
+The script builds the api, worker and tester images, starts postgres, api and worker, waits for
+GET http://localhost:5198/api/v1/health, then runs the Tester container from the demo profile. After
+the table prints, services remain running so you can inspect the API.
 
-## Why This Path Uses Mocks
+Use these variants when needed:
 
-The default local demo runs with deterministic mock model and embedding providers. That keeps the flow repeatable without real LLM credentials, network access or provider cost.
+~~~powershell
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -NoBuild
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -RealLlm
+~~~
 
-OpenAI-compatible model and embedding adapters are included behind Application ports. Enable them through local configuration when you want to test real provider behavior. The API intake path prepares fault/job/artifact state; the Worker investigation loop is the local path that calls the configured model provider.
+-NoBuild reuses existing images. -RealLlm adds compose.real-llm.yml, which points the chat model
+gateway at an OpenAI-compatible local endpoint such as http://host.docker.internal:1234. That path is
+opt-in and non-gated; the deterministic demo uses mock model and embedding providers.
 
-## Intake Behavior To Observe
+Stop the demo services with:
 
-- Tester and OTel-shaped envelopes use structured `attributes` such as `errorType`, `errorMessage`, `operationName` and HTTP fields.
-- User/manual reports require `summary` or `description` and produce weak fingerprints when they lack structured error data.
-- Strong fingerprints require both a real service name and structured `errorType`; a user report with only `serviceName` still opens its own fault.
-- Duplicate strong signals attach to one open fault. A recently closed strong fault suppresses matching signals during the silence window.
-- Each new fault creates a pending triage job and job-level intake artifacts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`). Running the Worker claims that job, delegates to the mock `analysis` role, delegates timeout/null-reference patterns to the `memory` role, executes governed `memory_search`, and writes a grounded report with backend-validated evidence rows.
-- A seeded checkout timeout can retrieve a runbook as a `RetrievedItem` artifact. An unknown error with no matching memory returns an explicit no-match rather than an error.
+~~~powershell
+docker compose --profile demo down
+~~~
 
-## Summary
+If you need a fresh database volume after schema or seed changes, use:
 
-The .NET-native IncidentCompass backend now demonstrates the Phase 1 intake pipeline, model/embedding gateway abstraction, sanitized AI request logging and cost tracking, and the Phase 5 governed investigation loop that closes jobs through orchestrator -> analysis -> optional memory_search -> grounded `publish_report`, with memory retrieval governed by ledger policy, exact embedding filters and report evidence validated against persisted artifacts.
+~~~powershell
+docker compose --profile demo down --volumes
+~~~
+
+## Service Layout
+
+- postgres: pgvector/pgvector:pg16, initialized from infra/postgres/init.
+- api: builds from src/IncidentCompass.Api/Dockerfile, exposes http://localhost:5198, runs as the
+  non-root incidentcompass user, copies config/ and samples/, and sets
+  IncidentCompass__ConfigSource__Path=/app/config/incidentcompass.config.json plus
+  IncidentCompass__Memory__Seed__SourceDirectory=/app/samples.
+- worker: builds from src/IncidentCompass.Worker/Dockerfile, runs as the non-root incidentcompass
+  user, copies the same config/ and samples/, enables sample memory seeding, and uses the same
+  explicit config and sample-source paths inside the image.
+- tester: builds from src/IncidentCompass.Tester/Dockerfile under the demo profile and talks to the
+  API only over HTTP. The project has no references to Application, Domain or Infrastructure; it
+  depends only on the .NET runtime libraries used by HttpClient and JSON serialization.
+
+Compose waits for PostgreSQL health before starting the hosts and uses restart-on-failure for API
+and Worker, because the config warmup intentionally fails fast if durable storage is unavailable.
+
+## Demo Scenarios
+
+The Tester runs four scenarios from docs and samples-backed local data:
+
+1. Known timeout error with a matching seeded runbook. Expected classification: KnownIncident.
+2. Unknown null-reference error with no matching memory. Expected classification: Unknown with an
+   insufficient-evidence report.
+3. Repeated provider-unavailable errors crossing the configured mass-issue threshold. Expected
+   classification: SimpleKnownError and is_mass_issue=true.
+4. Validation/noise input the analysis worker closes quickly. Expected classification: Noise.
+
+The output table includes FaultId, ReportId, is_mass_issue, Classification, a host-reachable ledger
+URL and a host-reachable report URL. Useful read endpoints after a run are:
+
+- GET http://localhost:5198/api/v1/faults/{id}
+- GET http://localhost:5198/api/v1/faults/{id}/ledger
+- GET http://localhost:5198/api/v1/triage-reports/{id}
+
+## What The Demo Proves
+
+The default path is deterministic by design. The mock model scripts the orchestrator's
+delegation/tool-call sequence, while the real backend enforces source normalization, config hashing,
+ledger writes, role-scoped tool execution, memory_search policy, exact artifact grounding, report
+persistence and readback. The demo proves those packaging and governance rails are wired end to end.
+
+It does not prove a local LLM can reliably drive the same multi-turn trajectory. A real model run is
+available through -RealLlm, but it is intentionally optional and non-gated. Grounded citations mean
+each citation resolves to a stored artifact from this run; they do not prove the model's conclusion is
+correct.
