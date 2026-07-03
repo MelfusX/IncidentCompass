@@ -4,7 +4,15 @@ namespace IncidentCompass.Tester;
 
 internal sealed class DemoTester(HttpClient client, TesterOptions options)
 {
-    public async Task<int> RunAsync(CancellationToken cancellationToken)
+    public Task<int> RunAsync(CancellationToken cancellationToken)
+    {
+        return DemoDeadlineRunner.RunTotalAsync(
+            options.TotalTimeout,
+            RunWithinTotalDeadlineAsync,
+            cancellationToken);
+    }
+
+    private async Task<int> RunWithinTotalDeadlineAsync(CancellationToken cancellationToken)
     {
         await EnsureHealthyAsync(cancellationToken);
         var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
@@ -12,10 +20,14 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
 
         foreach (var scenario in DemoScenario.CreateAll(runId))
         {
-            results.Add(await RunScenarioAsync(scenario, runId, cancellationToken));
+            results.Add(await DemoDeadlineRunner.RunScenarioAsync(
+                scenario,
+                options.ScenarioTimeout,
+                token => RunScenarioAsync(scenario, runId, token),
+                cancellationToken));
         }
 
-        PrintResults(results);
+        DemoResultPrinter.Print(results);
         return results.All(static result => result.Passed) ? 0 : 1;
     }
 
@@ -168,24 +180,6 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
         return payloadRef is not null &&
             payloadRef.StartsWith(prefix, StringComparison.Ordinal) &&
             Guid.TryParse(payloadRef[prefix.Length..], out reportId);
-    }
-
-    private static void PrintResults(IReadOnlyList<DemoResult> results)
-    {
-        Console.WriteLine("Scenario | FaultId | ReportId | is_mass_issue | Classification | LedgerUrl | ReportUrl | Check");
-        Console.WriteLine("--- | --- | --- | --- | --- | --- | --- | ---");
-        foreach (var result in results)
-        {
-            Console.WriteLine(string.Join(" | ",
-                result.Scenario.Id + " " + result.Scenario.Name,
-                result.FaultId,
-                result.ReportId?.ToString() ?? "missing",
-                FormatNullableBool(result.IsMassIssue),
-                result.Classification ?? "missing",
-                result.LedgerUrl,
-                result.ReportUrl ?? "missing",
-                result.Passed ? "ok" : result.Detail));
-        }
     }
 
     private static string FormatNullableBool(bool? value) => value.HasValue ? value.Value.ToString().ToLowerInvariant() : "null";
