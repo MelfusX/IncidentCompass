@@ -59,22 +59,18 @@ internal sealed class MemorySeedHostedService(
         IMemoryRepository memoryRepository,
         CancellationToken cancellationToken)
     {
+        var contentHash = ComputeSha256Hex(file.Content);
+        var item = CreateItem(file, contentHash);
+        if (await memoryRepository.SeedItemExistsAsync(item, cancellationToken))
+        {
+            return;
+        }
+
         var embedding = await embeddingClient.CreateEmbeddingAsync(
             new EmbeddingRequest(file.Content, route.Model, "memory-seed:" + file.Source),
             cancellationToken);
-        var contentHash = ComputeSha256Hex(file.Content);
-        var item = new MemorySeedItem(
-            MemorySeedFileLoader.DeterministicId(options.Value.TenantId + ":" + file.Source),
-            options.Value.TenantId,
-            file.Kind,
-            file.Source,
-            file.Title,
-            file.Content,
-            contentHash,
-            Version: 1,
-            file.Tags);
         var chunk = new MemorySeedChunk(
-            MemorySeedFileLoader.DeterministicId(options.Value.TenantId + ":" + file.Source + ":0:" + embedding.Model),
+            MemorySeedFileLoader.DeterministicId(item.Id + ":0:" + embedding.Provider + ":" + embedding.Model + ":" + embedding.Vector.Count),
             Position: 0,
             file.Content,
             ComputeSha256Hex(file.Content),
@@ -84,6 +80,20 @@ internal sealed class MemorySeedHostedService(
             embedding.Vector);
 
         await memoryRepository.UpsertSeedAsync(item, [chunk], cancellationToken);
+    }
+
+    private MemorySeedItem CreateItem(MemorySeedFile file, string contentHash)
+    {
+        return new MemorySeedItem(
+            MemorySeedFileLoader.DeterministicId(options.Value.TenantId + ":" + file.Source + ":" + contentHash + ":1"),
+            options.Value.TenantId,
+            file.Kind,
+            file.Source,
+            file.Title,
+            file.Content,
+            contentHash,
+            Version: 1,
+            file.Tags);
     }
 
     private string ResolveRootDirectory()

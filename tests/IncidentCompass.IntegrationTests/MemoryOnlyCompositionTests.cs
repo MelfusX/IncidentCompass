@@ -228,6 +228,9 @@ public sealed class MemoryOnlyCompositionTests
     {
         public Task<IReadOnlyList<MemorySearchMatch>> SearchAsync(MemorySearchRequest request, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<MemorySearchMatch>>([]);
+        public Task<bool> SeedItemExistsAsync(MemorySeedItem item, CancellationToken cancellationToken) =>
+            Task.FromResult(false);
+
 
         public Task UpsertSeedAsync(MemorySeedItem item, IReadOnlyList<MemorySeedChunk> chunks, CancellationToken cancellationToken) =>
             Task.CompletedTask;

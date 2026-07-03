@@ -6,6 +6,10 @@ internal interface IMemoryRepository
         MemorySearchRequest request,
         CancellationToken cancellationToken);
 
+    Task<bool> SeedItemExistsAsync(
+        MemorySeedItem item,
+        CancellationToken cancellationToken);
+
     Task UpsertSeedAsync(
         MemorySeedItem item,
         IReadOnlyList<MemorySeedChunk> chunks,
