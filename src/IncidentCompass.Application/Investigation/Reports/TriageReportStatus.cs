@@ -1,6 +1,6 @@
 namespace IncidentCompass.Application.Investigation.Reports;
 
-public enum MinimalTriageReportStatus
+public enum TriageReportStatus
 {
     Completed,
     InsufficientEvidence,

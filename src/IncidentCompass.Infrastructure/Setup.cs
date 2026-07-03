@@ -57,7 +57,7 @@ public static class Setup
         services.TryAddScoped<WorkerToolCallExecutor>();
         services.TryAddScoped<WorkerRoleRunner>();
         services.TryAddScoped<AnalysisDelegateExecutor>();
-        services.TryAddScoped<MinimalTriageReportPublisher>();
+        services.TryAddScoped<TriageReportPublisher>();
 
         return services;
     }
@@ -172,9 +172,12 @@ public static class Setup
         services.TryAddScoped<ITriageLedgerWriter, PostgresTriageLedgerWriter>();
         services.TryAddScoped<ITriageLedgerReader, PostgresTriageLedgerReader>();
         services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
-        services.TryAddScoped<IMinimalTriageReportRepository, PostgresMinimalTriageReportRepository>();
+        services.TryAddScoped<ITriageReportRepository, PostgresTriageReportRepository>();
         services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
 
         return services;
     }
 }
+
+
+

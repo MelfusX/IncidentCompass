@@ -2,11 +2,11 @@ using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Investigation.Reports;
 
-public interface IMinimalTriageReportRepository
+public interface ITriageReportRepository
 {
     Task<Guid> PublishAsync(
         TriageJob job,
         string workerId,
-        MinimalTriageReport report,
+        TriageReport report,
         CancellationToken cancellationToken);
 }

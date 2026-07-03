@@ -388,7 +388,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
                 return Response(request, "delegate x", [ToolCall("delegate-x", "delegate", "{\"role\":\"synthetic_x\",\"task\":\"run tool_x\"}")]);
             }
 
-            return Response(request, "publish", [ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Synthetic governance run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"limitations\":[],\"recommendedNextAction\":\"Review synthetic tool output.\"}}")]);
+            return Response(request, "publish", [PublishToolCall(request)]);
         }
 
         private AiModelResponse WorkerResponse(AiModelRequest request)
@@ -439,6 +439,33 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
                 needsDeeperContext = false,
                 rationale
             });
+        }
+
+        private static AiToolCall PublishToolCall(AiModelRequest request)
+        {
+            var referenceId = FindPromptArtifactId(request, "TriggerSignal");
+            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Synthetic governance run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review synthetic tool output.\"}}");
+        }
+
+        private static string FindPromptArtifactId(AiModelRequest request, string kind)
+        {
+            var prompt = request.Messages.FirstOrDefault(static message => message.Role == AiMessageRole.User)?.Content ?? string.Empty;
+            foreach (var line in prompt.Split('\n'))
+            {
+                if (!line.Contains("kind=" + kind, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var marker = "artifact:";
+                var start = line.IndexOf(marker, StringComparison.Ordinal);
+                if (start >= 0)
+                {
+                    return line[(start + marker.Length)..].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+                }
+            }
+
+            return Guid.Empty.ToString();
         }
 
         private static AiToolCall ToolCall(string id, string name, string argumentsJson)

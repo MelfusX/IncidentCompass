@@ -1,6 +1,7 @@
 using IncidentCompass.Application.Core.ModelClients;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using static IncidentCompass.Infrastructure.ModelGateway.Mock.MockIncidentCompassReportScript;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.Mock;
 
@@ -31,19 +32,46 @@ internal static class MockIncidentCompassScripts
                 """)]);
         }
 
-        return MockAiModelResponseFactory.CreateResponse(request, "Publish after analysis.", [MockAiModelResponseFactory.ToolCall("incidentcompass-publish-report-1", "publish_report", """
-            {"report_json":{"status":"Completed","summary":"Mock analysis completed for the incident.","classification":"SimpleKnownError","confidence":"Medium","limitations":[],"recommendedNextAction":"Review the affected service logs and confirm the failure path."}}
-            """)]);
+        var isNoise = toolResults.Any(static value => value.Contains("\"candidateClassification\":\"Noise\"", StringComparison.OrdinalIgnoreCase));
+        return MockAiModelResponseFactory.CreateResponse(request, "Publish after analysis.", [MockAiModelResponseFactory.ToolCall(
+            "incidentcompass-publish-report-1",
+            "publish_report",
+            PublishArguments(
+                "Completed",
+                isNoise ? "Mock analysis closed the signal as noise." : "Mock analysis completed for the incident.",
+                isNoise ? "Noise" : "SimpleKnownError",
+                "Medium",
+                [Evidence(FindPromptArtifactId(request, "TriggerSignal"))],
+                [],
+                isNoise ? "No incident action recommended." : "Review the affected service logs and confirm the failure path."))]);
     }
 
     private static AiModelResponse PublishAfterMemory(AiModelRequest request, IReadOnlyList<string> toolResults)
     {
         var matched = toolResults.Any(static value => value.Contains("\"matched\":true", StringComparison.OrdinalIgnoreCase));
-        return MockAiModelResponseFactory.CreateResponse(request, "Publish after memory delegation.", [MockAiModelResponseFactory.ToolCall("incidentcompass-publish-report-1", "publish_report", matched ? """
-            {"report_json":{"status":"Completed","summary":"Mock memory lookup found relevant incident memory for the fault.","classification":"KnownIncident","confidence":"Medium","limitations":[],"recommendedNextAction":"Follow the retrieved checkout timeout runbook."}}
-            """ : """
-            {"report_json":{"status":"InsufficientEvidence","summary":"Mock memory lookup found no matching incident memory for the fault.","classification":"Unknown","confidence":"Low","limitations":["memory_search returned no matches"],"recommendedNextAction":"Collect more service logs and dependency health data."}}
-            """)]);
+        JsonObject[] evidence = matched
+            ? [Evidence(FindMemoryArtifactId(toolResults) ?? FindPromptArtifactId(request, "TriggerSignal"), FindMemoryQuote(toolResults))]
+            : [Evidence(FindPromptArtifactId(request, "TriggerSignal")), Evidence(FindPromptArtifactId(request, "NeighborSet"))];
+        return MockAiModelResponseFactory.CreateResponse(request, "Publish after memory delegation.", [MockAiModelResponseFactory.ToolCall(
+            "incidentcompass-publish-report-1",
+            "publish_report",
+            matched
+                ? PublishArguments(
+                    "Completed",
+                    "Mock memory lookup found relevant incident memory for the fault.",
+                    "KnownIncident",
+                    "Medium",
+                    evidence,
+                    [],
+                    "Follow the retrieved checkout timeout runbook.")
+                : PublishArguments(
+                    "InsufficientEvidence",
+                    "Mock memory lookup found no matching incident memory for the fault.",
+                    "Unknown",
+                    "Low",
+                    evidence,
+                    ["memory_search returned no matches"],
+                    "Collect more service logs and dependency health data."))]);
     }
 
     public static AiModelResponse MemoryWorkerResponse(AiModelRequest request, bool hasToolResult)
@@ -86,8 +114,9 @@ internal static class MockIncidentCompassScripts
 
     public static string AnalysisWorkerJson(string message)
     {
-        var needsMemory = message.Contains("Timeout", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("NullReference", StringComparison.OrdinalIgnoreCase);
+        var isNoise = message.Contains("noise", StringComparison.OrdinalIgnoreCase);
+        var needsMemory = !isNoise && (message.Contains("Timeout", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("NullReference", StringComparison.OrdinalIgnoreCase));
         var summary = needsMemory
             ? "The trigger signal should be checked against incident memory."
             : "The trigger signal contains enough grounded intake facts for a first classification.";
@@ -95,7 +124,7 @@ internal static class MockIncidentCompassScripts
         return JsonSerializer.Serialize(new
         {
             keyFacts = new[] { summary, "The analysis worker used only grounded intake context." },
-            candidateClassification = needsMemory ? "KnownIncident" : "SimpleKnownError",
+            candidateClassification = isNoise ? "Noise" : needsMemory ? "KnownIncident" : "SimpleKnownError",
             needsDeeperContext = needsMemory,
             rationale = needsMemory
                 ? "The mock analysis requested memory context for this failure pattern."
@@ -149,3 +178,6 @@ internal static class MockIncidentCompassScripts
             : null;
     }
 }
+
+
+

@@ -30,10 +30,7 @@ internal static class OrchestratorToolDefinitions
                     ["type"] = "string",
                     ["enum"] = roleEnum
                 },
-                ["task"] = new JsonObject
-                {
-                    ["type"] = "string"
-                }
+                ["task"] = new JsonObject { ["type"] = "string" }
             },
             ["required"] = new JsonArray("role", "task")
         };
@@ -47,6 +44,17 @@ internal static class OrchestratorToolDefinitions
 
     private static AiToolDefinition CreatePublishReportTool()
     {
+        var evidenceItemSchema = new JsonObject
+        {
+            ["type"] = "object",
+            ["additionalProperties"] = true,
+            ["properties"] = new JsonObject
+            {
+                ["referenceId"] = new JsonObject { ["type"] = "string" },
+                ["quote"] = new JsonObject { ["type"] = "string" }
+            },
+            ["required"] = new JsonArray("referenceId")
+        };
         var schema = new JsonObject
         {
             ["type"] = "object",
@@ -61,12 +69,13 @@ internal static class OrchestratorToolDefinitions
                     {
                         ["status"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Completed", "InsufficientEvidence") },
                         ["summary"] = new JsonObject { ["type"] = "string" },
-                        ["classification"] = new JsonObject { ["type"] = "string" },
+                        ["classification"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("KnownIncident", "LikelyRegression", "SimpleKnownError", "Unknown", "Noise") },
                         ["confidence"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Low", "Medium", "High") },
+                        ["evidence"] = new JsonObject { ["type"] = "array", ["items"] = evidenceItemSchema },
                         ["limitations"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } },
                         ["recommendedNextAction"] = new JsonObject { ["type"] = "string" }
                     },
-                    ["required"] = new JsonArray("status", "summary", "classification", "confidence", "limitations", "recommendedNextAction")
+                    ["required"] = new JsonArray("status", "summary", "classification", "confidence", "evidence", "limitations", "recommendedNextAction")
                 }
             },
             ["required"] = new JsonArray("report_json")
@@ -74,7 +83,7 @@ internal static class OrchestratorToolDefinitions
 
         return new AiToolDefinition(
             "publish_report",
-            "Publish the final minimal triage report and end this investigation.",
+            "Publish the final grounded triage report and end this investigation.",
             "v1",
             ToElement(schema));
     }

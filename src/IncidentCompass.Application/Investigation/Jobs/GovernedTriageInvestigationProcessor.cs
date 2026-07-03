@@ -1,6 +1,7 @@
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
@@ -10,14 +11,14 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
     private readonly ITriageJobInvestigationContextRepository contextRepository;
     private readonly InvestigationModelCaller modelCaller;
     private readonly AnalysisDelegateExecutor delegateExecutor;
-    private readonly MinimalTriageReportPublisher reportPublisher;
+    private readonly TriageReportPublisher reportPublisher;
     private readonly TimeProvider timeProvider;
 
     public GovernedTriageInvestigationProcessor(
         ITriageJobInvestigationContextRepository contextRepository,
         InvestigationModelCaller modelCaller,
         AnalysisDelegateExecutor delegateExecutor,
-        MinimalTriageReportPublisher reportPublisher,
+        TriageReportPublisher reportPublisher,
         TimeProvider timeProvider)
     {
         this.contextRepository = contextRepository;
@@ -49,12 +50,7 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
             var toolCall = response.ProposedToolCalls?.FirstOrDefault();
             if (toolCall is null)
             {
-                if (reprompts >= configuration.Orchestrator.Budget.MaxReprompts)
-                {
-                    throw new InvalidOperationException("Orchestrator did not propose delegate or publish_report after bounded reprompts.");
-                }
-
-                reprompts++;
+                RepromptOrThrow(configuration, ref reprompts, "Orchestrator did not propose delegate or publish_report after bounded reprompts.");
                 messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content));
                 messages.Add(new AiChatMessage(
                     AiMessageRole.User,
@@ -78,7 +74,12 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
 
             if (string.Equals(toolCall.Name, "publish_report", StringComparison.Ordinal))
             {
-                await reportPublisher.PublishAsync(job, workerId, toolCall, cancellationToken);
+                if (await TryPublishAsync(job, configuration, workerId, toolCall, messages, reprompts, cancellationToken) is { } nextReprompts)
+                {
+                    reprompts = nextReprompts;
+                    continue;
+                }
+
                 return;
             }
 
@@ -86,6 +87,36 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
         }
 
         throw new InvalidOperationException("Orchestrator exceeded the bounded investigation turn limit before publish_report.");
+    }
+
+    private async Task<int?> TryPublishAsync(
+        TriageJob job,
+        TriageConfiguration configuration,
+        string workerId,
+        AiToolCall toolCall,
+        List<AiChatMessage> messages,
+        int reprompts,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await reportPublisher.PublishAsync(job, workerId, toolCall, cancellationToken);
+            return null;
+        }
+        catch (TriageReportValidationException exception)
+        {
+            RepromptOrThrow(configuration, ref reprompts, "publish_report remained invalid after bounded reprompts: " + exception.Message, exception);
+            var validationResult = JsonSerializer.Serialize(new
+            {
+                errorCode = "publish_report_validation_failed",
+                errorMessage = exception.Message
+            });
+            messages.Add(new AiChatMessage(AiMessageRole.Tool, validationResult, toolCall.Id));
+            messages.Add(new AiChatMessage(
+                AiMessageRole.User,
+                "Validation error: " + exception.Message + " Call publish_report again with the corrected report_json."));
+            return reprompts;
+        }
     }
 
     private async Task<AiModelResponse> CompleteOrchestratorAsync(
@@ -102,6 +133,20 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
             messages,
             OrchestratorToolDefinitions.Create(configuration),
             cancellationToken);
+    }
+
+    private static void RepromptOrThrow(
+        TriageConfiguration configuration,
+        ref int reprompts,
+        string message,
+        Exception? innerException = null)
+    {
+        if (reprompts >= configuration.Orchestrator.Budget.MaxReprompts)
+        {
+            throw new InvalidOperationException(message, innerException);
+        }
+
+        reprompts++;
     }
 
     private static string UnknownToolResult(string toolName)

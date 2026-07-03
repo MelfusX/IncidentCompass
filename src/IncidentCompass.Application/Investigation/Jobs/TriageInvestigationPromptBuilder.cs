@@ -11,7 +11,7 @@ internal static class TriageInvestigationPromptBuilder
         var builder = new StringBuilder();
         builder.AppendLine($"IncidentCompass orchestrator job {job.Id} attempt {job.Attempt}.");
         AppendContext(builder, context);
-        builder.AppendLine("Delegate to the analysis role first. Then call publish_report with a minimal report_json.");
+        builder.AppendLine("Delegate to the analysis role first. Then call publish_report with report_json that includes evidence[] referenceId values copied from citable artifact ids. Do not set isMassIssue or evidence kind; the backend derives them.");
         return builder.ToString();
     }
 
@@ -55,3 +55,4 @@ internal static class TriageInvestigationPromptBuilder
         return text.Length <= 800 ? text : text[..800];
     }
 }
+
