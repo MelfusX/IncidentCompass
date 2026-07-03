@@ -10,6 +10,8 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
     private static readonly HashSet<string> RouteKinds = new(["Chat", "Embedding"], StringComparer.Ordinal);
     private static readonly HashSet<string> ProviderKinds = new(["Mock", "OpenAICompatible"], StringComparer.Ordinal);
     private static readonly HashSet<string> ToolKinds = new(["internal"], StringComparer.Ordinal);
+    private const string MemoryRoleName = "memory";
+    private const string MemorySearchToolName = "memory_search";
     private static readonly HashSet<string> OrchestratorTools = new(["delegate", "publish_report"], StringComparer.Ordinal);
 
     public void Validate(TriageConfiguration configuration)
@@ -131,6 +133,12 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "a configured worker tool id");
                 }
+
+                if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal) &&
+                    !string.Equals(roleName, MemoryRoleName, StringComparison.Ordinal))
+                {
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "memory_search granted only to the memory role");
+                }
             }
         }
     }
@@ -143,6 +151,23 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         {
             RequireKey(toolName, "Tools");
             RequireKnown("Tools." + toolName + ".Kind", tool.Kind, ToolKinds);
+            if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal))
+            {
+                RequireNonBlank("Tools." + toolName + ".EmbeddingRouteId", tool.EmbeddingRouteId ?? string.Empty);
+                RequireEmbeddingRoute(routes, tool.EmbeddingRouteId!, "Tools." + toolName + ".EmbeddingRouteId");
+                if (tool.TopK is <= 0)
+                {
+                    throw Invalid("Tools." + toolName + ".TopK", tool.TopK.Value.ToString(), "a positive integer when set");
+                }
+
+                if (tool.MinScore is < -1 or > 1)
+                {
+                    throw Invalid("Tools." + toolName + ".MinScore", tool.MinScore.Value.ToString(), "a score between -1 and 1 when set");
+                }
+
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(tool.EmbeddingRouteId))
             {
                 RequireEmbeddingRoute(routes, tool.EmbeddingRouteId, "Tools." + toolName + ".EmbeddingRouteId");

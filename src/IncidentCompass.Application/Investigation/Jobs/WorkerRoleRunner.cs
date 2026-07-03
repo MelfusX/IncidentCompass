@@ -40,7 +40,7 @@ internal sealed class WorkerRoleRunner(
             if (toolCall is not null)
             {
                 messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content, ToolCalls: [toolCall]));
-                var toolResult = await toolCallExecutor.ExecuteAsync(job, configuration, roleName, toolCall, cancellationToken);
+                var toolResult = await toolCallExecutor.ExecuteAsync(job, configuration, context, roleName, toolCall, cancellationToken);
                 messages.Add(new AiChatMessage(AiMessageRole.Tool, toolResult, toolCall.Id));
                 continue;
             }

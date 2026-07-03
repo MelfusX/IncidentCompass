@@ -76,11 +76,14 @@ public sealed class HostCompositionTests
             ValidateScopes = true
         });
 
-        // Worker + the Infrastructure-registered TriageConfigurationWarmupHostedService (Phase 1
-        // ingestion config warmup, added alongside AddInfrastructure's intake registrations).
-        Assert.Equal(2, provider.GetServices<IHostedService>().Count());
-        Assert.Contains(provider.GetServices<IHostedService>(), service => service is WorkerService);
-
+        // Worker + Infrastructure warmups for triage config and optional memory seeding.
+        var hostedServices = provider.GetServices<IHostedService>().ToArray();
+        Assert.Equal(3, hostedServices.Length);
+        Assert.Contains(hostedServices, service => service is WorkerService);
+        Assert.Contains(hostedServices, service =>
+            service.GetType().FullName == "IncidentCompass.Infrastructure.Intake.TriageConfigurationWarmupHostedService");
+        Assert.Contains(hostedServices, service =>
+            service.GetType().FullName == "IncidentCompass.Infrastructure.Memory.MemorySeedHostedService");
         using var scope = provider.CreateScope();
         var backgroundContext = scope.ServiceProvider.GetRequiredService<IBackgroundUserContext>();
         var userContext = scope.ServiceProvider.GetRequiredService<IUserContext>();

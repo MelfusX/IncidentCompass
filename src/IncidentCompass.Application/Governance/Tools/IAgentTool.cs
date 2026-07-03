@@ -16,4 +16,12 @@ public interface IAgentTool
     Task<ToolExecutionResult> ExecuteAsync(
         JsonElement sanitizedArguments,
         CancellationToken cancellationToken);
+
+    Task<ToolExecutionResult> ExecuteAsync(
+        AgentToolExecutionContext context,
+        JsonElement sanitizedArguments,
+        CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(sanitizedArguments, cancellationToken);
+    }
 }

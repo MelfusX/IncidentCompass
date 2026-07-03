@@ -31,6 +31,12 @@ internal sealed class PostgresTriageToolResultCommitter(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            foreach (var additionalArtifact in request.AdditionalArtifacts ?? [])
+            {
+                ValidateAdditionalArtifact(request, additionalArtifact);
+                await InsertArtifactAsync(connection, transaction, additionalArtifact, cancellationToken);
+            }
+
             await InsertArtifactAsync(connection, transaction, artifact, cancellationToken);
             await faultInjector.AfterArtifactInsertedAsync(cancellationToken);
             await InsertToolResultEventAsync(connection, transaction, request, artifact, createdAtUtc, cancellationToken);
@@ -41,6 +47,21 @@ internal sealed class PostgresTriageToolResultCommitter(
         {
             await transaction.RollbackAsync(CancellationToken.None);
             throw;
+        }
+    }
+
+    private static void ValidateAdditionalArtifact(
+        TriageToolResultCommitRequest request,
+        TriageArtifact artifact)
+    {
+        if (artifact.JobId != request.Job.Id || artifact.Attempt != request.Job.Attempt)
+        {
+            throw new InvalidOperationException("Additional tool artifacts must belong to the current job attempt.");
+        }
+
+        if (artifact.Kind == ArtifactKind.ToolResult)
+        {
+            throw new InvalidOperationException("Additional tool artifacts must not use ToolResult kind.");
         }
     }
 

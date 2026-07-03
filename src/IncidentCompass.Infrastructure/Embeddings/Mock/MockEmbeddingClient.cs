@@ -30,22 +30,24 @@ internal sealed class MockEmbeddingClient(IOptions<EmbeddingOptions> options) : 
     private static float[] CreateDeterministicVector(string input, int dimensions)
     {
         var vector = new float[dimensions];
-        var seed = Encoding.UTF8.GetBytes(input);
-
-        for (var offset = 0; offset < dimensions; offset += 32)
+        foreach (var token in Tokenize(input))
         {
-            var hashInput = seed
-                .Concat(BitConverter.GetBytes(offset))
-                .ToArray();
-            var hash = SHA256.HashData(hashInput);
-
-            for (var i = 0; i < hash.Length && offset + i < dimensions; i++)
-            {
-                vector[offset + i] = ((hash[i] / 255f) * 2f) - 1f;
-            }
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+            var index = hash[0] % dimensions;
+            var weight = 1f + hash[1] / 255f;
+            vector[index] += weight;
         }
 
         return Normalize(vector);
+    }
+
+    private static IEnumerable<string> Tokenize(string input)
+    {
+        return input
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static token => token.Trim('`', '.', ',', ':', ';', '(', ')', '[', ']', '{', '}', '/', '\\'))
+            .Where(static token => token.Length > 0)
+            .Select(static token => token.ToUpperInvariant());
     }
 
     private static float[] Normalize(float[] vector)

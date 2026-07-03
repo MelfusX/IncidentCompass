@@ -1,5 +1,6 @@
 using IncidentCompass.Application;
 using IncidentCompass.Application.Core.Dispatching;
+using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.Tools;
@@ -7,6 +8,7 @@ using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
+using IncidentCompass.Application.Memory;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Domain.Incidents;
 using Microsoft.Extensions.Configuration;
@@ -47,6 +49,8 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageArtifactRepository, InMemoryTriageArtifactRepository>();
         services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
+        services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
+        services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -92,7 +96,7 @@ public sealed class MemoryOnlyCompositionTests
             {
                 ["analysis-chat"] = new("Chat", "local-oai", "local-model", 0.1, 2000, 8192),
                 ["report-chat"] = new("Chat", "local-oai", "local-model", 0.2, 4000, 8192),
-                ["memory-embed"] = new("Embedding", "local-oai", "local-embedding-model", null, null, null)
+                ["memory-embed"] = new("Embedding", "local-oai", "mock-memory-embedding-v1", null, null, null)
             },
             Orchestrator: new OrchestratorSettings(
                 "orchestrator instructions",
@@ -206,6 +210,21 @@ public sealed class MemoryOnlyCompositionTests
             TriageJobAttemptFailure failure,
             CancellationToken cancellationToken) => Task.CompletedTask;
     }
+    private sealed class InMemoryEmbeddingClient : IEmbeddingClient
+    {
+        public Task<EmbeddingResponse> CreateEmbeddingAsync(EmbeddingRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new EmbeddingResponse([1f], request.Model, "test", 1, request.CorrelationId));
+    }
+
+    private sealed class InMemoryMemoryRepository : IMemoryRepository
+    {
+        public Task<IReadOnlyList<MemorySearchMatch>> SearchAsync(MemorySearchRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<MemorySearchMatch>>([]);
+
+        public Task UpsertSeedAsync(MemorySeedItem item, IReadOnlyList<MemorySeedChunk> chunks, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
     private sealed class InMemoryPriorReportSummaryProvider : IPriorReportSummaryProvider
     {
         public Task<PriorReportSummary?> FindLatestAsync(Guid faultId, CancellationToken cancellationToken) =>

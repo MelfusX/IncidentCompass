@@ -9,4 +9,5 @@ internal sealed record TriageToolResultCommitRequest(
     string ToolName,
     JsonElement Output,
     string ContentHash,
-    string Rationale);
+    string Rationale,
+    IReadOnlyCollection<TriageArtifact>? AdditionalArtifacts = null);

@@ -31,6 +31,7 @@ internal sealed class WorkerToolCallExecutor(
     public async Task<string> ExecuteAsync(
         TriageJob job,
         TriageConfiguration configuration,
+        TriageJobInvestigationContext investigationContext,
         string roleName,
         AiToolCall toolCall,
         CancellationToken cancellationToken)
@@ -75,10 +76,13 @@ internal sealed class WorkerToolCallExecutor(
             throw new InvalidOperationException("Worker tool call validation failed: " + reason);
         }
 
-        var execution = await tool.ExecuteAsync(validation.SanitizedArguments, cancellationToken);
+        var execution = await tool.ExecuteAsync(
+            new AgentToolExecutionContext(job, configuration, roleName, toolCall.Name, investigationContext.Fault.TenantId),
+            validation.SanitizedArguments,
+            cancellationToken);
         if (execution.Status == ToolExecutionStatus.Succeeded)
         {
-            await CommitSucceededAsync(job, roleName, toolCall.Name, execution.Output, cancellationToken);
+            await CommitSucceededAsync(job, roleName, toolCall.Name, execution.Output, execution.Artifacts, cancellationToken);
             return execution.Output.GetRawText();
         }
 
@@ -114,6 +118,7 @@ internal sealed class WorkerToolCallExecutor(
         string roleName,
         string toolName,
         JsonElement output,
+        IReadOnlyCollection<TriageArtifact>? artifacts,
         CancellationToken cancellationToken)
     {
         var canonicalPayload = CanonicalJsonSerializer.Canonicalize(JsonNode.Parse(output.GetRawText())!);
@@ -124,7 +129,8 @@ internal sealed class WorkerToolCallExecutor(
                 toolName,
                 output,
                 CanonicalJsonSerializer.ComputeSha256Hex(canonicalPayload),
-                "Tool completed successfully."),
+                "Tool completed successfully.",
+                artifacts),
             cancellationToken);
     }
 

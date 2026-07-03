@@ -134,6 +134,47 @@ public sealed class TriageConfigurationMaterializerTests
         Assert.Contains("Rules.rate_cap.Scope", exception.Message, StringComparison.Ordinal);
         Assert.Contains("attempt, job", exception.Message, StringComparison.Ordinal);
     }
+    [Fact]
+    public void Materialize_MemorySearchRouteMustBeEmbeddingRoute()
+    {
+        var node = ValidConfigNode();
+        var tools = (JsonObject)node["Tools"]!;
+        var memorySearch = (JsonObject)tools["memory_search"]!;
+        memorySearch["EmbeddingRouteId"] = "analysis-chat";
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Tools.memory_search.EmbeddingRouteId", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_MemorySearchRequiresEmbeddingRouteId()
+    {
+        var node = ValidConfigNode();
+        var tools = (JsonObject)node["Tools"]!;
+        var memorySearch = (JsonObject)tools["memory_search"]!;
+        memorySearch.Remove("EmbeddingRouteId");
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Tools.memory_search.EmbeddingRouteId", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_MemorySearchCanOnlyBeGrantedToMemoryRole()
+    {
+        var node = ValidConfigNode();
+        var roles = (JsonObject)node["Roles"]!;
+        var analysis = (JsonObject)roles["analysis"]!;
+        analysis["Tools"] = new JsonArray("memory_search");
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
+    }
     private static TriageConfigurationMaterializer CreateMaterializer()
     {
         var registry = new SignalNormalizerRegistry([
@@ -162,7 +203,7 @@ public sealed class TriageConfigurationMaterializerTests
               "Routes": {
                 "analysis-chat": { "Kind": "Chat", "ProviderId": "local-oai", "Model": "local-model", "Temperature": 0.1, "MaxOutputTokens": 2000, "ContextWindowTokens": 8192 },
                 "report-chat": { "Kind": "Chat", "ProviderId": "local-oai", "Model": "local-model", "Temperature": 0.2, "MaxOutputTokens": 4000, "ContextWindowTokens": 8192 },
-                "memory-embed": { "Kind": "Embedding", "ProviderId": "local-oai", "Model": "local-embedding-model" }
+                "memory-embed": { "Kind": "Embedding", "ProviderId": "local-oai", "Model": "mock-memory-embedding-v1" }
               },
               "Orchestrator": {
                 "Instructions": "ref:instructions/orchestrator.md",
