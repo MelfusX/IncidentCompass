@@ -51,6 +51,7 @@ internal sealed record TriageEvidenceResponse(
     string? ArtifactDomainRef,
     JsonElement ArtifactPayload);
 
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(IncidentEnvelope))]
 [JsonSerializable(typeof(IngestSignalResponse))]
 [JsonSerializable(typeof(FaultLedgerResponse))]

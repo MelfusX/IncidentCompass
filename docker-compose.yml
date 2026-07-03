@@ -46,11 +46,29 @@ services:
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
       IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
+      IncidentCompass__Memory__Seed__Enabled: "true"
       IncidentCompass__Memory__Seed__SourceDirectory: /app/samples
+      IncidentCompass__Worker__PollIntervalSeconds: "1"
+      IncidentCompass__Worker__RetryDelaySeconds: "2"
     depends_on:
       postgres:
         condition: service_healthy
     restart: on-failure
+
+  tester:
+    profiles: ["demo"]
+    build:
+      context: .
+      dockerfile: src/IncidentCompass.Tester/Dockerfile
+    environment:
+      INCIDENTCOMPASS_TESTER_BASE_URL: http://api:8080
+      INCIDENTCOMPASS_TESTER_PUBLIC_BASE_URL: http://localhost:5198
+    depends_on:
+      api:
+        condition: service_started
+      worker:
+        condition: service_started
+    restart: "no"
 
 volumes:
   postgres-data:

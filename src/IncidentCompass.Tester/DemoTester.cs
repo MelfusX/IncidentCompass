@@ -21,8 +21,29 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
 
     private async Task EnsureHealthyAsync(CancellationToken cancellationToken)
     {
-        using var response = await client.GetAsync("api/v1/health", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        Exception? lastFailure = null;
+        var deadline = DateTimeOffset.UtcNow.Add(options.PollTimeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                using var response = await client.GetAsync("api/v1/health", cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    return;
+                }
+
+                lastFailure = new HttpRequestException("Health endpoint returned " + (int)response.StatusCode + ".");
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                lastFailure = exception;
+            }
+
+            await Task.Delay(options.PollInterval, cancellationToken);
+        }
+
+        throw new InvalidOperationException("API health check did not succeed before the tester timeout.", lastFailure);
     }
 
     private async Task<DemoResult> RunScenarioAsync(
@@ -138,7 +159,7 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
         return true;
     }
 
-    private string BuildUrl(string path) => new Uri(client.BaseAddress!, path).ToString();
+    private string BuildUrl(string path) => new Uri(options.PublicBaseUrl, path).ToString();
 
     private static bool TryParseReportId(string? payloadRef, out Guid reportId)
     {

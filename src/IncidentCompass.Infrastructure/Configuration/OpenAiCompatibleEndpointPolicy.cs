@@ -52,7 +52,13 @@ internal static class OpenAiCompatibleEndpointPolicy
 
         return allowInsecureHttpForLoopback &&
                baseUri.Scheme == Uri.UriSchemeHttp &&
-               baseUri.IsLoopback;
+               IsLocalHttpAlias(baseUri);
+    }
+
+    private static bool IsLocalHttpAlias(Uri baseUri)
+    {
+        return baseUri.IsLoopback ||
+               string.Equals(baseUri.Host, "host.docker.internal", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsValidEndpointPath(string? path)

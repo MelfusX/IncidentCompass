@@ -65,36 +65,52 @@ internal static class MockIncidentCompassReportScript
 
     public static string? FindMemoryArtifactId(IReadOnlyList<string> toolResults)
     {
-        foreach (var result in toolResults.Reverse())
-        {
-            using var document = JsonDocument.Parse(result);
-            if (document.RootElement.TryGetProperty("items", out var items) && items.GetArrayLength() > 0)
-            {
-                return ReadOptionalString(items[0], "artifactId");
-            }
-        }
-
-        return null;
+        return FindMemoryItemValue(toolResults, "artifactId");
     }
 
     public static string? FindMemoryQuote(IReadOnlyList<string> toolResults)
     {
+        return FindMemoryItemValue(toolResults, "quote");
+    }
+
+    private static string? FindMemoryItemValue(IReadOnlyList<string> toolResults, string propertyName)
+    {
         foreach (var result in toolResults.Reverse())
         {
             using var document = JsonDocument.Parse(result);
             if (document.RootElement.TryGetProperty("items", out var items) && items.GetArrayLength() > 0)
             {
-                return ReadOptionalString(items[0], "quote");
+                return ReadOptionalString(FindPreferredMemoryItem(items), propertyName);
             }
         }
 
         return null;
     }
 
+    private static JsonElement FindPreferredMemoryItem(JsonElement items)
+    {
+        foreach (var item in items.EnumerateArray())
+        {
+            if (ReadOptionalString(item, "title")?.Contains("Runbook", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return item;
+            }
+        }
+
+        return items[0];
+    }
+
     private static string? ReadOptionalString(JsonElement root, string propertyName)
     {
-        return root.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String
-            ? element.GetString()
-            : null;
+        foreach (var property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String)
+            {
+                return property.Value.GetString();
+            }
+        }
+
+        return null;
     }
 }

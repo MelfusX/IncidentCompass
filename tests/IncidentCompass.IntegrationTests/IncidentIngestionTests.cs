@@ -359,11 +359,9 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         using var scope = await CreateScopeAsync();
         var envelope = TesterEnvelope("mass-issue-probe-svc", "prod", "TimeoutException", "Mass issue probe timed out", "/mass-issue-probe");
 
-        // Every neighbor signal goes through the REAL ingestion pipeline (normalize/redact/
-        // fingerprint via live POSTs), not a hand-seeded SQL row, so this proves isMassIssue end
-        // to end rather than only proving the read-back query against synthetic data. The first
-        // POST opens the fault; the next 5 attach to that same open fault (grounded facts are
-        // computed once, at job creation, so attaching never creates a new job/artifacts).
+        // Every neighbor signal goes through the real ingestion pipeline (normalize/redact/
+        // fingerprint via live POSTs), not a hand-seeded SQL row. The first POST opens the fault;
+        // the next 5 attach to that same open fault and refresh the existing job-level NeighborSet.
         var first = await PostIngestAsync(scope.Client, envelope);
         for (var index = 0; index < 5; index++)
         {
@@ -371,6 +369,24 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
             Assert.Equal(first.FaultId, attached.FaultId);
             Assert.False(attached.IsNewJob);
         }
+
+        var openFaultIsMassIssue = await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'isMassIssue' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
+            ("job_id", first.JobId!.Value));
+        Assert.Equal("true", openFaultIsMassIssue);
+
+        var openFaultNeighborCount = await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'neighborCount' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
+            ("job_id", first.JobId.Value));
+        Assert.Equal("6", openFaultNeighborCount);
+
+        var openFaultNeighborRows = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
+            ("job_id", first.JobId.Value));
+        Assert.Equal(1, openFaultNeighborRows);
 
         // Phase 1 has no real "close a fault" mechanism yet (that arrives with Phase 5's report
         // pipeline) -- simulate it directly, backdating well past the configured silence window so
@@ -568,6 +584,11 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     private sealed class ThrowingTriageArtifactRepository : ITriageArtifactRepository
     {
         public Task InsertAsync(TriageArtifact artifact, CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Injected artifact persistence failure.");
+        }
+
+        public Task ReplaceJobLevelAsync(TriageArtifact artifact, CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Injected artifact persistence failure.");
         }

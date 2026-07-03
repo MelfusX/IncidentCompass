@@ -1,6 +1,9 @@
 using IncidentCompass.Tester;
 
-var options = TesterOptions.Parse(args, Environment.GetEnvironmentVariable("INCIDENTCOMPASS_TESTER_BASE_URL"));
+var options = TesterOptions.Parse(
+    args,
+    Environment.GetEnvironmentVariable("INCIDENTCOMPASS_TESTER_BASE_URL"),
+    Environment.GetEnvironmentVariable("INCIDENTCOMPASS_TESTER_PUBLIC_BASE_URL"));
 using var client = new HttpClient
 {
     BaseAddress = options.BaseUrl,

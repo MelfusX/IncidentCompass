@@ -1,0 +1,14 @@
+services:
+  api:
+    environment:
+      IncidentCompass__ModelGateway__Provider: OpenAICompatible
+      IncidentCompass__ModelGateway__OpenAiCompatible__BaseUrl: ${INCIDENTCOMPASS_REAL_LLM_BASE_URL:-http://host.docker.internal:1234}
+      IncidentCompass__ModelGateway__OpenAiCompatible__ApiKey: ${INCIDENTCOMPASS_REAL_LLM_API_KEY:-local-dev-key}
+      IncidentCompass__ModelGateway__OpenAiCompatible__AllowInsecureHttpForLoopback: "true"
+
+  worker:
+    environment:
+      IncidentCompass__ModelGateway__Provider: OpenAICompatible
+      IncidentCompass__ModelGateway__OpenAiCompatible__BaseUrl: ${INCIDENTCOMPASS_REAL_LLM_BASE_URL:-http://host.docker.internal:1234}
+      IncidentCompass__ModelGateway__OpenAiCompatible__ApiKey: ${INCIDENTCOMPASS_REAL_LLM_API_KEY:-local-dev-key}
+      IncidentCompass__ModelGateway__OpenAiCompatible__AllowInsecureHttpForLoopback: "true"

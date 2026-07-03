@@ -89,6 +89,24 @@ public sealed class GroundedFactsAssemblerTests
     }
 
     [Fact]
+    public async Task ReplaceNeighborSetAsync_ReplacesJobLevelNeighborSetArtifact()
+    {
+        var artifacts = new RecordingTriageArtifactRepository();
+        var assembler = new GroundedFactsAssembler(artifacts, new StubPriorReportSummaryProvider(null), TimeProvider.System);
+
+        await assembler.ReplaceNeighborSetAsync(
+            CreateJob(), CreateFault(recurrenceOf: null), CreateSignal(),
+            neighborCount: 6, isMassIssue: true, CreateSettings(), CancellationToken.None);
+
+        Assert.Empty(artifacts.Inserted);
+        var replacement = Assert.Single(artifacts.Replaced);
+        Assert.Null(replacement.Attempt);
+        Assert.Equal(ArtifactKind.NeighborSet, replacement.Kind);
+        Assert.Equal(6, replacement.RedactedPayload.GetProperty("neighborCount").GetInt32());
+        Assert.True(replacement.RedactedPayload.GetProperty("isMassIssue").GetBoolean());
+    }
+
+    [Fact]
     public async Task AssembleAsync_WeakSignalNeighborSet_MarksNeighborCountAsNotApplicable()
     {
         var artifacts = new RecordingTriageArtifactRepository();
@@ -186,9 +204,17 @@ public sealed class GroundedFactsAssemblerTests
     {
         public List<TriageArtifact> Inserted { get; } = [];
 
+        public List<TriageArtifact> Replaced { get; } = [];
+
         public Task InsertAsync(TriageArtifact artifact, CancellationToken cancellationToken)
         {
             Inserted.Add(artifact);
+            return Task.CompletedTask;
+        }
+
+        public Task ReplaceJobLevelAsync(TriageArtifact artifact, CancellationToken cancellationToken)
+        {
+            Replaced.Add(artifact);
             return Task.CompletedTask;
         }
     }

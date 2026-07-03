@@ -201,6 +201,8 @@ public sealed class MemoryOnlyCompositionTests
     private sealed class InMemoryTriageArtifactRepository : ITriageArtifactRepository
     {
         public Task InsertAsync(TriageArtifact artifact, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task ReplaceJobLevelAsync(TriageArtifact artifact, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class InMemoryTriageJobRuntimeRepository : ITriageJobRuntimeRepository

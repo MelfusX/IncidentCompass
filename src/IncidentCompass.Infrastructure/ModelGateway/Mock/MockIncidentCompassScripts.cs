@@ -78,9 +78,10 @@ internal static class MockIncidentCompassScripts
     {
         if (!hasToolResult)
         {
-            return MockAiModelResponseFactory.CreateResponse(request, "Search incident memory.", [MockAiModelResponseFactory.ToolCall("incidentcompass-memory-search-1", "memory_search", """
-                {"query":"checkout timeout inventory TimeoutException payments-api /checkout known incident runbook"}
-                """)]);
+            return MockAiModelResponseFactory.CreateResponse(request, "Search incident memory.", [MockAiModelResponseFactory.ToolCall(
+                "incidentcompass-memory-search-1",
+                "memory_search",
+                MockIncidentCompassMemoryQuery.CreateSearchArguments(request))]);
         }
 
         var toolResult = request.Messages.Last(static message => message.Role == AiMessageRole.Tool).Content;

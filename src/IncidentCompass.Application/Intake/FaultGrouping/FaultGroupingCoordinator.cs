@@ -20,22 +20,17 @@ public sealed class FaultGroupingCoordinator(
     {
         var settings = configuration.FaultGrouping;
         var now = timeProvider.GetUtcNow();
-
         if (draftSignal.FingerprintStrength == FingerprintStrength.Weak)
         {
             return await CreateNewFaultAsync(draftSignal, recurrenceOfFaultId: null, configuration, now, cancellationToken);
         }
-
         var openFault = await faultRepository.FindOpenFaultAsync(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
             draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken);
         if (openFault is not null)
         {
-            var finalSignal = draftSignal with { FaultId = openFault.Id };
-            await signalRepository.InsertAsync(finalSignal, cancellationToken);
-            return new FaultGroupingOutcome(openFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
+            return await AttachToOpenFaultAsync(draftSignal, openFault, configuration, cancellationToken);
         }
-
         var closedFault = await faultRepository.FindMostRecentClosedFaultAsync(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
             draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken);
@@ -53,10 +48,25 @@ public sealed class FaultGroupingCoordinator(
             await signalRepository.InsertAsync(finalSignal, cancellationToken);
             return new FaultGroupingOutcome(closedFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: true);
         }
-
         return await CreateNewFaultAsync(draftSignal, closedFault?.Id, configuration, now, cancellationToken);
     }
 
+    private async Task<FaultGroupingOutcome> AttachToOpenFaultAsync(
+        Signal draftSignal,
+        Fault openFault,
+        TriageConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        return await intakeUnitOfWork.ExecuteAsync(
+            async currentCancellationToken =>
+            {
+                var finalSignal = draftSignal with { FaultId = openFault.Id };
+                await signalRepository.InsertAsync(finalSignal, currentCancellationToken);
+                await RefreshOpenFaultNeighborSetAsync(openFault, finalSignal, configuration, currentCancellationToken);
+                return new FaultGroupingOutcome(openFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
+            },
+            cancellationToken);
+    }
     private async Task<FaultGroupingOutcome> CreateNewFaultAsync(
         Signal draftSignal,
         Guid? recurrenceOfFaultId,
@@ -104,7 +114,7 @@ public sealed class FaultGroupingCoordinator(
         var insertedFault = await faultRepository.TryInsertAsync(candidateFault, cancellationToken);
         if (insertedFault is null)
         {
-            var winningFault = await AttachToRaceWinnerAsync(draftSignal, cancellationToken);
+            var winningFault = await AttachToRaceWinnerAsync(draftSignal, configuration, cancellationToken);
             return new FaultGroupingOutcome(winningFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
         }
 
@@ -122,16 +132,48 @@ public sealed class FaultGroupingCoordinator(
 
         return new FaultGroupingOutcome(fault, job, IsNewFault: true, IsNewJob: true, IsSuppressed: false);
     }
-
-    private async Task<Fault> AttachToRaceWinnerAsync(Signal draftSignal, CancellationToken cancellationToken)
+    private async Task<Fault> AttachToRaceWinnerAsync(
+        Signal draftSignal,
+        TriageConfiguration configuration,
+        CancellationToken cancellationToken)
     {
-        // Lost the race to a concurrent strong-signal insert; re-read the winner and attach there instead.
         var winningFault = await faultRepository.FindOpenFaultAsync(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
             draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken)
             ?? throw new InvariantViolationException("Lost the fault-creation race but no open fault was found afterward.");
         await signalRepository.AttachToFaultAsync(draftSignal.Id, winningFault.Id, cancellationToken);
+        await RefreshOpenFaultNeighborSetAsync(
+            winningFault,
+            draftSignal with { FaultId = winningFault.Id },
+            configuration,
+            cancellationToken);
         return winningFault;
+    }
+
+    private async Task RefreshOpenFaultNeighborSetAsync(
+        Fault openFault,
+        Signal finalSignal,
+        TriageConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var job = await triageJobRepository.FindByFaultIdAsync(openFault.Id, cancellationToken);
+        if (job is null || job.Status is TriageJobStatus.Succeeded or TriageJobStatus.Failed or TriageJobStatus.DeadLettered)
+        {
+            return;
+        }
+
+        var neighborCount = finalSignal.CanGroup
+            ? await CountNeighborsAsync(finalSignal, configuration.FaultGrouping, cancellationToken)
+            : 0;
+        var isMassIssue = DetermineIsMassIssue(finalSignal, neighborCount, configuration.FaultGrouping);
+        await groundedFactsAssembler.ReplaceNeighborSetAsync(
+            job,
+            openFault,
+            finalSignal,
+            neighborCount,
+            isMassIssue,
+            configuration.FaultGrouping,
+            cancellationToken);
     }
 
     private async Task<int> CountNeighborsAsync(Signal draftSignal, FaultGroupingSettings settings, CancellationToken cancellationToken)

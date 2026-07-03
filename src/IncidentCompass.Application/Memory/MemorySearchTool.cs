@@ -84,16 +84,18 @@ internal sealed class MemorySearchTool(
             new EmbeddingRequest(query, route.Model, context.Job.Id.ToString()),
             cancellationToken);
 
-        var matches = await memoryRepository.SearchAsync(
-            new MemorySearchRequest(
-                context.TenantId,
-                embedding.Provider,
-                embedding.Model,
-                embedding.Vector.Count,
-                embedding.Vector,
-                NormalizeTopK(toolSettings.TopK),
-                NormalizeMinScore(toolSettings.MinScore)),
-            cancellationToken);
+        var matches = MemorySearchLexicalFilter.Apply(
+            query,
+            await memoryRepository.SearchAsync(
+                new MemorySearchRequest(
+                    context.TenantId,
+                    embedding.Provider,
+                    embedding.Model,
+                    embedding.Vector.Count,
+                    embedding.Vector,
+                    NormalizeTopK(toolSettings.TopK),
+                    NormalizeMinScore(toolSettings.MinScore)),
+                cancellationToken));
 
         var artifacts = matches
             .Select(match => CreateRetrievedArtifact(context.Job, embedding, match))

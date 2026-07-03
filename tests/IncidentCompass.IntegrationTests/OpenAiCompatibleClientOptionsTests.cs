@@ -44,6 +44,28 @@ public sealed class OpenAiCompatibleClientOptionsTests
         Assert.Equal(expectedEndpoint, endpointUri!.ToString().TrimEnd('/'));
     }
 
+    [Fact]
+    public void ModelClientOptions_AllowsHostDockerInternalWhenLoopbackOverrideIsEnabled()
+    {
+        var allowed = new OpenAiCompatibleModelClientOptions
+        {
+            ApiKey = "test-api-key",
+            BaseUrl = "http://host.docker.internal:1234",
+            AllowInsecureHttpForLoopback = true
+        };
+        var denied = new OpenAiCompatibleModelClientOptions
+        {
+            ApiKey = "test-api-key",
+            BaseUrl = "http://host.docker.internal:1234"
+        };
+
+        Assert.True(allowed.TryCreateEndpointUri(out var endpointUri));
+        Assert.True(allowed.IsValid());
+        Assert.Equal("http://host.docker.internal:1234/v1/chat/completions", endpointUri!.ToString().TrimEnd('/'));
+        Assert.False(denied.TryCreateEndpointUri(out _));
+        Assert.False(denied.IsValid());
+    }
+
     [Theory]
     [InlineData("https://provider.example/v1/chat/completions")]
     [InlineData("//provider.example/v1/chat/completions")]

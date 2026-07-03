@@ -182,17 +182,21 @@ public sealed class FaultGroupingCoordinatorTests
     }
 
     [Fact]
-    public async Task ResolveAsync_AttachBranch_DoesNotInvokeGroundedFactsAssembler()
+    public async Task ResolveAsync_AttachBranch_RefreshesOpenFaultNeighborSet()
     {
         var (coordinator, _, _, _, artifacts) = CreateHarness();
-        var configuration = CreateConfiguration();
+        var configuration = CreateConfiguration(minNeighborCount: 2);
 
-        await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+        await coordinator.ResolveAsync(CreateDraftSignal(externalId: "first"), configuration, CancellationToken.None);
         artifacts.Inserted.Clear();
 
-        await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+        await coordinator.ResolveAsync(CreateDraftSignal(externalId: "second"), configuration, CancellationToken.None);
 
         Assert.Empty(artifacts.Inserted);
+        var replacement = Assert.Single(artifacts.Replaced);
+        Assert.Equal(ArtifactKind.NeighborSet, replacement.Kind);
+        Assert.Equal(2, replacement.RedactedPayload.GetProperty("neighborCount").GetInt32());
+        Assert.True(replacement.RedactedPayload.GetProperty("isMassIssue").GetBoolean());
     }
 
     private static (
@@ -432,9 +436,17 @@ public sealed class FaultGroupingCoordinatorTests
     {
         public List<TriageArtifact> Inserted { get; } = [];
 
+        public List<TriageArtifact> Replaced { get; } = [];
+
         public Task InsertAsync(TriageArtifact artifact, CancellationToken cancellationToken)
         {
             Inserted.Add(artifact);
+            return Task.CompletedTask;
+        }
+
+        public Task ReplaceJobLevelAsync(TriageArtifact artifact, CancellationToken cancellationToken)
+        {
+            Replaced.Add(artifact);
             return Task.CompletedTask;
         }
     }

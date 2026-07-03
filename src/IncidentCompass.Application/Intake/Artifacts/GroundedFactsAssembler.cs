@@ -25,6 +25,19 @@ public sealed class GroundedFactsAssembler(
         await InsertPriorReportArtifactIfRecurrenceAsync(job, fault, cancellationToken);
     }
 
+    public async Task ReplaceNeighborSetAsync(
+        TriageJob job,
+        Fault fault,
+        Signal triggerSignal,
+        int neighborCount,
+        bool? isMassIssue,
+        FaultGroupingSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var artifact = CreateNeighborSetArtifact(job, fault, triggerSignal, neighborCount, isMassIssue, settings);
+        await artifactRepository.ReplaceJobLevelAsync(artifact, cancellationToken);
+    }
+
     private async Task InsertTriggerSignalArtifactAsync(TriageJob job, Signal triggerSignal, CancellationToken cancellationToken)
     {
         var payload = new JsonObject
@@ -52,6 +65,18 @@ public sealed class GroundedFactsAssembler(
         FaultGroupingSettings settings,
         CancellationToken cancellationToken)
     {
+        var artifact = CreateNeighborSetArtifact(job, fault, triggerSignal, neighborCount, isMassIssue, settings);
+        await artifactRepository.InsertAsync(artifact, cancellationToken);
+    }
+
+    private TriageArtifact CreateNeighborSetArtifact(
+        TriageJob job,
+        Fault fault,
+        Signal triggerSignal,
+        int neighborCount,
+        bool? isMassIssue,
+        FaultGroupingSettings settings)
+    {
         var payload = new JsonObject
         {
             ["neighborCount"] = neighborCount,
@@ -63,7 +88,7 @@ public sealed class GroundedFactsAssembler(
             ["fingerprintStrength"] = triggerSignal.FingerprintStrength.ToString(),
         };
 
-        await InsertArtifactAsync(job.Id, attempt: null, ArtifactKind.NeighborSet, $"fault:{fault.Id}", payload, cancellationToken);
+        return CreateArtifact(job.Id, attempt: null, ArtifactKind.NeighborSet, $"fault:{fault.Id}", payload);
     }
 
     private async Task InsertPriorReportArtifactIfRecurrenceAsync(TriageJob job, Fault fault, CancellationToken cancellationToken)
@@ -98,9 +123,20 @@ public sealed class GroundedFactsAssembler(
         JsonObject payload,
         CancellationToken cancellationToken)
     {
+        var artifact = CreateArtifact(jobId, attempt, kind, domainRef, payload);
+        await artifactRepository.InsertAsync(artifact, cancellationToken);
+    }
+
+    private TriageArtifact CreateArtifact(
+        Guid jobId,
+        int? attempt,
+        ArtifactKind kind,
+        string domainRef,
+        JsonObject payload)
+    {
         var canonicalPayload = CanonicalJsonSerializer.Canonicalize(payload);
         using var payloadDocument = JsonDocument.Parse(payload.ToJsonString());
-        var artifact = new TriageArtifact(
+        return new TriageArtifact(
             Id: Guid.NewGuid(),
             JobId: jobId,
             Attempt: attempt,
@@ -109,7 +145,5 @@ public sealed class GroundedFactsAssembler(
             RedactedPayload: payloadDocument.RootElement.Clone(),
             ContentHash: CanonicalJsonSerializer.ComputeSha256Hex(canonicalPayload),
             CreatedAtUtc: timeProvider.GetUtcNow());
-
-        await artifactRepository.InsertAsync(artifact, cancellationToken);
     }
 }
