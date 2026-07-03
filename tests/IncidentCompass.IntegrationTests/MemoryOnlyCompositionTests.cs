@@ -6,6 +6,8 @@ using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Application.Investigation.Reports.Get;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
@@ -49,6 +51,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageArtifactRepository, InMemoryTriageArtifactRepository>();
         services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
+        services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
 
@@ -225,9 +228,16 @@ public sealed class MemoryOnlyCompositionTests
             Task.CompletedTask;
     }
 
+    private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
+    {
+        public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>
+            Task.FromResult<TriageReportDetailsResponse?>(null);
+    }
+
     private sealed class InMemoryPriorReportSummaryProvider : IPriorReportSummaryProvider
     {
         public Task<PriorReportSummary?> FindLatestAsync(Guid faultId, CancellationToken cancellationToken) =>
             Task.FromResult<PriorReportSummary?>(null);
     }
 }
+

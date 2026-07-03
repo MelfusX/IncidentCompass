@@ -173,6 +173,7 @@ public static class Setup
         services.TryAddScoped<ITriageLedgerReader, PostgresTriageLedgerReader>();
         services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
         services.TryAddScoped<ITriageReportRepository, PostgresTriageReportRepository>();
+        services.TryAddScoped<ITriageReportReadRepository, PostgresTriageReportReadRepository>();
         services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
 
         return services;

@@ -83,6 +83,7 @@ public sealed class GroundedFactsAssembler(
         {
             ["summary"] = prior.Summary,
             ["limitations"] = new JsonArray(prior.Limitations.Select(limitation => JsonValue.Create(limitation) as JsonNode).ToArray()),
+            ["trust"] = "untrusted-prior-hypothesis",
         };
 
         var domainRef = prior.ReportId is Guid reportId ? $"report:{reportId}" : $"fault:{recurrenceOfFaultId}";

@@ -1,4 +1,6 @@
+using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Reports.Get;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -12,6 +14,7 @@ internal static class InvestigationSetup
         services.TryAddScoped<IClaimedTriageJobProcessor, DeferredClaimedTriageJobProcessor>();
         services.TryAddScoped<ITriageToolResultCommitFaultInjector, NoopTriageToolResultCommitFaultInjector>();
         services.TryAddScoped<ITriageReportFinalCommitFaultInjector, NoopTriageReportFinalCommitFaultInjector>();
+        services.TryAddScoped<IRequestHandler<GetTriageReportQuery, TriageReportDetailsResponse>, GetTriageReportQueryHandler>();
 
         return services;
     }

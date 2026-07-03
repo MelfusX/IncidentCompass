@@ -38,6 +38,7 @@ public sealed class GroundedFactsAssemblerTests
         Assert.Equal(3, artifacts.Inserted.Count);
         var priorReportArtifact = Assert.Single(artifacts.Inserted, a => a.Kind == ArtifactKind.PriorReport);
         Assert.Equal("Prior summary text", priorReportArtifact.RedactedPayload.GetProperty("summary").GetString());
+        Assert.Equal("untrusted-prior-hypothesis", priorReportArtifact.RedactedPayload.GetProperty("trust").GetString());
     }
 
     [Fact]
@@ -198,3 +199,4 @@ public sealed class GroundedFactsAssemblerTests
             Task.FromResult(summary);
     }
 }
+

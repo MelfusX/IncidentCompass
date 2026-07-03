@@ -35,10 +35,11 @@ internal static class IntakeSetup
         services.TryAddScoped<ITriageJobRepository, PostgresTriageJobRepository>();
         services.TryAddScoped<ITriageJobRuntimeRepository, PostgresTriageJobRuntimeRepository>();
         services.TryAddScoped<ITriageArtifactRepository, PostgresTriageArtifactRepository>();
-        services.TryAddScoped<IPriorReportSummaryProvider, NoPriorReportSummaryProvider>();
+        services.TryAddScoped<IPriorReportSummaryProvider, PostgresPriorReportSummaryProvider>();
 
         services.AddHostedService<TriageConfigurationWarmupHostedService>();
 
         return services;
     }
 }
+
