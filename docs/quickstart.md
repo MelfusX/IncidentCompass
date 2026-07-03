@@ -61,6 +61,20 @@ tool audit logging, Phase 1 intake tables (`signals`, `faults`, `triage_jobs`,
 Docker volume, recreate it with `docker compose down -v` or apply the missing
 numbered SQL scripts manually.
 
+
+### Optional Memory Seed
+
+Phase 4 includes sample memory under `samples/runbooks` and `samples/incidents`. To seed it into local PostgreSQL, start either host once with memory seeding enabled; the seed path uses the configured `memory_search` embedding route and the pinned mock model `mock-memory-embedding-v1` by default.
+
+```powershell
+$env:IncidentCompass__Memory__Seed__Enabled = "true"
+$env:IncidentCompass__Memory__Seed__TenantId = "local"
+$env:IncidentCompass__Memory__Seed__SourceDirectory = "../../samples"
+$env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=incidentcompass;Username=incidentcompass;Password=incidentcompass_dev_password"
+dotnet run --project src/IncidentCompass.Api --launch-profile http
+```
+
+After the seed completes, stop the host and unset `IncidentCompass__Memory__Seed__Enabled` for normal runs. Seeding is idempotent for the same tenant/source/content hash/version.
 Run the API:
 
 ```powershell
@@ -183,7 +197,7 @@ OpenAI-compatible provider URLs must use HTTPS by default. For a local loopback
 test server only, set
 `IncidentCompass__ModelGateway__OpenAiCompatible__AllowInsecureHttpForLoopback=true`.
 
-The model gateway is exercised by the Worker investigation loop after an incident is ingested. The embedding gateway remains adapter-level only in this phase because the memory/RAG worker is later work. There is no chat or document-ingestion endpoint.
+The model gateway is exercised by the Worker investigation loop after an incident is ingested. The embedding gateway is exercised by the governed `memory_search` worker tool. There is still no chat or document-ingestion endpoint.
 
 ## Demo Flow Checklist
 
@@ -191,8 +205,9 @@ The model gateway is exercised by the Worker investigation loop after an inciden
 2. Set `ConnectionStrings__IncidentCompass` in the API terminal.
 3. `dotnet run --project src/IncidentCompass.Api --launch-profile http`
 4. Set `ConnectionStrings__IncidentCompass` in the Worker terminal.
-5. `dotnet run --project src/IncidentCompass.Worker`
-6. `GET /api/v1/health`
-7. `GET /api/v1/users/me`
-8. `POST /api/v1/incidents`
-9. `GET /api/v1/faults/{id}`
+5. Optional once: enable `IncidentCompass__Memory__Seed__Enabled=true` to seed sample memory, then disable it.
+6. `dotnet run --project src/IncidentCompass.Worker`
+7. `GET /api/v1/health`
+8. `GET /api/v1/users/me`
+9. `POST /api/v1/incidents`
+10. `GET /api/v1/faults/{id}`

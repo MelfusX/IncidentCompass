@@ -23,6 +23,7 @@ flowchart LR
   - `Governance/`: backend-governed tool-execution contracts, tool policy/audit orchestration, validation primitives and the durable triage ledger append contract.
   - `Intake/`: source normalization, input limits, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts for the Phase 1 ingestion flow.
   - `Investigation/`: Worker job claim/runtime seams that rehydrate claimed jobs by config hash and hand them to the governed investigation processor.
+  - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, sanitized AI request logging, pricing/cost estimation and other adapters.
 - `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, leases and per-process `MaxConcurrentJobs`.
@@ -33,6 +34,12 @@ flowchart LR
 
 The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`) plus attempt-level `WorkerOutput` artifacts. Phase 2 adds `infra/postgres/init/008-triage-ledger.sql` for append-only DB-ordered triage events and `infra/postgres/init/009-triage-reports-minimal.sql` for the minimal report row that closes the job. The Worker claim loop leases pending/retryable jobs, rehydrates each job's triage configuration from `triage_config_snapshots` by `config_hash`, runs a governed orchestrator with only `delegate(role, task)` and `publish_report(report_json)`, validates `delegate.role` against the config-derived role set, executes workers sequentially, enforces per-attempt budget and bounded reprompt policy, evaluates worker-tool rules over the ledger, and flips the job/fault to terminal state on minimal report publication.
 
+
+## Phase 4 Memory Worker
+
+Phase 4 adds PostgreSQL-backed incident memory through `incidentcompass.memory_items` and `incidentcompass.memory_chunks`. Memory is seeded from sample runbooks and known incidents, embedded with the pinned mock embedding model by default, and searched only through the governed worker tool path. The `memory` role is the only shipped role granted `memory_search`; the orchestrator never searches memory directly.
+
+`memory_search` embeds the worker query through the tool's configured `EmbeddingRouteId`, then searches chunks with exact tenant, embedding provider, embedding model and embedding dimension filters before applying score and `TopK`. A model/provider/dimension mismatch returns an honest empty result instead of falling back to fuzzy retrieval. Successful matches are written as attempt-level `RetrievedItem` artifacts with `domain_ref = memory_item:<id>`, and those artifacts commit in the same transaction as the `ToolResult` artifact and ledger event.
 ## Rules
 
 - Domain must not depend on Application, Infrastructure, Api, Worker, provider SDKs or persistence libraries.
@@ -50,4 +57,4 @@ Follow `docs/code-organization.md` for maintainability guardrails. In short: kee
 
 ## Phase 3 Governance Rails
 
-Phase 3 keeps the system a layered monolith and adds the product-core governance rails around worker tools. Worker roles receive only registered backend tools that are both configured and granted to that role. Proposed worker calls are recorded as `ToolProposed`, evaluated by a generic rule engine over current-attempt ledger state by default, recorded as `PolicyDecision`, and successful executions commit a `ToolResult` artifact plus `ToolResult` ledger event atomically. `ToolResult` status and `BudgetEvent` deltas are stored in first-class ledger state, not parsed from rationale text. Configured rule scopes are limited to `attempt` and `job` for the MVP; `fault` scope remains deferred. The shipped config still has no live worker tool implementation until Phase 4 memory search; synthetic `tool_x`/`tool_y` exist only in integration-test composition.
+Phase 3 keeps the system a layered monolith and adds the product-core governance rails around worker tools. Worker roles receive only registered backend tools that are both configured and granted to that role. Proposed worker calls are recorded as `ToolProposed`, evaluated by a generic rule engine over current-attempt ledger state by default, recorded as `PolicyDecision`, and successful executions commit a `ToolResult` artifact plus `ToolResult` ledger event atomically. `ToolResult` status and `BudgetEvent` deltas are stored in first-class ledger state, not parsed from rationale text. Configured rule scopes are limited to `attempt` and `job` for the MVP; `fault` scope remains deferred. The shipped config now has one live worker tool, `memory_search`; synthetic `tool_x`/`tool_y` exist only in integration-test composition for cross-tool governance cases.

@@ -1,8 +1,13 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
+using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Memory;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,10 +18,19 @@ namespace IncidentCompass.IntegrationTests;
 [Collection(PostgresRepositoryCollection.CollectionName)]
 public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixture postgres)
 {
+    private const string MemoryModel = "mock-memory-embedding-v1";
+
     [RealLocalLlmSmokeFact]
     public async Task RealLocalModel_ReachesPublishReportAtMeasuredRate()
     {
         var settings = RealLocalLlmSmokeSettings.FromEnvironment();
+        var endpoint = await ProbeEndpointAsync(settings);
+        if (!endpoint.IsReachable)
+        {
+            await WriteNotExecutedResultAsync(settings, endpoint.Detail);
+            return;
+        }
+
         var configPath = await CreateSmokeConfigurationAsync(settings.Model);
         using var scope = await CreateScopeAsync(configPath, settings);
         var outcomes = new List<SmokeOutcome>();
@@ -61,10 +75,13 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
 
             var job = await ReadJobAsync(scope.ConnectionString, claimed.Id);
             var report = await ReadReportOrNullAsync(scope.ConnectionString, ingested.FaultId);
-            var reached = job.Status == "Succeeded" && report is not null;
+            var memoryWorkerReached = await DidMemoryWorkerProduceOutputAsync(scope.ConnectionString, claimed.Id);
+            var memorySearchSucceeded = await DidMemorySearchSucceedAsync(scope.ConnectionString, claimed.Id);
+            var reached = job.Status == "Succeeded" && report is not null && memoryWorkerReached && memorySearchSucceeded;
             var detail = reached
-                ? "publish_report_reached"
-                : job.Status + FormatFailure(job.LastErrorCode, job.LastErrorMessage);
+                ? "delegate_memory_memory_search_publish_report_reached"
+                : job.Status + FormatFailure(job.LastErrorCode, job.LastErrorMessage) +
+                  FormatTrajectoryFailure(report is not null, memoryWorkerReached, memorySearchSucceeded);
             return new SmokeOutcome(index, reached, detail);
         }
         catch (Exception exception)
@@ -79,6 +96,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
     {
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
+        await ClearMemoryAsync(connectionString);
 
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -91,11 +109,14 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:AllowInsecureHttpForLoopback", "true");
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:TimeoutSeconds", settings.TimeoutSeconds.ToString());
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:MaxRetryAttempts", "0");
+            builder.UseSetting("IncidentCompass:Embeddings:Provider", "Mock");
+            builder.UseSetting("IncidentCompass:Embeddings:DefaultModel", MemoryModel);
         });
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("https://localhost")
         });
+        await SeedCheckoutRunbookAsync(factory);
 
         return new TestScope(factory, client, connectionString);
     }
@@ -107,13 +128,20 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         Directory.CreateDirectory(Path.Combine(directory, "schemas"));
 
         await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "orchestrator.md"), """
-            You are the IncidentCompass Phase 3 smoke orchestrator. /no_think You have only delegate and publish_report.
-            First call delegate with role analysis and a short task. After the tool result, call publish_report with report_json.
+            You are the IncidentCompass Phase 4 smoke orchestrator. /no_think You have only delegate and publish_report.
+            First call delegate with role analysis and a short task. After the analysis result, call delegate with role memory and ask it to search for checkout timeout runbook context.
+            Do not call publish_report until the memory worker has returned. Then call publish_report with report_json.
             The report_json status must be Completed or InsufficientEvidence, summary must be non-empty, classification must be one of KnownIncident, LikelyRegression, SimpleKnownError, Unknown, or Noise, and confidence must be Low, Medium, or High.
             """);
         await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "analysis.md"), """
             You are the analysis worker. /no_think Return only JSON with keyFacts, candidateClassification, needsDeeperContext, and optional rationale. keyFacts must be an array of plain strings, never objects.
-            Use SimpleKnownError when the trigger signal describes a timeout; use Unknown when there is not enough evidence.
+            Use SimpleKnownError when the trigger signal describes a timeout. Set needsDeeperContext to true for checkout timeout, inventory timeout, or unknown cases.
+            """);
+        await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "memory.md"), """
+            You are the memory worker. /no_think First call memory_search with a concise query about checkout TimeoutException, /checkout, and inventory latency.
+            After memory_search returns, return only JSON matching your schema. Copy artifactId values exactly from memory_search result items. Use matched false and an honest noMatchReason when memory_search returns no items.
+            The artifactId belongs inside each items[] element, never at the top level.
+            Example: {"matched": true, "items": [{"artifactId": "<from memory_search result>", "title": "Checkout Timeout Runbook", "quote": "Checkout requests time out while waiting on inventory.", "score": 0.87}], "noMatchReason": null}
             """);
         await File.WriteAllTextAsync(Path.Combine(directory, "schemas", "analysis.json"), """
             {
@@ -128,6 +156,12 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
               "required": ["keyFacts", "candidateClassification", "needsDeeperContext"]
             }
             """);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, "schemas", "memory.json"),
+            await File.ReadAllTextAsync(
+                Path.Combine(FindRepositoryRoot(), "config", "schemas", "memory.json"),
+                TestContext.Current.CancellationToken),
+            TestContext.Current.CancellationToken);
 
         var config = new JsonObject
         {
@@ -148,7 +182,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
                 {
                     ["Kind"] = "Embedding",
                     ["ProviderId"] = "local-oai",
-                    ["Model"] = "unused-smoke-embedding"
+                    ["Model"] = MemoryModel
                 }
             },
             ["Orchestrator"] = new JsonObject
@@ -158,7 +192,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
                 ["Tools"] = new JsonArray("delegate", "publish_report"),
                 ["Budget"] = new JsonObject
                 {
-                    ["MaxWorkers"] = 1,
+                    ["MaxWorkers"] = 2,
                     ["MaxTokens"] = 12000,
                     ["MaxWallClockSeconds"] = 180,
                     ["MaxReprompts"] = 2
@@ -172,10 +206,32 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
                     ["Instructions"] = "ref:instructions/analysis.md",
                     ["Tools"] = new JsonArray(),
                     ["OutputSchema"] = "ref:schemas/analysis.json"
+                },
+                ["memory"] = new JsonObject
+                {
+                    ["RouteId"] = "analysis-chat",
+                    ["Instructions"] = "ref:instructions/memory.md",
+                    ["Tools"] = new JsonArray("memory_search"),
+                    ["OutputSchema"] = "ref:schemas/memory.json"
                 }
             },
-            ["Tools"] = new JsonObject(),
-            ["Rules"] = new JsonArray(),
+            ["Tools"] = new JsonObject
+            {
+                ["memory_search"] = new JsonObject
+                {
+                    ["Kind"] = "internal",
+                    ["EmbeddingRouteId"] = "memory-embed",
+                    ["TopK"] = 5,
+                    ["MinScore"] = 0.25
+                }
+            },
+            ["Rules"] = new JsonArray(new JsonObject
+            {
+                ["Type"] = "rate_cap",
+                ["Tool"] = "*",
+                ["Scope"] = "attempt",
+                ["Max"] = 50
+            }),
             ["Ingestion"] = new JsonObject
             {
                 ["DefaultTenant"] = "local",
@@ -195,7 +251,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         };
 
         var configPath = Path.Combine(directory, "incidentcompass.config.json");
-        await File.WriteAllTextAsync(configPath, config.ToJsonString());
+        await File.WriteAllTextAsync(configPath, config.ToJsonString(), TestContext.Current.CancellationToken);
         return configPath;
     }
 
@@ -263,6 +319,131 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         return status is null ? null : new ReportRow(status.ToString()!);
     }
 
+    private static async Task<bool> DidMemoryWorkerProduceOutputAsync(string connectionString, Guid jobId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM incidentcompass.triage_artifacts
+                WHERE job_id = @job_id
+                  AND kind = 'WorkerOutput'
+                  AND domain_ref = 'worker:memory');
+            """, connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private static async Task<bool> DidMemorySearchSucceedAsync(string connectionString, Guid jobId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1
+                FROM incidentcompass.triage_ledger
+                WHERE job_id = @job_id
+                  AND event_type = 'ToolResult'
+                  AND tool_name = 'memory_search'
+                  AND tool_status = 'Succeeded');
+            """, connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private static async Task ClearMemoryAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("DELETE FROM incidentcompass.memory_items;", connection);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task SeedCheckoutRunbookAsync(WebApplicationFactory<Program> factory)
+    {
+        using var serviceScope = factory.Services.CreateScope();
+        var embeddingClient = serviceScope.ServiceProvider.GetRequiredService<IEmbeddingClient>();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<IMemoryRepository>();
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(FindRepositoryRoot(), "samples", "runbooks", "checkout-timeout.md"),
+            TestContext.Current.CancellationToken);
+        var embedding = await embeddingClient.CreateEmbeddingAsync(
+            new EmbeddingRequest(content, MemoryModel, "real-llm-smoke-memory-seed"),
+            TestContext.Current.CancellationToken);
+        var item = new MemorySeedItem(
+            Guid.NewGuid(),
+            "local",
+            "runbook",
+            "samples/runbooks/checkout-timeout.md",
+            "Checkout Timeout Runbook",
+            content,
+            ComputeSha256Hex(content),
+            Version: 1,
+            ["checkout", "timeout"]);
+        var chunk = new MemorySeedChunk(
+            Guid.NewGuid(),
+            Position: 0,
+            content,
+            ComputeSha256Hex(content),
+            embedding.Provider,
+            embedding.Model,
+            embedding.Vector.Count,
+            embedding.Vector);
+
+        await repository.UpsertSeedAsync(item, [chunk], TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<EndpointProbeResult> ProbeEndpointAsync(RealLocalLlmSmokeSettings settings)
+    {
+        try
+        {
+            using var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(Math.Min(settings.TimeoutSeconds, 5))
+            };
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey);
+            using var response = await client.GetAsync(
+                CreateModelsEndpointUri(settings),
+                TestContext.Current.CancellationToken);
+            return new EndpointProbeResult(true, "models_probe_http_" + (int)response.StatusCode);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            return new EndpointProbeResult(false, "endpoint_unreachable (" + exception.GetType().Name + ")");
+        }
+    }
+
+    private static Uri CreateModelsEndpointUri(RealLocalLlmSmokeSettings settings)
+    {
+        const string chatSuffix = "/chat/completions";
+        var modelPath = settings.ChatCompletionsPath.EndsWith(chatSuffix, StringComparison.Ordinal)
+            ? settings.ChatCompletionsPath[..^chatSuffix.Length] + "/models"
+            : "/v1/models";
+        return new Uri(new Uri(settings.BaseUrl.TrimEnd('/') + "/"), modelPath.TrimStart('/'));
+    }
+
+    private static async Task WriteNotExecutedResultAsync(
+        RealLocalLlmSmokeSettings settings,
+        string reason)
+    {
+        var lines = new List<string>
+        {
+            "# Phase 4 Real Local LLM Memory Smoke Result",
+            "",
+            "- GeneratedUtc: " + DateTimeOffset.UtcNow.ToString("O"),
+            "- Status: not executed",
+            "- Reason: " + reason,
+            "- Endpoint: " + CreateModelsEndpointUri(settings),
+            "- ChatCompletionsPath: " + settings.ChatCompletionsPath,
+            "- Model: " + settings.Model,
+            "- Scenario: delegate -> memory -> memory_search -> publish_report"
+        };
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settings.ResultPath)!);
+        await File.WriteAllLinesAsync(settings.ResultPath, lines, TestContext.Current.CancellationToken);
+    }
+
     private static async Task WriteResultAsync(
         RealLocalLlmSmokeSettings settings,
         IReadOnlyCollection<SmokeOutcome> outcomes)
@@ -270,22 +451,25 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         var reached = outcomes.Count(static outcome => outcome.ReachedPublishReport);
         var lines = new List<string>
         {
-            "# Phase 3 Real Local LLM Smoke Result",
+            "# Phase 4 Real Local LLM Memory Smoke Result",
             "",
             "- GeneratedUtc: " + DateTimeOffset.UtcNow.ToString("O"),
+            "- Status: executed",
             "- Endpoint: " + settings.BaseUrl,
+            "- ModelsEndpoint: " + CreateModelsEndpointUri(settings),
             "- ChatCompletionsPath: " + settings.ChatCompletionsPath,
             "- Model: " + settings.Model,
             "- Runs: " + outcomes.Count,
-            "- publish_report reach-rate: " + reached + "/" + outcomes.Count,
+            "- Scenario: delegate -> memory -> memory_search -> publish_report",
+            "- full trajectory reach-rate: " + reached + "/" + outcomes.Count,
             "",
             "## Outcomes"
         };
 
         lines.AddRange(outcomes.Select(static outcome =>
-            "- Run " + outcome.RunIndex + ": " + (outcome.ReachedPublishReport ? "reached" : "missed") + " — " + outcome.Detail));
+            "- Run " + outcome.RunIndex + ": " + (outcome.ReachedPublishReport ? "reached" : "missed") + " - " + outcome.Detail));
         Directory.CreateDirectory(Path.GetDirectoryName(settings.ResultPath)!);
-        await File.WriteAllLinesAsync(settings.ResultPath, lines);
+        await File.WriteAllLinesAsync(settings.ResultPath, lines, TestContext.Current.CancellationToken);
     }
 
     private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable
@@ -299,6 +483,8 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
 
     private sealed record SmokeOutcome(int RunIndex, bool ReachedPublishReport, string Detail);
 
+    private sealed record EndpointProbeResult(bool IsReachable, string Detail);
+
     private static string FormatFailure(string? code, string? message)
     {
         if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(message))
@@ -307,6 +493,37 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         }
 
         return " (" + code + ": " + message + ")";
+    }
+
+    private static string FormatTrajectoryFailure(
+        bool reportWritten,
+        bool memoryWorkerReached,
+        bool memorySearchSucceeded)
+    {
+        return " trajectory(report=" + reportWritten +
+               ", memory_worker=" + memoryWorkerReached +
+               ", memory_search=" + memorySearchSucceeded + ")";
+    }
+
+    private static string ComputeSha256Hex(string value)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    }
+
+    private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")
+    {
+        var directory = new FileInfo(sourceFilePath).Directory;
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not find repository root.");
     }
 
     private sealed record JobRow(string Status, string? LastErrorCode, string? LastErrorMessage);
@@ -374,7 +591,7 @@ internal sealed record RealLocalLlmSmokeSettings(
             ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS", 3),
             ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_LEASE_SECONDS", 180),
             ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS", 120),
-            Path.GetFullPath(Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH", Path.Combine("docs", "phase-2-real-llm-smoke-result.md"))));
+            Path.GetFullPath(Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH", Path.Combine(FindRepositoryRoot(), "docs", "phase-4-real-llm-smoke-result.md"))));
     }
 
     private static string Read(string name, string fallback)
@@ -387,5 +604,21 @@ internal sealed record RealLocalLlmSmokeSettings(
     {
         var value = Environment.GetEnvironmentVariable(name);
         return int.TryParse(value, out var parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not find repository root.");
     }
 }

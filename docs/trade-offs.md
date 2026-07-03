@@ -55,3 +55,7 @@ Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the app
 ## Token Budget Overshoot
 
 `MaxTokens` means the backend will not start a new model call once the current-attempt budget is already reached. A single in-flight call can still overshoot the limit because final usage is known only after the provider responds. The overshoot is recorded as a `BudgetEvent` instead of hidden.
+
+## Memory Embedding Model Changes Require Re-Embedding
+
+Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. The deterministic demo pins `mock-memory-embedding-v1` for `memory-embed`; any real provider/model change should be paired with a full memory re-seed or migration.

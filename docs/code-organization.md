@@ -65,7 +65,7 @@ IncidentCompass.Application/
     Validation/
 ```
 
-`Core/`, `Governance/`, `Intake/` and `Investigation/` are the current folders. `Memory/` is reserved for a later phase and does not exist yet.
+`Core/`, `Governance/`, `Intake/`, `Investigation/` and `Memory/` are the current folders. `Memory/` contains memory_search contracts, seed records and retrieval orchestration; keep storage details in Infrastructure.
 
 Use `Query.cs` instead of `Command.cs` when the use case is read-only. Avoid repeating the full folder context in file names, such as `GetCurrentUserQuery.cs`, when `Users/GetCurrent/Query.cs` already communicates the intent.
 

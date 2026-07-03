@@ -5,10 +5,10 @@ orchestrator delegates to scoped workers under policy/audit/budget rails, and th
 system produces a grounded report.
 
 This is reference-quality software, not a production system. This snapshot includes the
-Phase 0 repository bootstrap, Phase 1 intake, the Phase 2 governed investigation loop and Phase 3 governance rails:
+Phase 0 repository bootstrap, Phase 1 intake, the Phase 2 governed investigation loop, Phase 3 governance rails and Phase 4 memory worker:
 typed triage configuration rehydration, a durable triage ledger writer, a bounded Worker
-claim loop, deterministic analysis delegation and a minimal `publish_report` closeout. The
-full grounded report pipeline remains later Phase 5 work.
+claim loop, deterministic analysis and memory delegation, governed `memory_search`, and a minimal
+`publish_report` closeout. The full grounded report pipeline remains later Phase 5 work.
 
 ## What This Is
 
@@ -21,8 +21,7 @@ full grounded report pipeline remains later Phase 5 work.
   grounded intake artifacts.
 - A governed tool-execution/policy/audit subsystem (`Governance`): typed tool schemas,
   backend policy decisions (allow/require-approval/forbid), a durable triage ledger writer
-  and an older standalone tool-audit log writer. The Phase 2 investigation loop uses the
-  ledger for `Delegated`, `WorkerCompleted` and `ReportPublished` events.
+  and an older standalone tool-audit log writer. The Worker path records `Delegated`, `WorkerCompleted`, `ToolProposed`, `PolicyDecision`, `ToolResult` and `ReportPublished` events.
 - Sanitized AI-request logging, cost estimation, and generic dispatch/health/security/user
   scaffolding over PostgreSQL.
 
@@ -53,10 +52,10 @@ flowchart LR
 `Governance/` (tool-execution policy plus the triage ledger), `Intake/` (signal
 normalization, redaction, fingerprinting, fault grouping and triage-job orchestration) and
 `Investigation/` (Worker claim/runtime orchestration, config rehydration and the governed
-Phase 2 processor) are populated today. `Memory/` remains reserved for later phases.
+processor) and `Memory/` (memory search contracts, seed records and `memory_search`) are populated today.
 `Infrastructure` implements persistence and provider adapters. `Api` maps HTTP input/output
 only. `Worker` polls PostgreSQL, claims bounded triage jobs and runs the configured
-orchestrator with only `delegate` and `publish_report` available.
+orchestrator with only `delegate` and `publish_report` available. The memory role can call only the governed `memory_search` worker tool.
 
 Start here:
 
