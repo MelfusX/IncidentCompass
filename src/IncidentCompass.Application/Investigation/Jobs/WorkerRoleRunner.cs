@@ -47,7 +47,7 @@ internal sealed class WorkerRoleRunner(
 
             try
             {
-                AnalysisWorkerOutputSchemaValidator.Validate(response.Content, role.OutputSchema);
+                AnalysisWorkerOutputSchemaValidator.Validate(response.Content, role.OutputSchema, roleName);
                 return response.Content;
             }
             catch (Exception exception) when (exception is InvalidOperationException or System.Text.Json.JsonException)
@@ -63,7 +63,7 @@ internal sealed class WorkerRoleRunner(
                 messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content));
                 messages.Add(new AiChatMessage(
                     AiMessageRole.User,
-                    "Validation error: " + exception.Message + " Return only JSON matching the configured schema. keyFacts must be an array of plain strings."));
+                    "Validation error: " + exception.Message + " Return only JSON matching the configured schema."));
             }
         }
 

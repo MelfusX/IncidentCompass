@@ -49,27 +49,19 @@ internal sealed class AnalysisDelegateExecutor(
             task,
             attemptStartedAtUtc,
             cancellationToken);
-        var output = AnalysisWorkerOutputParser.Parse(workerContent);
         var artifact = await InsertWorkerOutputArtifactAsync(job, roleName, workerContent, cancellationToken);
+        var delegateResult = WorkerDelegateResultFactory.Create(roleName, workerContent, artifact.Id);
 
         await ledgerAppender.AppendAsync(
             job,
             TriageLedgerEventType.WorkerCompleted,
             roleName,
             toolName: null,
-            output.Rationale,
+            delegateResult.Rationale,
             $"artifact:{artifact.Id}",
             cancellationToken);
 
-        return JsonSerializer.Serialize(new
-        {
-            role = roleName,
-            summary = output.Rationale ?? string.Join(" ", output.KeyFacts),
-            output.KeyFacts,
-            output.CandidateClassification,
-            output.NeedsDeeperContext,
-            artifactId = artifact.Id
-        });
+        return delegateResult.SerializedPayload;
     }
 
     private async Task EnsureWorkerBudgetAsync(

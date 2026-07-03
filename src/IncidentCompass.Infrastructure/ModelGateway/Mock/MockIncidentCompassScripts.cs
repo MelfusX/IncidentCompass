@@ -1,0 +1,151 @@
+using IncidentCompass.Application.Core.ModelClients;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace IncidentCompass.Infrastructure.ModelGateway.Mock;
+
+internal static class MockIncidentCompassScripts
+{
+    public static AiModelResponse OrchestratorResponse(AiModelRequest request)
+    {
+        var toolResults = request.Messages
+            .Where(static message => message.Role == AiMessageRole.Tool)
+            .Select(static message => message.Content)
+            .ToArray();
+        if (toolResults.Length == 0)
+        {
+            return MockAiModelResponseFactory.CreateResponse(request, "Delegate analysis first.", [MockAiModelResponseFactory.ToolCall("incidentcompass-delegate-analysis-1", "delegate", """
+                {"role":"analysis","task":"Extract key facts and say whether memory context is needed."}
+                """)]);
+        }
+
+        if (toolResults.Any(ContainsMemoryRoleResult))
+        {
+            return PublishAfterMemory(request, toolResults);
+        }
+
+        if (toolResults.Any(static value => value.Contains("\"needsDeeperContext\":true", StringComparison.OrdinalIgnoreCase)))
+        {
+            return MockAiModelResponseFactory.CreateResponse(request, "Delegate memory lookup.", [MockAiModelResponseFactory.ToolCall("incidentcompass-delegate-memory-1", "delegate", """
+                {"role":"memory","task":"Search memory for matching runbooks or known incidents using the trigger service, error type and message."}
+                """)]);
+        }
+
+        return MockAiModelResponseFactory.CreateResponse(request, "Publish after analysis.", [MockAiModelResponseFactory.ToolCall("incidentcompass-publish-report-1", "publish_report", """
+            {"report_json":{"status":"Completed","summary":"Mock analysis completed for the incident.","classification":"SimpleKnownError","confidence":"Medium","limitations":[],"recommendedNextAction":"Review the affected service logs and confirm the failure path."}}
+            """)]);
+    }
+
+    private static AiModelResponse PublishAfterMemory(AiModelRequest request, IReadOnlyList<string> toolResults)
+    {
+        var matched = toolResults.Any(static value => value.Contains("\"matched\":true", StringComparison.OrdinalIgnoreCase));
+        return MockAiModelResponseFactory.CreateResponse(request, "Publish after memory delegation.", [MockAiModelResponseFactory.ToolCall("incidentcompass-publish-report-1", "publish_report", matched ? """
+            {"report_json":{"status":"Completed","summary":"Mock memory lookup found relevant incident memory for the fault.","classification":"KnownIncident","confidence":"Medium","limitations":[],"recommendedNextAction":"Follow the retrieved checkout timeout runbook."}}
+            """ : """
+            {"report_json":{"status":"InsufficientEvidence","summary":"Mock memory lookup found no matching incident memory for the fault.","classification":"Unknown","confidence":"Low","limitations":["memory_search returned no matches"],"recommendedNextAction":"Collect more service logs and dependency health data."}}
+            """)]);
+    }
+
+    public static AiModelResponse MemoryWorkerResponse(AiModelRequest request, bool hasToolResult)
+    {
+        if (!hasToolResult)
+        {
+            return MockAiModelResponseFactory.CreateResponse(request, "Search incident memory.", [MockAiModelResponseFactory.ToolCall("incidentcompass-memory-search-1", "memory_search", """
+                {"query":"checkout timeout inventory TimeoutException payments-api /checkout known incident runbook"}
+                """)]);
+        }
+
+        var toolResult = request.Messages.Last(static message => message.Role == AiMessageRole.Tool).Content;
+        return MockAiModelResponseFactory.CreateResponse(request, MemoryWorkerJson(toolResult), []);
+    }
+
+    public static bool IsIncidentCompassOrchestratorRequest(AiModelRequest request)
+    {
+        var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
+        return toolNames.SetEquals(["delegate", "publish_report"]);
+    }
+
+    public static bool IsAnalysisWorkerRequest(AiModelRequest request)
+    {
+        if (request.Tools is { Count: > 0 })
+        {
+            return false;
+        }
+
+        return request.Messages.Any(static message =>
+            message.Role == AiMessageRole.System &&
+            message.Content.Contains("analysis", StringComparison.OrdinalIgnoreCase) &&
+            message.Content.Contains("worker", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static bool IsMemoryWorkerRequest(AiModelRequest request)
+    {
+        var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
+        return toolNames.SetEquals(["memory_search"]);
+    }
+
+    public static string AnalysisWorkerJson(string message)
+    {
+        var needsMemory = message.Contains("Timeout", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("NullReference", StringComparison.OrdinalIgnoreCase);
+        var summary = needsMemory
+            ? "The trigger signal should be checked against incident memory."
+            : "The trigger signal contains enough grounded intake facts for a first classification.";
+
+        return JsonSerializer.Serialize(new
+        {
+            keyFacts = new[] { summary, "The analysis worker used only grounded intake context." },
+            candidateClassification = needsMemory ? "KnownIncident" : "SimpleKnownError",
+            needsDeeperContext = needsMemory,
+            rationale = needsMemory
+                ? "The mock analysis requested memory context for this failure pattern."
+                : "The mock analysis found a bounded known-error style failure from the trigger signal."
+        });
+    }
+
+    private static string MemoryWorkerJson(string toolResult)
+    {
+        using var document = JsonDocument.Parse(toolResult);
+        var root = document.RootElement;
+        var matched = root.TryGetProperty("matched", out var matchedElement) && matchedElement.GetBoolean();
+        if (!matched)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                matched = false,
+                items = Array.Empty<object>(),
+                noMatchReason = ReadOptionalString(root, "noMatchReason") ?? "no matches"
+            });
+        }
+
+        var items = new JsonArray();
+        foreach (var item in root.GetProperty("items").EnumerateArray())
+        {
+            items.Add(new JsonObject
+            {
+                ["artifactId"] = ReadOptionalString(item, "artifactId") ?? string.Empty,
+                ["title"] = ReadOptionalString(item, "title") ?? string.Empty,
+                ["quote"] = ReadOptionalString(item, "quote") ?? string.Empty,
+                ["score"] = item.TryGetProperty("score", out var score) && score.TryGetDouble(out var value) ? value : null
+            });
+        }
+
+        return new JsonObject
+        {
+            ["matched"] = true,
+            ["items"] = items
+        }.ToJsonString();
+    }
+
+    private static bool ContainsMemoryRoleResult(string value)
+    {
+        return value.Contains("\"role\":\"memory\"", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ReadOptionalString(JsonElement root, string propertyName)
+    {
+        return root.TryGetProperty(propertyName, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : null;
+    }
+}

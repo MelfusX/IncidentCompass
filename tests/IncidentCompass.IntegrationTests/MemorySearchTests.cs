@@ -1,9 +1,19 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using IncidentCompass.Application.Core.Embeddings;
+using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Memory;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -68,7 +78,70 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         Assert.Empty(modelMismatch);
     }
 
-    private async Task<TestScope> CreateScopeAsync()
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_KnownTimeoutDelegatesMemoryAndThreadsRetrievedArtifactIds()
+    {
+        using var scope = await CreateScopeAsync();
+        await SeedCheckoutRunbookAsync(scope.Factory);
+        var ingested = await PostIngestAsync(scope.Client, TesterEnvelope("payments-api", "TimeoutException", "Checkout timed out while calling inventory", "/checkout"));
+
+        await RunClaimedJobAsync(scope, ingested.JobId!.Value, "worker-memory-known");
+
+        var report = await ReadReportAsync(scope.ConnectionString, ingested.FaultId);
+        var retrievedIds = await ReadArtifactIdsAsync(scope.ConnectionString, ingested.JobId.Value, "RetrievedItem");
+        var memoryWorkerOutput = await ReadMemoryWorkerOutputAsync(scope.ConnectionString, ingested.JobId.Value);
+        var ledgerRows = await ReadToolLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value);
+
+        Assert.Equal("Completed", report.Status);
+        Assert.Equal("KnownIncident", report.Classification);
+        var retrievedId = Assert.Single(retrievedIds);
+        Assert.True(memoryWorkerOutput.GetProperty("matched").GetBoolean());
+        Assert.Equal(retrievedId.ToString(), memoryWorkerOutput.GetProperty("items")[0].GetProperty("artifactId").GetString());
+        Assert.Contains(ledgerRows, row => row.EventType == "ToolProposed" && row.ToolName == "memory_search");
+        Assert.Contains(ledgerRows, row => row.EventType == "PolicyDecision" && row.ToolName == "memory_search" && row.Decision == "Allowed");
+        Assert.Contains(ledgerRows, row => row.EventType == "ToolResult" && row.ToolName == "memory_search" && row.ToolStatus == "Succeeded");
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_UnknownErrorReturnsHonestMemoryNoMatch()
+    {
+        using var scope = await CreateScopeAsync();
+        var ingested = await PostIngestAsync(scope.Client, TesterEnvelope("orders-api", "NullReferenceException", "NullReference while rendering order details", "/orders/{id}"));
+
+        await RunClaimedJobAsync(scope, ingested.JobId!.Value, "worker-memory-empty");
+
+        var report = await ReadReportAsync(scope.ConnectionString, ingested.FaultId);
+        var retrievedIds = await ReadArtifactIdsAsync(scope.ConnectionString, ingested.JobId.Value, "RetrievedItem");
+        var memoryWorkerOutput = await ReadMemoryWorkerOutputAsync(scope.ConnectionString, ingested.JobId.Value);
+
+        Assert.Equal("InsufficientEvidence", report.Status);
+        Assert.Equal("Unknown", report.Classification);
+        Assert.Empty(retrievedIds);
+        Assert.False(memoryWorkerOutput.GetProperty("matched").GetBoolean());
+        Assert.Equal("no matches", memoryWorkerOutput.GetProperty("noMatchReason").GetString());
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_RateCapDeniesRealMemorySearchPastCurrentAttemptCap()
+    {
+        var configPath = await CreateRateCapConfigurationAsync();
+        using var scope = await CreateScopeAsync(configPath, services =>
+        {
+            services.RemoveAll<IAiModelClient>();
+            services.AddScoped<IAiModelClient, RepeatMemorySearchModelClient>();
+        });
+        var ingested = await PostIngestAsync(scope.Client, TesterEnvelope("payments-api", "TimeoutException", "Checkout timed out while calling inventory", "/checkout"));
+
+        await RunClaimedJobAsync(scope, ingested.JobId!.Value, "worker-memory-rate-cap", maxAttempts: 1);
+
+        var decisions = await ReadToolLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value);
+        Assert.Contains(decisions, row => row.EventType == "PolicyDecision" && row.ToolName == "memory_search" && row.Decision == "Allowed");
+        Assert.Contains(decisions, row => row.EventType == "PolicyDecision" && row.ToolName == "memory_search" && row.Decision == "Denied" && row.DecisionReason!.Contains("rate_cap exceeded", StringComparison.Ordinal));
+    }
+
+    private async Task<TestScope> CreateScopeAsync(
+        string? configPath = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         var connectionString = await CreateSchemaAsync();
         await PostgresTriageJobTestIsolation.CompleteClaimableJobsAsync(connectionString);
@@ -77,6 +150,15 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            if (configPath is not null)
+            {
+                builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
+            }
+
+            if (configureServices is not null)
+            {
+                builder.ConfigureTestServices(configureServices);
+            }
         });
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         return new TestScope(factory, client, connectionString);
@@ -87,6 +169,77 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
         return connectionString;
+    }
+
+    private static async Task SeedCheckoutRunbookAsync(WebApplicationFactory<Program> factory)
+    {
+        using var serviceScope = factory.Services.CreateScope();
+        var embeddingClient = serviceScope.ServiceProvider.GetRequiredService<IEmbeddingClient>();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<IMemoryRepository>();
+        var content = await File.ReadAllTextAsync(Path.Combine(FindRepoRoot(), "samples", "runbooks", "checkout-timeout.md"), TestContext.Current.CancellationToken);
+        var embedding = await embeddingClient.CreateEmbeddingAsync(
+            new EmbeddingRequest(content, MemoryModel, "memory-test-seed"),
+            TestContext.Current.CancellationToken);
+        var item = new MemorySeedItem(
+            Guid.NewGuid(),
+            "local",
+            "runbook",
+            "samples/runbooks/checkout-timeout.md",
+            "Checkout Timeout Runbook",
+            content,
+            Hash(content),
+            Version: 1,
+            ["checkout", "timeout"]);
+        var chunk = new MemorySeedChunk(
+            Guid.NewGuid(),
+            Position: 0,
+            content,
+            Hash(content),
+            embedding.Provider,
+            embedding.Model,
+            embedding.Vector.Count,
+            embedding.Vector);
+
+        await repository.UpsertSeedAsync(item, [chunk], TestContext.Current.CancellationToken);
+    }
+
+    private static async Task RunClaimedJobAsync(
+        TestScope scope,
+        Guid expectedJobId,
+        string workerId,
+        int maxAttempts = 3)
+    {
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
+        var claimed = await runner.ClaimNextAsync(workerId, TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+        Assert.Equal(expectedJobId, claimed.Id);
+
+        await runner.ProcessClaimedAsync(
+            claimed,
+            workerId,
+            new TriageJobProcessingSettings(maxAttempts, RetryDelay: TimeSpan.FromSeconds(1)),
+            TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, TesterEnvelopeDto envelope)
+    {
+        var response = await client.PostAsJsonAsync("/api/v1/incidents", envelope, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
+        Assert.NotNull(body);
+        Assert.NotNull(body.JobId);
+        return body;
+    }
+
+    private static TesterEnvelopeDto TesterEnvelope(string serviceName, string errorType, string errorMessage, string route)
+    {
+        return new TesterEnvelopeDto(
+            "tester",
+            serviceName + "-" + Guid.NewGuid().ToString("N"),
+            "prod",
+            DateTimeOffset.UtcNow,
+            new TesterAttributesDto(errorType, errorMessage, route));
     }
 
     private static async Task<Guid> InsertMemoryItemAsync(string connectionString, string tenantId, string source)
@@ -153,9 +306,181 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
 
+    private static async Task<ReportRow> ReadReportAsync(string connectionString, Guid faultId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT status, classification FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            connection);
+        command.Parameters.AddWithValue("fault_id", faultId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new ReportRow(reader.GetString(0), reader.GetString(1));
+    }
+
+    private static async Task<IReadOnlyList<Guid>> ReadArtifactIdsAsync(string connectionString, Guid jobId, string kind)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT id FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = @kind ORDER BY created_at_utc, id;",
+            connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        command.Parameters.AddWithValue("kind", kind);
+        var ids = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            ids.Add(reader.GetGuid(0));
+        }
+
+        return ids;
+    }
+
+    private static async Task<JsonElement> ReadMemoryWorkerOutputAsync(string connectionString, Guid jobId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT redacted_payload::text
+            FROM incidentcompass.triage_artifacts
+            WHERE job_id = @job_id AND kind = 'WorkerOutput' AND domain_ref = 'worker:memory';
+            """, connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        var json = (string)(await command.ExecuteScalarAsync())!;
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+
+    private static async Task<IReadOnlyList<ToolLedgerRow>> ReadToolLedgerRowsAsync(string connectionString, Guid jobId)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand("""
+            SELECT event_type, tool_name, decision, decision_reason, tool_status
+            FROM incidentcompass.triage_ledger
+            WHERE job_id = @job_id AND tool_name = 'memory_search'
+            ORDER BY id;
+            """, connection);
+        command.Parameters.AddWithValue("job_id", jobId);
+        var rows = new List<ToolLedgerRow>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(new ToolLedgerRow(
+                reader.GetString(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
+        }
+
+        return rows;
+    }
+
+    private static async Task<string> CreateRateCapConfigurationAsync()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "incidentcompass-memory-rate-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(directory, "instructions"));
+        Directory.CreateDirectory(Path.Combine(directory, "schemas"));
+        await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "orchestrator.md"), "Delegate memory.");
+        await File.WriteAllTextAsync(Path.Combine(directory, "instructions", "memory.md"), "Use memory_search.");
+        await File.WriteAllTextAsync(Path.Combine(directory, "schemas", "memory.json"), await File.ReadAllTextAsync(Path.Combine(FindRepoRoot(), "config", "schemas", "memory.json")));
+        var config = new JsonObject
+        {
+            ["Providers"] = new JsonObject { ["local-oai"] = new JsonObject { ["Kind"] = "Mock" } },
+            ["Routes"] = new JsonObject
+            {
+                ["analysis-chat"] = ChatRoute(),
+                ["report-chat"] = ChatRoute(),
+                ["memory-embed"] = new JsonObject { ["Kind"] = "Embedding", ["ProviderId"] = "local-oai", ["Model"] = MemoryModel }
+            },
+            ["Orchestrator"] = new JsonObject
+            {
+                ["Instructions"] = "ref:instructions/orchestrator.md",
+                ["RouteId"] = "report-chat",
+                ["Tools"] = new JsonArray("delegate", "publish_report"),
+                ["Budget"] = new JsonObject { ["MaxWorkers"] = 2, ["MaxTokens"] = 100000, ["MaxWallClockSeconds"] = 120, ["MaxReprompts"] = 1 }
+            },
+            ["Roles"] = new JsonObject
+            {
+                ["memory"] = new JsonObject { ["RouteId"] = "analysis-chat", ["Instructions"] = "ref:instructions/memory.md", ["Tools"] = new JsonArray("memory_search"), ["OutputSchema"] = "ref:schemas/memory.json" }
+            },
+            ["Tools"] = new JsonObject { ["memory_search"] = new JsonObject { ["Kind"] = "internal", ["EmbeddingRouteId"] = "memory-embed", ["TopK"] = 5, ["MinScore"] = 0.25 } },
+            ["Rules"] = new JsonArray(new JsonObject { ["Type"] = "rate_cap", ["Tool"] = "*", ["Scope"] = "attempt", ["Max"] = 1 }),
+            ["Ingestion"] = new JsonObject { ["DefaultTenant"] = "local", ["AllowedSources"] = new JsonArray("otel", "user", "tester", "manual") },
+            ["FaultGrouping"] = new JsonObject
+            {
+                ["LookbackMinutes"] = 15,
+                ["SilenceWindowMinutes"] = 30,
+                ["FingerprintVersion"] = 1,
+                ["MassIssue"] = new JsonObject { ["MinNeighborCount"] = 5, ["MinFingerprintStrength"] = "strong" }
+            }
+        };
+        var path = Path.Combine(directory, "incidentcompass.config.json");
+        await File.WriteAllTextAsync(path, config.ToJsonString());
+        return path;
+    }
+
+    private static JsonObject ChatRoute()
+    {
+        return new JsonObject
+        {
+            ["Kind"] = "Chat",
+            ["ProviderId"] = "local-oai",
+            ["Model"] = "memory-rate-model",
+            ["Temperature"] = 0.0,
+            ["MaxOutputTokens"] = 1000,
+            ["ContextWindowTokens"] = 8192
+        };
+    }
+
     private static string Hash(string value)
     {
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    }
+
+    private static string FindRepoRoot()
+    {
+        var directory = new DirectoryInfo(Environment.CurrentDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Repository root was not found.");
+    }
+
+    private sealed class RepeatMemorySearchModelClient : IAiModelClient
+    {
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
+            if (toolNames.SetEquals(["delegate", "publish_report"]))
+            {
+                return Task.FromResult(Response(request, "delegate memory", [ToolCall("delegate-memory", "delegate", "{\"role\":\"memory\",\"task\":\"repeat memory_search\"}")]));
+            }
+
+            var toolResultCount = request.Messages.Count(static message => message.Role == AiMessageRole.Tool);
+            return Task.FromResult(Response(request, "search", [ToolCall("memory-search-" + toolResultCount, "memory_search", "{\"query\":\"checkout timeout inventory\"}")]));
+        }
+
+        private static AiModelResponse Response(AiModelRequest request, string content, IReadOnlyList<AiToolCall> toolCalls)
+        {
+            return new AiModelResponse(content, request.Model, "repeat-memory-search-test", new AiModelUsage(10, 5, 15), request.CorrelationId, toolCalls);
+        }
+
+        private static AiToolCall ToolCall(string id, string name, string argumentsJson)
+        {
+            using var arguments = JsonDocument.Parse(argumentsJson);
+            return new AiToolCall(id, name, "v1", arguments.RootElement.Clone());
+        }
     }
 
     private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable
@@ -166,4 +491,31 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
             Factory.Dispose();
         }
     }
+
+    private sealed record TesterAttributesDto(string ErrorType, string ErrorMessage, string HttpRoute);
+
+    private sealed record TesterEnvelopeDto(
+        string SourceKind,
+        string ServiceName,
+        string Environment,
+        DateTimeOffset ObservedAtUtc,
+        TesterAttributesDto Attributes);
+
+    private sealed record IngestSignalResponseDto(
+        Guid SignalId,
+        Guid FaultId,
+        bool IsNewFault,
+        bool IsNewJob,
+        bool IsSuppressed,
+        Guid? JobId,
+        string? ConfigHash);
+
+    private sealed record ReportRow(string Status, string Classification);
+
+    private sealed record ToolLedgerRow(
+        string EventType,
+        string? ToolName,
+        string? Decision,
+        string? DecisionReason,
+        string? ToolStatus);
 }

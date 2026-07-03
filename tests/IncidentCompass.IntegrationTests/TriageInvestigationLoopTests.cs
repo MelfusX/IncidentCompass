@@ -144,7 +144,7 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
             "unit4-payments-api-" + unique,
             "prod",
             DateTimeOffset.UtcNow,
-            new TesterAttributesDto("TimeoutException", "Checkout timed out while calling inventory " + unique, "/checkout"));
+            new TesterAttributesDto("ValidationException", "Validation failed for request " + unique, "/validate"));
     }
 
     private static async Task<JobRow> ReadJobAsync(string connectionString, Guid jobId)
