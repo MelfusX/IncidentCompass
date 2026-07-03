@@ -21,7 +21,7 @@ internal static class TestTriageConfiguration
         {
             ["analysis-chat"] = new("Chat", "local-oai", "local-model", 0.1, 2000, 8192),
             ["report-chat"] = new("Chat", "local-oai", "local-model", 0.2, 4000, 8192),
-            ["memory-embed"] = new("Embedding", "local-oai", "local-embedding-model", null, null, null)
+            ["memory-embed"] = new("Embedding", "local-oai", "mock-memory-embedding-v1", null, null, null)
         },
         Orchestrator: new OrchestratorSettings(
             "orchestrator instructions",

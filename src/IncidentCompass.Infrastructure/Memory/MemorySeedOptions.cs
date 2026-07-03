@@ -1,0 +1,12 @@
+namespace IncidentCompass.Infrastructure.Memory;
+
+internal sealed class MemorySeedOptions
+{
+    public const string SectionName = "IncidentCompass:Memory:Seed";
+
+    public bool Enabled { get; init; }
+
+    public string TenantId { get; init; } = "local";
+
+    public string SourceDirectory { get; init; } = "../../samples";
+}

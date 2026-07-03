@@ -5,7 +5,7 @@
   "Routes": {
     "analysis-chat": { "Kind": "Chat", "ProviderId": "local-oai", "Model": "local-model", "Temperature": 0.1, "MaxOutputTokens": 2000, "ContextWindowTokens": 8192 },
     "report-chat":   { "Kind": "Chat", "ProviderId": "local-oai", "Model": "local-model", "Temperature": 0.2, "MaxOutputTokens": 8000, "ContextWindowTokens": 8192 },
-    "memory-embed":  { "Kind": "Embedding", "ProviderId": "local-oai", "Model": "local-embedding-model" }
+    "memory-embed":  { "Kind": "Embedding", "ProviderId": "local-oai", "Model": "mock-memory-embedding-v1" }
   },
   "Orchestrator": {
     "Instructions": "ref:instructions/orchestrator.md",
