@@ -3,6 +3,7 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
@@ -13,6 +14,7 @@ using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Domain.Incidents;
+using IncidentCompass.Domain.Incidents.Statuses;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,6 +54,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
+        services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
 
@@ -228,6 +231,30 @@ public sealed class MemoryOnlyCompositionTests
             Task.CompletedTask;
     }
 
+
+    private sealed class InMemoryTriageLedgerReader : ITriageLedgerReader
+    {
+        public Task<TriageBudgetLedgerUsage> ReadBudgetUsageAsync(
+            TriageJob job,
+            CancellationToken cancellationToken) => Task.FromResult(new TriageBudgetLedgerUsage(0, 0));
+
+        public Task<int> CountPolicyDecisionsAsync(
+            TriageJob job,
+            string toolName,
+            string scope,
+            TriageLedgerDecision decision,
+            CancellationToken cancellationToken) => Task.FromResult(0);
+
+        public Task<bool> HasSuccessfulToolResultAsync(
+            TriageJob job,
+            string toolName,
+            string scope,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
+            Guid faultId,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
+    }
     private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
     {
         public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>

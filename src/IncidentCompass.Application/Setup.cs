@@ -1,4 +1,5 @@
 using FluentValidation;
+using IncidentCompass.Application.Governance;
 using IncidentCompass.Application.Governance.Tools.Execution;
 using IncidentCompass.Application.Core.Configuration;
 using IncidentCompass.Application.Core.Dispatching;
@@ -34,6 +35,7 @@ public static class Setup
         services.AddHealthCore();
         services.AddUsersCore();
         services.AddIntakeCore();
+        services.AddGovernanceCore();
         services.AddInvestigationCore();
         services.AddMemoryCore();
 

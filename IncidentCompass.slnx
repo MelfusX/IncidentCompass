@@ -4,6 +4,7 @@
     <Project Path="src/IncidentCompass.Application/IncidentCompass.Application.csproj" />
     <Project Path="src/IncidentCompass.Domain/IncidentCompass.Domain.csproj" />
     <Project Path="src/IncidentCompass.Infrastructure/IncidentCompass.Infrastructure.csproj" />
+    <Project Path="src/IncidentCompass.Tester/IncidentCompass.Tester.csproj" />
     <Project Path="src/IncidentCompass.Worker/IncidentCompass.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">

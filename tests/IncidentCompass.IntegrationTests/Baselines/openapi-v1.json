@@ -145,6 +145,48 @@
         }
       }
     },
+    "/api/v1/faults/{id}/ledger": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Return DB-ordered governed investigation ledger events for a fault.",
+        "operationId": "GetFaultLedgerByFaultId",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FaultLedgerResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/triage-reports/{id}": {
       "get": {
         "tags": [
@@ -322,6 +364,137 @@
                 "$ref": "#/components/schemas/TriageJobSummary"
               }
             ]
+          }
+        }
+      },
+      "FaultLedgerEventResponse": {
+        "required": [
+          "id",
+          "jobId",
+          "attempt",
+          "eventType",
+          "role",
+          "toolName",
+          "decision",
+          "rationale",
+          "decisionReason",
+          "toolStatus",
+          "tokensDelta",
+          "workersDelta",
+          "payloadRef",
+          "configHash",
+          "createdAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attempt": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "toolName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rationale": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decisionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "toolStatus": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tokensDelta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "workersDelta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "payloadRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "configHash": {
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "FaultLedgerResponse": {
+        "required": [
+          "faultId",
+          "events"
+        ],
+        "type": "object",
+        "properties": {
+          "faultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FaultLedgerEventResponse"
+            }
           }
         }
       },

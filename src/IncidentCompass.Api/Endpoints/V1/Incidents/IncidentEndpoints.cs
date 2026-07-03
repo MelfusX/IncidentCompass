@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Core.Dispatching;
+using IncidentCompass.Application.Governance.Ledger.GetFaultLedger;
 using IncidentCompass.Application.Intake.GetFault;
 using IncidentCompass.Application.Intake.IngestSignal;
 
@@ -54,6 +55,22 @@ internal static class IncidentEndpoints
             .Produces<FaultDetailsResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
+
+        api.MapGet("/faults/{id:guid}/ledger", async (
+                Guid id,
+                IApplicationDispatcher dispatcher,
+                CancellationToken cancellationToken) =>
+            {
+                var result = await dispatcher.DispatchAsync<GetFaultLedgerQuery, FaultLedgerResponse>(
+                    new GetFaultLedgerQuery(id),
+                    cancellationToken);
+
+                return Results.Ok(result);
+            })
+            .WithName("GetFaultLedgerByFaultId")
+            .WithSummary("Return DB-ordered governed investigation ledger events for a fault.")
+            .Produces<FaultLedgerResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound);
         return api;
     }
 }

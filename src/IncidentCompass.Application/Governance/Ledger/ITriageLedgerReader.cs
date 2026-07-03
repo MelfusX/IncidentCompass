@@ -21,4 +21,8 @@ public interface ITriageLedgerReader
         string toolName,
         string scope,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
+        Guid faultId,
+        CancellationToken cancellationToken);
 }

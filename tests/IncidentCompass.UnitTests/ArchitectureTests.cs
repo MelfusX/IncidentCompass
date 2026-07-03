@@ -28,7 +28,8 @@ public sealed class ArchitectureTests
             [
                 "IncidentCompass.Application",
                 "IncidentCompass.Infrastructure"
-            ]
+            ],
+        ["IncidentCompass.Tester"] = []
     };
 
     [Fact]
