@@ -34,7 +34,7 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
             FROM incidentcompass.triage_reports
             WHERE id = @report_id;
             """, connection);
-        command.Parameters.AddWithValue("report_id", reportId);
+        command.AddParameter("report_id", reportId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -53,7 +53,7 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
             reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
             reader.GetFieldValue<string[]>(8),
             reader.GetString(9),
-            PostgresTriageJobMapper.GetDateTimeOffset(reader, 10),
+            reader.GetDateTimeOffset(10),
             []);
     }
 
@@ -70,7 +70,7 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
             WHERE e.report_id = @report_id
             ORDER BY e.created_at_utc, e.id;
             """, connection);
-        command.Parameters.AddWithValue("report_id", reportId);
+        command.AddParameter("report_id", reportId);
 
         var evidence = new List<TriageReportEvidenceResponse>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

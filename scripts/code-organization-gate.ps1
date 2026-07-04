@@ -19,6 +19,15 @@ function Get-FileLineCount {
     return (Get-Content -LiteralPath $Path).Count
 }
 
+function Get-LineNumber {
+    param(
+        [string] $Text,
+        [int] $Index
+    )
+
+    return ($Text.Substring(0, $Index) -split "`n").Count
+}
+
 function Get-FileNamespace {
     param([string] $Text)
 
@@ -60,7 +69,16 @@ foreach ($file in $productionFiles) {
     }
 
     $namespace = Get-FileNamespace $text
-    foreach ($match in [regex]::Matches($text, $typePattern)) {
+    $typeMatches = [regex]::Matches($text, $typePattern)
+    for ($index = 0; $index -lt $typeMatches.Count; $index++) {
+        $match = $typeMatches[$index]
+        $startLine = Get-LineNumber $text $match.Index
+        $endLine = $lineCount
+        if ($index + 1 -lt $typeMatches.Count) {
+            $endLine = (Get-LineNumber $text $typeMatches[$index + 1].Index) - 1
+        }
+
+        $spanLineCount = [Math]::Max(1, $endLine - $startLine + 1)
         $fullTypeName = "$namespace.$($match.Groups[1].Value)"
         if (-not $typeFiles.ContainsKey($fullTypeName)) {
             $typeFiles[$fullTypeName] = New-Object System.Collections.Generic.List[object]
@@ -68,12 +86,12 @@ foreach ($file in $productionFiles) {
 
         $typeFiles[$fullTypeName].Add([pscustomobject]@{
             File = $relativePath
-            Lines = $lineCount
+            Lines = $spanLineCount
         })
     }
 
     foreach ($match in [regex]::Matches($text, $nestedPrivateTypePattern)) {
-        $lineNumber = ($text.Substring(0, $match.Index) -split "`n").Count
+        $lineNumber = Get-LineNumber $text $match.Index
         $findings.Add([pscustomobject]@{
             Rule = "nested-private-type"
             File = $relativePath
@@ -105,7 +123,7 @@ foreach ($entry in $typeFiles.GetEnumerator()) {
             File = ($entry.Value.File -join "; ")
             Type = $entry.Key
             Line = ""
-            Detail = "$totalLines aggregate lines; limit $MaxLogicalTypeLines"
+            Detail = "$totalLines aggregate type-span lines; limit $MaxLogicalTypeLines"
         })
     }
 }

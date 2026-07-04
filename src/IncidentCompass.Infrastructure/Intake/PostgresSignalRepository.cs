@@ -28,36 +28,36 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
                 @observed_at_utc, @received_at_utc);
             """, lease.Connection, lease.Transaction);
 
-        AddParameter(command, "id", signal.Id);
-        AddParameter(command, "tenant_id", signal.TenantId);
-        AddParameter(command, "source", signal.Source);
-        AddParameter(command, "fault_id", signal.FaultId);
-        AddParameter(command, "fingerprint", signal.Fingerprint);
-        AddParameter(command, "fingerprint_version", signal.FingerprintVersion);
-        AddParameter(command, "fingerprint_strength", ToDbString(signal.FingerprintStrength));
-        AddParameter(command, "external_id", signal.ExternalId);
-        AddParameter(command, "is_suppressed", signal.IsSuppressed);
-        AddParameter(command, "suppressed_by_fault_id", signal.SuppressedByFaultId);
-        AddParameter(command, "suppression_reason", signal.SuppressionReason);
-        AddParameter(command, "trace_id", signal.TraceId);
-        AddParameter(command, "span_id", signal.SpanId);
-        AddParameter(command, "parent_span_id", signal.ParentSpanId);
-        AddParameter(command, "service_name", signal.ServiceName);
-        AddParameter(command, "environment", signal.Environment);
-        AddParameter(command, "operation_name", signal.OperationName);
-        AddParameter(command, "severity", signal.Severity);
-        AddParameter(command, "error_type", signal.ErrorType);
-        AddParameter(command, "error_message", signal.ErrorMessage);
-        AddParameter(command, "summary", signal.Summary);
-        AddParameter(command, "description", signal.Description);
-        AddParameter(command, "http_method", signal.HttpMethod);
-        AddParameter(command, "http_route", signal.HttpRoute);
-        AddParameter(command, "http_status_code", signal.HttpStatusCode);
-        AddParameter(command, "duration_ms", signal.DurationMs);
-        AddJsonParameter(command, "attributes", signal.Attributes.GetRawText());
-        AddJsonParameter(command, "body", signal.Body.GetRawText());
-        AddParameter(command, "observed_at_utc", signal.ObservedAtUtc);
-        AddParameter(command, "received_at_utc", signal.ReceivedAtUtc);
+        command.AddParameter("id", signal.Id);
+        command.AddParameter("tenant_id", signal.TenantId);
+        command.AddParameter("source", signal.Source);
+        command.AddParameter("fault_id", signal.FaultId);
+        command.AddParameter("fingerprint", signal.Fingerprint);
+        command.AddParameter("fingerprint_version", signal.FingerprintVersion);
+        command.AddParameter("fingerprint_strength", signal.FingerprintStrength.ToLowerDbString());
+        command.AddParameter("external_id", signal.ExternalId);
+        command.AddParameter("is_suppressed", signal.IsSuppressed);
+        command.AddParameter("suppressed_by_fault_id", signal.SuppressedByFaultId);
+        command.AddParameter("suppression_reason", signal.SuppressionReason);
+        command.AddParameter("trace_id", signal.TraceId);
+        command.AddParameter("span_id", signal.SpanId);
+        command.AddParameter("parent_span_id", signal.ParentSpanId);
+        command.AddParameter("service_name", signal.ServiceName);
+        command.AddParameter("environment", signal.Environment);
+        command.AddParameter("operation_name", signal.OperationName);
+        command.AddParameter("severity", signal.Severity);
+        command.AddParameter("error_type", signal.ErrorType);
+        command.AddParameter("error_message", signal.ErrorMessage);
+        command.AddParameter("summary", signal.Summary);
+        command.AddParameter("description", signal.Description);
+        command.AddParameter("http_method", signal.HttpMethod);
+        command.AddParameter("http_route", signal.HttpRoute);
+        command.AddParameter("http_status_code", signal.HttpStatusCode);
+        command.AddParameter("duration_ms", signal.DurationMs);
+        command.AddJsonbParameter("attributes", signal.Attributes.GetRawText());
+        command.AddJsonbParameter("body", signal.Body.GetRawText());
+        command.AddParameter("observed_at_utc", signal.ObservedAtUtc);
+        command.AddParameter("received_at_utc", signal.ReceivedAtUtc);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -70,8 +70,8 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
             lease.Connection,
             lease.Transaction);
 
-        AddParameter(command, "fault_id", faultId);
-        AddParameter(command, "signal_id", signalId);
+        command.AddParameter("fault_id", faultId);
+        command.AddParameter("signal_id", signalId);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -98,27 +98,18 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
               AND observed_at_utc BETWEEN @window_start_utc AND @window_end_utc;
             """, lease.Connection, lease.Transaction);
 
-        AddParameter(command, "tenant_id", tenantId);
-        AddParameter(command, "service_name", serviceName);
-        AddParameter(command, "environment", environment);
-        AddParameter(command, "fingerprint", fingerprint);
-        AddParameter(command, "fingerprint_version", fingerprintVersion);
-        AddParameter(command, "window_start_utc", windowStartUtc);
-        AddParameter(command, "window_end_utc", windowEndUtc);
+        command.AddParameter("tenant_id", tenantId);
+        command.AddParameter("service_name", serviceName);
+        command.AddParameter("environment", environment);
+        command.AddParameter("fingerprint", fingerprint);
+        command.AddParameter("fingerprint_version", fingerprintVersion);
+        command.AddParameter("window_start_utc", windowStartUtc);
+        command.AddParameter("window_end_utc", windowEndUtc);
 
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return (int)(long)result!;
     }
 
-    private static string ToDbString(FingerprintStrength strength) => strength.ToString().ToLowerInvariant();
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 
-    private static void AddJsonParameter(NpgsqlCommand command, string name, string value)
-    {
-        command.Parameters.AddWithValue(name, NpgsqlDbType.Jsonb, value);
-    }
 }

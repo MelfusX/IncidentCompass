@@ -78,14 +78,14 @@ internal sealed class PostgresTriageToolResultCommitter(
                 @id, @job_id, @attempt, @kind, @domain_ref, @redacted_payload, @content_hash, @created_at_utc);
             """, connection, transaction);
 
-        AddParameter(command, "id", artifact.Id);
-        AddParameter(command, "job_id", artifact.JobId);
-        AddParameter(command, "attempt", artifact.Attempt);
-        AddParameter(command, "kind", artifact.Kind.ToString());
-        AddParameter(command, "domain_ref", artifact.DomainRef);
-        AddJsonParameter(command, "redacted_payload", artifact.RedactedPayload.GetRawText());
-        AddParameter(command, "content_hash", artifact.ContentHash);
-        AddParameter(command, "created_at_utc", artifact.CreatedAtUtc);
+        command.AddParameter("id", artifact.Id);
+        command.AddParameter("job_id", artifact.JobId);
+        command.AddParameter("attempt", artifact.Attempt);
+        command.AddParameter("kind", artifact.Kind.ToDbString());
+        command.AddParameter("domain_ref", artifact.DomainRef);
+        command.AddJsonbParameter("redacted_payload", artifact.RedactedPayload.GetRawText());
+        command.AddParameter("content_hash", artifact.ContentHash);
+        command.AddParameter("created_at_utc", artifact.CreatedAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -106,26 +106,18 @@ internal sealed class PostgresTriageToolResultCommitter(
                 NULL, NULL, @tool_status, @payload_ref, @config_hash, @created_at_utc);
             """, connection, transaction);
 
-        AddParameter(command, "fault_id", request.Job.FaultId);
-        AddParameter(command, "job_id", request.Job.Id);
-        AddParameter(command, "attempt", request.Job.Attempt);
-        AddParameter(command, "role", request.Role);
-        AddParameter(command, "tool_name", request.ToolName);
-        AddParameter(command, "rationale", request.Rationale);
-        AddParameter(command, "tool_status", TriageLedgerToolStatus.Succeeded.ToString());
-        AddParameter(command, "payload_ref", "artifact:" + artifact.Id);
-        AddParameter(command, "config_hash", request.Job.ConfigHash);
-        AddParameter(command, "created_at_utc", createdAtUtc);
+        command.AddParameter("fault_id", request.Job.FaultId);
+        command.AddParameter("job_id", request.Job.Id);
+        command.AddParameter("attempt", request.Job.Attempt);
+        command.AddParameter("role", request.Role);
+        command.AddParameter("tool_name", request.ToolName);
+        command.AddParameter("rationale", request.Rationale);
+        command.AddParameter("tool_status", TriageLedgerToolStatus.Succeeded.ToDbString());
+        command.AddParameter("payload_ref", "artifact:" + artifact.Id);
+        command.AddParameter("config_hash", request.Job.ConfigHash);
+        command.AddParameter("created_at_utc", createdAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 
-    private static void AddJsonParameter(NpgsqlCommand command, string name, string value)
-    {
-        command.Parameters.AddWithValue(name, NpgsqlDbType.Jsonb, value);
-    }
 }

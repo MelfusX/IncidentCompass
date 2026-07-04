@@ -103,9 +103,9 @@ internal sealed class PostgresTriageJobRuntimeRepository(
                       job.last_error_message, job.config_hash, job.created_at_utc, job.updated_at_utc;
             """, connection, transaction);
 
-        AddParameter(command, "worker_id", workerId);
-        AddParameter(command, "locked_until_utc", lockedUntilUtc);
-        AddParameter(command, "now", now);
+        command.AddParameter("worker_id", workerId);
+        command.AddParameter("locked_until_utc", lockedUntilUtc);
+        command.AddParameter("now", now);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
@@ -137,14 +137,14 @@ internal sealed class PostgresTriageJobRuntimeRepository(
               AND status = 'Processing';
             """, connection, transaction);
 
-        AddParameter(command, "status", failure.Status.ToString());
-        AddParameter(command, "next_attempt_at_utc", failure.NextAttemptAtUtc);
-        AddParameter(command, "last_error_code", failure.ErrorCode);
-        AddParameter(command, "last_error_message", failure.ErrorMessage);
-        AddParameter(command, "now", now);
-        AddParameter(command, "id", job.Id);
-        AddParameter(command, "attempt", job.Attempt);
-        AddParameter(command, "worker_id", workerId);
+        command.AddParameter("status", failure.Status.ToDbString());
+        command.AddParameter("next_attempt_at_utc", failure.NextAttemptAtUtc);
+        command.AddParameter("last_error_code", failure.ErrorCode);
+        command.AddParameter("last_error_message", failure.ErrorMessage);
+        command.AddParameter("now", now);
+        command.AddParameter("id", job.Id);
+        command.AddParameter("attempt", job.Attempt);
+        command.AddParameter("worker_id", workerId);
 
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
@@ -162,8 +162,8 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             WHERE id = @fault_id
               AND status = 'Queued';
             """, connection, transaction);
-        AddParameter(command, "fault_id", faultId);
-        AddParameter(command, "now", now);
+        command.AddParameter("fault_id", faultId);
+        command.AddParameter("now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -181,13 +181,9 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             WHERE id = @fault_id
               AND status IN ('Queued', 'Analyzing');
             """, connection, transaction);
-        AddParameter(command, "fault_id", faultId);
-        AddParameter(command, "now", now);
+        command.AddParameter("fault_id", faultId);
+        command.AddParameter("now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 }

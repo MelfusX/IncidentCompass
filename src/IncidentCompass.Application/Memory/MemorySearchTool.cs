@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Core.Text;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Domain.Governance;
@@ -18,12 +19,13 @@ internal sealed class MemorySearchTool(
     private const int DefaultTopK = 5;
     private const double DefaultMinScore = 0.25;
     private const int MaxTopK = 20;
+    private const int MaxQuoteLength = 500;
 
     public AiToolDefinition Definition { get; } = new(
         "memory_search",
         "Search tenant-scoped incident memory for matching runbooks and known incidents.",
         "v1",
-        ToElement(new JsonObject
+        CanonicalJsonSerializer.ToElement(new JsonObject
         {
             ["type"] = "object",
             ["additionalProperties"] = false,
@@ -58,7 +60,7 @@ internal sealed class MemorySearchTool(
             return ToolValidationResult.Invalid("invalid_arguments", "memory_search requires a non-empty query.");
         }
 
-        return ToolValidationResult.Valid(ToElement(new JsonObject
+        return ToolValidationResult.Valid(CanonicalJsonSerializer.ToElement(new JsonObject
         {
             ["query"] = queryElement.GetString()!.Trim()
         }));
@@ -113,7 +115,7 @@ internal sealed class MemorySearchTool(
             job.Attempt,
             ArtifactKind.RetrievedItem,
             "memory_item:" + match.MemoryItemId,
-            ToElement(payload),
+            CanonicalJsonSerializer.ToElement(payload),
             CanonicalJsonSerializer.ComputeSha256Hex(canonicalPayload),
             timeProvider.GetUtcNow());
     }
@@ -158,7 +160,7 @@ internal sealed class MemorySearchTool(
             });
         }
 
-        return ToElement(new JsonObject
+        return CanonicalJsonSerializer.ToElement(new JsonObject
         {
             ["matched"] = matches.Count > 0,
             ["message"] = matches.Count > 0 ? "matches found" : "no matches",
@@ -172,7 +174,7 @@ internal sealed class MemorySearchTool(
         var normalized = text.Replace("\r", " ", StringComparison.Ordinal)
             .Replace("\n", " ", StringComparison.Ordinal)
             .Trim();
-        return normalized.Length <= 500 ? normalized : normalized[..500];
+        return TextTruncator.Truncate(normalized, MaxQuoteLength);
     }
 
     private static int NormalizeTopK(int? topK)
@@ -183,11 +185,5 @@ internal sealed class MemorySearchTool(
     private static double NormalizeMinScore(double? minScore)
     {
         return Math.Clamp(minScore ?? DefaultMinScore, -1.0, 1.0);
-    }
-
-    private static JsonElement ToElement(JsonNode node)
-    {
-        using var document = JsonDocument.Parse(node.ToJsonString());
-        return document.RootElement.Clone();
     }
 }

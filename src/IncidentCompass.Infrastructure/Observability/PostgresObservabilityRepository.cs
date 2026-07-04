@@ -27,9 +27,9 @@ internal sealed class PostgresObservabilityRepository(PostgresDataSourceProvider
             ORDER BY effective_from_utc DESC
             LIMIT 1;
             """, connection);
-        AddParameter(command, "provider", provider);
-        AddParameter(command, "model", model);
-        AddParameter(command, "used_at_utc", usedAtUtc);
+        command.AddParameter("provider", provider);
+        command.AddParameter("model", model);
+        command.AddParameter("used_at_utc", usedAtUtc);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
@@ -52,20 +52,9 @@ internal sealed class PostgresObservabilityRepository(PostgresDataSourceProvider
             reader.GetDecimal(4),
             reader.GetDecimal(5),
             reader.IsDBNull(6) ? null : reader.GetDecimal(6),
-            GetDateTimeOffset(reader, 7),
-            reader.IsDBNull(8) ? null : GetDateTimeOffset(reader, 8));
+            reader.GetDateTimeOffset(7),
+            reader.IsDBNull(8) ? null : reader.GetDateTimeOffset(8));
     }
 
-    private static DateTimeOffset GetDateTimeOffset(NpgsqlDataReader reader, int ordinal)
-    {
-        var value = reader.GetDateTime(ordinal);
-        return value.Kind == DateTimeKind.Utc
-            ? new DateTimeOffset(value)
-            : new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
-    }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 }

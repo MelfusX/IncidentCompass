@@ -239,6 +239,46 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     }
 
     [DockerAvailableFact]
+    public async Task IngestSignal_RefreshNeighborSet_DoesNotRequirePartialUniqueIndex()
+    {
+        using var scope = await CreateScopeAsync();
+        await ExecuteAsync(
+            scope.ConnectionString,
+            "DROP INDEX IF EXISTS incidentcompass.ux_triage_artifacts_job_level_kind;");
+        try
+        {
+            var envelope = TesterEnvelope(
+                "legacy-neighbor-index-svc-" + Guid.NewGuid().ToString("N"),
+                "prod",
+                "TimeoutException",
+                "Legacy neighbor index probe timed out",
+                "/legacy-neighbor-index");
+
+            var first = await PostIngestAsync(scope.Client, envelope);
+            var attached = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("legacy-neighbor-index-2") });
+
+            Assert.Equal(first.FaultId, attached.FaultId);
+            Assert.False(attached.IsNewJob);
+
+            var neighborRows = await ScalarAsync<long>(
+                scope.ConnectionString,
+                "SELECT COUNT(*) FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet' AND attempt IS NULL;",
+                ("job_id", first.JobId!.Value));
+            Assert.Equal(1, neighborRows);
+
+            var neighborCount = await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'neighborCount' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
+                ("job_id", first.JobId.Value));
+            Assert.Equal("2", neighborCount);
+        }
+        finally
+        {
+            await PostgresSchemaTestHelper.EnsureSchemaAsync(scope.ConnectionString);
+        }
+    }
+
+    [DockerAvailableFact]
     public async Task IngestSignal_NewFault_MaterializesTriggerSignalAndNeighborSetJobArtifacts()
     {
         using var scope = await CreateScopeAsync();

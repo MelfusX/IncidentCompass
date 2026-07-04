@@ -2,7 +2,6 @@ using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Intake;
 
@@ -35,8 +34,9 @@ internal sealed class PostgresTriageArtifactRepository(PostgresDataSourceProvide
                 id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
             VALUES (
                 @id, @job_id, @attempt, @kind, @domain_ref, @redacted_payload, @content_hash, @created_at_utc)
-            ON CONFLICT (job_id, kind) WHERE attempt IS NULL
+            ON CONFLICT (id)
             DO UPDATE SET
+                domain_ref = EXCLUDED.domain_ref,
                 redacted_payload = EXCLUDED.redacted_payload,
                 content_hash = EXCLUDED.content_hash,
                 created_at_utc = EXCLUDED.created_at_utc;
@@ -48,23 +48,13 @@ internal sealed class PostgresTriageArtifactRepository(PostgresDataSourceProvide
 
     private static void AddArtifactParameters(NpgsqlCommand command, TriageArtifact artifact)
     {
-        AddParameter(command, "id", artifact.Id);
-        AddParameter(command, "job_id", artifact.JobId);
-        AddParameter(command, "attempt", artifact.Attempt);
-        AddParameter(command, "kind", artifact.Kind.ToString());
-        AddParameter(command, "domain_ref", artifact.DomainRef);
-        AddJsonParameter(command, "redacted_payload", artifact.RedactedPayload.GetRawText());
-        AddParameter(command, "content_hash", artifact.ContentHash);
-        AddParameter(command, "created_at_utc", artifact.CreatedAtUtc);
-    }
-
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
-
-    private static void AddJsonParameter(NpgsqlCommand command, string name, string value)
-    {
-        command.Parameters.AddWithValue(name, NpgsqlDbType.Jsonb, value);
+        command.AddParameter("id", artifact.Id);
+        command.AddParameter("job_id", artifact.JobId);
+        command.AddParameter("attempt", artifact.Attempt);
+        command.AddParameter("kind", artifact.Kind.ToDbString());
+        command.AddParameter("domain_ref", artifact.DomainRef);
+        command.AddJsonbParameter("redacted_payload", artifact.RedactedPayload.GetRawText());
+        command.AddParameter("content_hash", artifact.ContentHash);
+        command.AddParameter("created_at_utc", artifact.CreatedAtUtc);
     }
 }

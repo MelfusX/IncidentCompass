@@ -117,18 +117,18 @@ internal static class PostgresMemorySeedWriter
                 @embedding_values, @embedding_vector, @created_at_utc)
             ON CONFLICT DO NOTHING;
             """, connection, transaction);
-        AddParameter(command, "id", chunk.Id);
-        AddParameter(command, "memory_item_id", itemId);
-        AddParameter(command, "tenant_id", item.TenantId);
-        AddParameter(command, "chunk_position", chunk.Position);
-        AddParameter(command, "text", chunk.Text);
-        AddParameter(command, "text_hash", chunk.TextHash);
-        AddParameter(command, "embedding_provider", chunk.EmbeddingProvider);
-        AddParameter(command, "embedding_model", chunk.EmbeddingModel);
-        AddParameter(command, "embedding_dimensions", chunk.EmbeddingDimensions);
+        command.AddParameter("id", chunk.Id);
+        command.AddParameter("memory_item_id", itemId);
+        command.AddParameter("tenant_id", item.TenantId);
+        command.AddParameter("chunk_position", chunk.Position);
+        command.AddParameter("text", chunk.Text);
+        command.AddParameter("text_hash", chunk.TextHash);
+        command.AddParameter("embedding_provider", chunk.EmbeddingProvider);
+        command.AddParameter("embedding_model", chunk.EmbeddingModel);
+        command.AddParameter("embedding_dimensions", chunk.EmbeddingDimensions);
         AddRealArrayParameter(command, "embedding_values", chunk.EmbeddingValues);
         AddVectorParameter(command, "embedding_vector", chunk.EmbeddingValues);
-        AddParameter(command, "created_at_utc", createdAtUtc);
+        command.AddParameter("created_at_utc", createdAtUtc);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -137,27 +137,23 @@ internal static class PostgresMemorySeedWriter
         MemorySeedItem item,
         DateTimeOffset createdAtUtc)
     {
-        AddParameter(command, "id", item.Id);
-        AddParameter(command, "kind", item.Kind);
-        AddParameter(command, "title", item.Title);
-        AddParameter(command, "content", item.Content);
+        command.AddParameter("id", item.Id);
+        command.AddParameter("kind", item.Kind);
+        command.AddParameter("title", item.Title);
+        command.AddParameter("content", item.Content);
         AddTextArrayParameter(command, "tags", item.Tags);
-        AddParameter(command, "created_at_utc", createdAtUtc);
+        command.AddParameter("created_at_utc", createdAtUtc);
         AddItemIdentityParameters(command, item);
     }
 
     private static void AddItemIdentityParameters(NpgsqlCommand command, MemorySeedItem item)
     {
-        AddParameter(command, "tenant_id", item.TenantId);
-        AddParameter(command, "source", item.Source);
-        AddParameter(command, "content_hash", item.ContentHash);
-        AddParameter(command, "version", item.Version);
+        command.AddParameter("tenant_id", item.TenantId);
+        command.AddParameter("source", item.Source);
+        command.AddParameter("content_hash", item.ContentHash);
+        command.AddParameter("version", item.Version);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object value)
-    {
-        command.Parameters.AddWithValue(name, value);
-    }
 
     private static void AddRealArrayParameter(NpgsqlCommand command, string name, IReadOnlyList<float> value)
     {

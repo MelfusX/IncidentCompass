@@ -1,4 +1,5 @@
 using IncidentCompass.Domain.Incidents;
+using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 
 namespace IncidentCompass.Infrastructure.Investigation;
@@ -23,18 +24,14 @@ internal static class PostgresReportPublishedEventWriter
                 @fault_id, @job_id, @attempt, 'ReportPublished', NULL, 'publish_report', @rationale,
                 NULL, NULL, NULL, NULL, NULL, @payload_ref, @config_hash, @created_at_utc);
             """, connection, transaction);
-        AddParameter(command, "fault_id", job.FaultId);
-        AddParameter(command, "job_id", job.Id);
-        AddParameter(command, "attempt", job.Attempt);
-        AddParameter(command, "rationale", summary);
-        AddParameter(command, "payload_ref", "report:" + reportId);
-        AddParameter(command, "config_hash", job.ConfigHash);
-        AddParameter(command, "created_at_utc", now);
+        command.AddParameter("fault_id", job.FaultId);
+        command.AddParameter("job_id", job.Id);
+        command.AddParameter("attempt", job.Attempt);
+        command.AddParameter("rationale", summary);
+        command.AddParameter("payload_ref", "report:" + reportId);
+        command.AddParameter("config_hash", job.ConfigHash);
+        command.AddParameter("created_at_utc", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 }

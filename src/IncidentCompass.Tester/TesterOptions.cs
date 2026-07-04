@@ -9,40 +9,67 @@ internal sealed record TesterOptions(
     TimeSpan ScenarioTimeout,
     TimeSpan TotalTimeout)
 {
-    public static TesterOptions Parse(string[] args, string? environmentBaseUrl, string? environmentPublicBaseUrl)
+    public static TesterOptions Parse(
+        string[] args,
+        string? environmentBaseUrl,
+        string? environmentPublicBaseUrl,
+        string? environmentRequestTimeoutSeconds,
+        string? environmentPollTimeoutSeconds,
+        string? environmentPollIntervalSeconds)
     {
         var baseUrl = environmentBaseUrl;
         var publicBaseUrl = environmentPublicBaseUrl;
+        var requestTimeout = ReadOptionalPositiveSeconds(environmentRequestTimeoutSeconds, "INCIDENTCOMPASS_TESTER_REQUEST_TIMEOUT_SECONDS") ?? TimeSpan.FromSeconds(30);
+        var pollTimeout = ReadOptionalPositiveSeconds(environmentPollTimeoutSeconds, "INCIDENTCOMPASS_TESTER_POLL_TIMEOUT_SECONDS") ?? TimeSpan.FromMinutes(3);
+        var pollInterval = ReadOptionalPositiveSeconds(environmentPollIntervalSeconds, "INCIDENTCOMPASS_TESTER_POLL_INTERVAL_SECONDS") ?? TimeSpan.FromSeconds(2);
         var scenarioTimeout = TimeSpan.FromMinutes(4);
         var totalTimeout = TimeSpan.FromMinutes(15);
         for (var index = 0; index < args.Length; index++)
         {
-            if (string.Equals(args[index], "--base-url", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+            var argument = args[index];
+            if (TryReadOptionValue(args, ref index, "--base-url", out var baseUrlValue))
             {
-                baseUrl = args[index + 1];
-                index++;
+                baseUrl = baseUrlValue;
                 continue;
             }
 
-            if (string.Equals(args[index], "--public-base-url", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+            if (TryReadOptionValue(args, ref index, "--public-base-url", out var publicBaseUrlValue))
             {
-                publicBaseUrl = args[index + 1];
-                index++;
+                publicBaseUrl = publicBaseUrlValue;
                 continue;
             }
 
-            if (string.Equals(args[index], "--scenario-timeout-seconds", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+            if (TryReadOptionValue(args, ref index, "--request-timeout-seconds", out var requestTimeoutValue))
             {
-                scenarioTimeout = ReadPositiveSeconds(args[index + 1], "--scenario-timeout-seconds");
-                index++;
+                requestTimeout = ReadPositiveSeconds(requestTimeoutValue, "--request-timeout-seconds");
                 continue;
             }
 
-            if (string.Equals(args[index], "--total-timeout-seconds", StringComparison.OrdinalIgnoreCase) && index + 1 < args.Length)
+            if (TryReadOptionValue(args, ref index, "--poll-timeout-seconds", out var pollTimeoutValue))
             {
-                totalTimeout = ReadPositiveSeconds(args[index + 1], "--total-timeout-seconds");
-                index++;
+                pollTimeout = ReadPositiveSeconds(pollTimeoutValue, "--poll-timeout-seconds");
+                continue;
             }
+
+            if (TryReadOptionValue(args, ref index, "--poll-interval-seconds", out var pollIntervalValue))
+            {
+                pollInterval = ReadPositiveSeconds(pollIntervalValue, "--poll-interval-seconds");
+                continue;
+            }
+
+            if (TryReadOptionValue(args, ref index, "--scenario-timeout-seconds", out var scenarioTimeoutValue))
+            {
+                scenarioTimeout = ReadPositiveSeconds(scenarioTimeoutValue, "--scenario-timeout-seconds");
+                continue;
+            }
+
+            if (TryReadOptionValue(args, ref index, "--total-timeout-seconds", out var totalTimeoutValue))
+            {
+                totalTimeout = ReadPositiveSeconds(totalTimeoutValue, "--total-timeout-seconds");
+                continue;
+            }
+
+            Console.Error.WriteLine("Warning: unknown tester argument '" + argument + "'.");
         }
 
         if (string.IsNullOrWhiteSpace(baseUrl))
@@ -58,11 +85,41 @@ internal sealed record TesterOptions(
         return new TesterOptions(
             ToBaseUri(baseUrl),
             ToBaseUri(publicBaseUrl),
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromMinutes(3),
-            TimeSpan.FromSeconds(2),
+            requestTimeout,
+            pollTimeout,
+            pollInterval,
             scenarioTimeout,
             totalTimeout);
+    }
+
+    private static bool TryReadOptionValue(
+        string[] args,
+        ref int index,
+        string optionName,
+        out string value)
+    {
+        value = string.Empty;
+        if (!string.Equals(args[index], optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (index + 1 >= args.Length)
+        {
+            Console.Error.WriteLine("Warning: tester argument '" + optionName + "' is missing a value.");
+            return true;
+        }
+
+        value = args[index + 1];
+        index++;
+        return true;
+    }
+
+    private static TimeSpan? ReadOptionalPositiveSeconds(string? value, string optionName)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : ReadPositiveSeconds(value, optionName);
     }
 
     private static TimeSpan ReadPositiveSeconds(string value, string optionName)

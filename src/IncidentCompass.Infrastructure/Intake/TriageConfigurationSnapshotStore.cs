@@ -27,10 +27,10 @@ internal sealed class TriageConfigurationSnapshotStore(
                 ON CONFLICT (config_hash) DO NOTHING;
                 """, connection);
 
-            command.Parameters.AddWithValue("config_hash", configHash);
-            command.Parameters.AddWithValue("serialized_config", NpgsqlDbType.Jsonb, configNode.ToJsonString());
-            command.Parameters.AddWithValue("instructions", NpgsqlDbType.Jsonb, instructionsNode.ToJsonString());
-            command.Parameters.AddWithValue("created_at_utc", timeProvider.GetUtcNow());
+            command.AddParameter("config_hash", configHash);
+            command.AddJsonbParameter("serialized_config", configNode.ToJsonString());
+            command.AddJsonbParameter("instructions", instructionsNode.ToJsonString());
+            command.AddParameter("created_at_utc", timeProvider.GetUtcNow());
 
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -54,7 +54,7 @@ internal sealed class TriageConfigurationSnapshotStore(
             WHERE config_hash = @config_hash;
             """, connection);
 
-        command.Parameters.AddWithValue("config_hash", configHash);
+        command.AddParameter("config_hash", configHash);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

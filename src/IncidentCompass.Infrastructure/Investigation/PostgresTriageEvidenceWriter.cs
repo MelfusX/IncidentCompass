@@ -1,3 +1,4 @@
+using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 
 namespace IncidentCompass.Infrastructure.Investigation;
@@ -31,7 +32,7 @@ internal static class PostgresTriageEvidenceWriter
             "DELETE FROM incidentcompass.triage_evidence WHERE report_id = @report_id;",
             connection,
             transaction);
-        AddParameter(command, "report_id", reportId);
+        command.AddParameter("report_id", reportId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -49,19 +50,15 @@ internal static class PostgresTriageEvidenceWriter
             VALUES (
                 @id, @report_id, @kind, @artifact_id, @reference, @quote, @score, @created_at_utc);
             """, connection, transaction);
-        AddParameter(command, "id", Guid.NewGuid());
-        AddParameter(command, "report_id", reportId);
-        AddParameter(command, "kind", item.Kind);
-        AddParameter(command, "artifact_id", item.ArtifactId);
-        AddParameter(command, "reference", item.Reference);
-        AddParameter(command, "quote", item.Quote);
-        AddParameter(command, "score", item.Score);
-        AddParameter(command, "created_at_utc", now);
+        command.AddParameter("id", Guid.NewGuid());
+        command.AddParameter("report_id", reportId);
+        command.AddParameter("kind", item.Kind);
+        command.AddParameter("artifact_id", item.ArtifactId);
+        command.AddParameter("reference", item.Reference);
+        command.AddParameter("quote", item.Quote);
+        command.AddParameter("score", item.Score);
+        command.AddParameter("created_at_utc", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 }

@@ -10,8 +10,8 @@ internal static class StructuredSignalNormalization
 {
     public static NormalizedSignal Normalize(IngestSignalCommand command, string source, DateTimeOffset receivedAtUtc)
     {
-        var serviceName = string.IsNullOrWhiteSpace(command.ServiceName) ? "unknown" : command.ServiceName;
-        var environment = string.IsNullOrWhiteSpace(command.Environment) ? "unknown" : command.Environment;
+        var serviceName = NormalizationDefaults.UnknownIfBlank(command.ServiceName);
+        var environment = NormalizationDefaults.UnknownIfBlank(command.Environment);
 
         var errorType = StructuredEnvelopeAttributes.GetString(command.Attributes, "errorType");
         var errorMessage = StructuredEnvelopeAttributes.GetString(command.Attributes, "errorMessage");

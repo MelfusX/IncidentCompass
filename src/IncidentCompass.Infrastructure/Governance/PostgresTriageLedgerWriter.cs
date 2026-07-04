@@ -49,21 +49,21 @@ internal sealed class PostgresTriageLedgerWriter(
             RETURNING id;
             """, connection, transaction);
 
-        AddParameter(command, "fault_id", request.FaultId);
-        AddParameter(command, "job_id", request.JobId);
-        AddParameter(command, "attempt", request.Attempt);
-        AddParameter(command, "event_type", request.EventType.ToString());
-        AddParameter(command, "role", request.Role);
-        AddParameter(command, "tool_name", request.ToolName);
-        AddParameter(command, "rationale", request.Rationale);
-        AddParameter(command, "decision", request.Decision?.ToString());
-        AddParameter(command, "decision_reason", request.DecisionReason);
-        AddParameter(command, "tool_status", request.ToolStatus?.ToString());
-        AddParameter(command, "tokens_delta", request.TokensDelta);
-        AddParameter(command, "workers_delta", request.WorkersDelta);
-        AddParameter(command, "payload_ref", request.PayloadRef);
-        AddParameter(command, "config_hash", request.ConfigHash);
-        AddParameter(command, "created_at_utc", createdAtUtc);
+        command.AddParameter("fault_id", request.FaultId);
+        command.AddParameter("job_id", request.JobId);
+        command.AddParameter("attempt", request.Attempt);
+        command.AddParameter("event_type", request.EventType.ToDbString());
+        command.AddParameter("role", request.Role);
+        command.AddParameter("tool_name", request.ToolName);
+        command.AddParameter("rationale", request.Rationale);
+        command.AddParameter("decision", request.Decision?.ToDbString());
+        command.AddParameter("decision_reason", request.DecisionReason);
+        command.AddParameter("tool_status", request.ToolStatus?.ToDbString());
+        command.AddParameter("tokens_delta", request.TokensDelta);
+        command.AddParameter("workers_delta", request.WorkersDelta);
+        command.AddParameter("payload_ref", request.PayloadRef);
+        command.AddParameter("config_hash", request.ConfigHash);
+        command.AddParameter("created_at_utc", createdAtUtc);
 
         var id = (long)(await command.ExecuteScalarAsync(cancellationToken))!;
 
@@ -86,8 +86,4 @@ internal sealed class PostgresTriageLedgerWriter(
             request.WorkersDelta);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 }

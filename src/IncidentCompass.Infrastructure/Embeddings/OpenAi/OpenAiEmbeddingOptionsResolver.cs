@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Infrastructure.Configuration;
+using IncidentCompass.Infrastructure.OpenAiCompatible;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Infrastructure.Embeddings.OpenAi;
@@ -9,32 +10,24 @@ internal sealed class OpenAiEmbeddingOptionsResolver(
 {
     public OpenAiCompatibleEmbeddingClientOptions Get()
     {
-        try
-        {
-            return options.Value;
-        }
-        catch (OptionsValidationException exception)
-        {
-            throw new EmbeddingClientException(
+        return OpenAiCompatibleOptionsResolver.Get(
+            options,
+            exception => new EmbeddingClientException(
                 OpenAiEmbeddingProvider.Name,
                 "OpenAI-compatible embedding provider configuration is invalid.",
                 errorCode: "configuration_error",
-                innerException: exception);
-        }
+                innerException: exception));
     }
 
     public Uri GetEndpointUri(OpenAiCompatibleEmbeddingClientOptions clientOptions)
     {
-        if (!clientOptions.IsValid() ||
-            !clientOptions.TryCreateEndpointUri(out var endpointUri) ||
-            endpointUri is null)
-        {
-            throw new EmbeddingClientException(
+        return OpenAiCompatibleOptionsResolver.GetEndpointUri(
+            clientOptions.IsValid(),
+            clientOptions.TryCreateEndpointUri(out var endpointUri),
+            endpointUri,
+            () => new EmbeddingClientException(
                 OpenAiEmbeddingProvider.Name,
                 "OpenAI-compatible embedding provider configuration is invalid.",
-                errorCode: "configuration_error");
-        }
-
-        return endpointUri;
+                errorCode: "configuration_error"));
     }
 }

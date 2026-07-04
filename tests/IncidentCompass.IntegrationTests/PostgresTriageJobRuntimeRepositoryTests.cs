@@ -164,6 +164,41 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
         Assert.Equal("Failed", faultStatus);
     }
 
+    [DockerAvailableFact]
+    public async Task RecordAttemptFailureAsync_StaleAttemptDoesNotMutateJobOrFault()
+    {
+        using var scope = await CreateScopeAsync();
+        var seed = await SeedJobAsync(scope.ConnectionString, "claim-failure-stale", "Pending");
+        var repository = scope.Services.GetRequiredService<ITriageJobRuntimeRepository>();
+        var claimed = await repository.ClaimNextAsync(
+            "worker-stale-failure",
+            TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+
+        await repository.RecordAttemptFailureAsync(
+            claimed with { Attempt = claimed.Attempt + 1 },
+            "worker-stale-failure",
+            new TriageJobAttemptFailure(
+                TriageJobStatus.DeadLettered,
+                "stale_deadletter",
+                "stale attempts must not update",
+                NextAttemptAtUtc: null),
+            TestContext.Current.CancellationToken);
+
+        var row = await ReadJobStateAsync(scope.ConnectionString, seed.JobId);
+        Assert.Equal("Processing", row.Status);
+        Assert.Equal("worker-stale-failure", row.LockedBy);
+        Assert.Null(row.NextAttemptAtUtc);
+        Assert.Null(row.LastErrorCode);
+
+        var faultStatus = await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT status FROM incidentcompass.faults WHERE id = @fault_id;",
+            ("fault_id", seed.FaultId));
+        Assert.Equal("Analyzing", faultStatus);
+    }
+
     private async Task<RepositoryScope> CreateScopeAsync()
     {
         var connectionString = await postgres.GetConnectionStringAsync();

@@ -28,9 +28,9 @@ RUN groupadd --system incidentcompass && \
     useradd --system --gid incidentcompass --home-dir /app incidentcompass && \
     chown -R incidentcompass:incidentcompass /app
 
-COPY --from=build /app/publish ./
-COPY config ./config
-COPY samples ./samples
+COPY --chown=incidentcompass:incidentcompass --from=build /app/publish ./
+COPY --chown=incidentcompass:incidentcompass config ./config
+COPY --chown=incidentcompass:incidentcompass samples ./samples
 
 ENV IncidentCompass__ConfigSource__Path=/app/config/incidentcompass.config.json \
     IncidentCompass__Memory__Seed__SourceDirectory=/app/samples

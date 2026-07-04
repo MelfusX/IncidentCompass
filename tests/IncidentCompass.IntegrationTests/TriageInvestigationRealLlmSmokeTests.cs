@@ -50,6 +50,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
     {
         try
         {
+            await PostgresTriageJobTestIsolation.CompleteClaimableJobsAsync(scope.ConnectionString);
             var ingested = await PostIngestAsync(scope.Client, TesterEnvelope(index));
             if (ingested.JobId is null)
             {
@@ -65,6 +66,11 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             if (claimed is null)
             {
                 return new SmokeOutcome(index, false, "worker_did_not_claim_job");
+            }
+
+            if (claimed.Id != ingested.JobId.Value)
+            {
+                return new SmokeOutcome(index, false, "worker_claimed_unexpected_job_id " + claimed.Id);
             }
 
             await runner.ProcessClaimedAsync(
@@ -97,6 +103,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
     {
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
+        await PostgresTriageJobTestIsolation.CompleteClaimableJobsAsync(connectionString);
         await ClearMemoryAsync(connectionString);
 
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

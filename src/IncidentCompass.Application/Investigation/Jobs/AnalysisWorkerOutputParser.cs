@@ -1,21 +1,26 @@
 using System.Text.Json;
+using IncidentCompass.Application.Core.Serialization;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal static class AnalysisWorkerOutputParser
 {
-    private static readonly HashSet<string> AllowedClassifications = new(
-        ["KnownIncident", "LikelyRegression", "SimpleKnownError", "Unknown", "Noise"],
-        StringComparer.Ordinal);
-
     public static AnalysisWorkerOutput Parse(string content, string roleName)
     {
         var outputLabel = WorkerOutputDiagnosticLabels.Output(roleName);
         using var document = JsonDocument.Parse(content);
-        var root = document.RootElement;
+        var root = JsonElementReader.RequireObject(
+            document.RootElement,
+            $"{outputLabel} must be an object.",
+            CreateException);
         var keyFacts = ReadKeyFacts(root, outputLabel);
-        var classification = ReadRequiredString(root, "candidateClassification", outputLabel);
-        if (!AllowedClassifications.Contains(classification))
+        var classification = JsonElementReader.ReadRequiredString(
+            root,
+            "candidateClassification",
+            $"{outputLabel} is missing string candidateClassification.",
+            CreateException,
+            trim: false);
+        if (!TriageClassificationVocabulary.Contains(classification))
         {
             throw new InvalidOperationException($"{outputLabel} has unsupported candidateClassification '{classification}'.");
         }
@@ -26,11 +31,7 @@ internal static class AnalysisWorkerOutputParser
             throw new InvalidOperationException($"{outputLabel} is missing boolean needsDeeperContext.");
         }
 
-        var rationale = root.TryGetProperty("rationale", out var rationaleElement) &&
-            rationaleElement.ValueKind == JsonValueKind.String
-                ? rationaleElement.GetString()
-                : null;
-
+        var rationale = JsonElementReader.ReadOptionalString(root, "rationale", CreateException);
         return new AnalysisWorkerOutput(keyFacts, classification, needsContextElement.GetBoolean(), rationale);
     }
 
@@ -51,20 +52,11 @@ internal static class AnalysisWorkerOutputParser
             }
         }
 
-        return keyFacts.Count > 0
-            ? keyFacts
-            : throw new InvalidOperationException($"{outputLabel} keyFacts must contain at least one string.");
+        return keyFacts;
     }
 
-    private static string ReadRequiredString(JsonElement root, string propertyName, string outputLabel)
+    private static Exception CreateException(string message)
     {
-        if (!root.TryGetProperty(propertyName, out var element) ||
-            element.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(element.GetString()))
-        {
-            throw new InvalidOperationException($"{outputLabel} is missing string {propertyName}.");
-        }
-
-        return element.GetString()!;
+        return new InvalidOperationException(message);
     }
 }

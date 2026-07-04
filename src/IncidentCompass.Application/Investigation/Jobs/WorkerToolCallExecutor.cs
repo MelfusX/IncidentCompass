@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Domain.Incidents;
@@ -47,7 +48,8 @@ internal sealed class WorkerToolCallExecutor(
 
         var tool = tools.FirstOrDefault(candidate =>
             string.Equals(candidate.Definition.Name, toolCall.Name, StringComparison.Ordinal));
-        var decision = await DecideAsync(job, configuration, roleName, toolCall, tool, cancellationToken);
+        var validation = tool?.Validate(toolCall.Arguments);
+        var decision = await DecideAsync(job, configuration, roleName, toolCall, tool, validation, cancellationToken);
         await ledgerAppender.AppendPolicyDecisionAsync(
             job,
             roleName,
@@ -66,14 +68,12 @@ internal sealed class WorkerToolCallExecutor(
             throw new InvalidOperationException("Worker tool call denied: " + decision.Reason);
         }
 
-        var validation = tool!.Validate(toolCall.Arguments);
-        if (!validation.IsValid)
+        if (validation is null || !validation.IsValid)
         {
-            var reason = validation.ErrorMessage ?? "Tool arguments failed validation.";
-            throw new InvalidOperationException("Worker tool call validation failed: " + reason);
+            throw new InvalidOperationException("Worker tool call validation failed after policy approval.");
         }
 
-        var execution = await tool.ExecuteAsync(
+        var execution = await tool!.ExecuteAsync(
             new AgentToolExecutionContext(job, configuration, roleName, toolCall.Name, investigationContext.Fault.TenantId),
             validation.SanitizedArguments,
             cancellationToken);
@@ -94,6 +94,7 @@ internal sealed class WorkerToolCallExecutor(
         string roleName,
         AiToolCall toolCall,
         IAgentTool? tool,
+        ToolValidationResult? validation,
         CancellationToken cancellationToken)
     {
         if (tool is null)
@@ -101,10 +102,9 @@ internal sealed class WorkerToolCallExecutor(
             return WorkerToolPolicyResult.Denied("tool_not_registered");
         }
 
-        var validation = tool.Validate(toolCall.Arguments);
-        if (!validation.IsValid)
+        if (validation is null || !validation.IsValid)
         {
-            return WorkerToolPolicyResult.Denied(validation.ErrorMessage ?? "tool_arguments_invalid");
+            return WorkerToolPolicyResult.Denied(validation?.ErrorMessage ?? "tool_arguments_invalid");
         }
 
         return await ruleEngine.DecideAsync(job, configuration, roleName, toolCall.Name, cancellationToken);

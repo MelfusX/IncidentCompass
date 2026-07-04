@@ -100,9 +100,14 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             scope.ConnectionString,
             "SELECT COUNT(*) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'ModelCall' AND role IS NULL;",
             ("job_id", ingested.JobId.Value));
+        var chargedTokens = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COALESCE(SUM(tokens_delta), 0) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent';",
+            ("job_id", ingested.JobId.Value));
 
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, orchestratorModelCalls);
+        Assert.Equal(30, chargedTokens);
         Assert.Contains("unknown tool", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 

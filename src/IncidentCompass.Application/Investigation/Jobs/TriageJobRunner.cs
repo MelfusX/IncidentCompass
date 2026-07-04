@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Core.Text;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
 
@@ -77,8 +78,6 @@ internal sealed class TriageJobRunner(
             ? exception.GetType().Name
             : exception.Message;
 
-        return message.Length <= MaxStoredErrorMessageLength
-            ? message
-            : message[..MaxStoredErrorMessageLength];
+        return TextTruncator.Truncate(message, MaxStoredErrorMessageLength);
     }
 }

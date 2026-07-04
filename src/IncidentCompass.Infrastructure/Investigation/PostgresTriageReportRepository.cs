@@ -70,10 +70,10 @@ internal sealed class PostgresTriageReportRepository(
               AND locked_by = @worker_id
               AND status = 'Processing';
             """, connection, transaction);
-        AddParameter(command, "now", now);
-        AddParameter(command, "job_id", job.Id);
-        AddParameter(command, "attempt", job.Attempt);
-        AddParameter(command, "worker_id", workerId);
+        command.AddParameter("now", now);
+        command.AddParameter("job_id", job.Id);
+        command.AddParameter("attempt", job.Attempt);
+        command.AddParameter("worker_id", workerId);
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
@@ -96,7 +96,7 @@ internal sealed class PostgresTriageReportRepository(
             ORDER BY created_at_utc DESC, id DESC
             LIMIT 1;
             """, connection, transaction);
-        AddParameter(command, "job_id", jobId);
+        command.AddParameter("job_id", jobId);
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return value is DBNull or null ? null : (bool)value;
     }
@@ -129,17 +129,17 @@ internal sealed class PostgresTriageReportRepository(
                 created_at_utc = EXCLUDED.created_at_utc
             RETURNING id;
             """, connection, transaction);
-        AddParameter(command, "id", Guid.NewGuid());
-        AddParameter(command, "fault_id", job.FaultId);
-        AddParameter(command, "status", report.Status.ToString());
-        AddParameter(command, "summary", report.Summary);
-        AddParameter(command, "classification", report.Classification);
-        AddParameter(command, "confidence", report.Confidence);
-        AddParameter(command, "is_mass_issue", isMassIssue);
-        AddParameter(command, "recommended_next_action", report.RecommendedNextAction);
-        command.Parameters.AddWithValue("limitations", report.Limitations.ToArray());
-        AddParameter(command, "config_hash", job.ConfigHash);
-        AddParameter(command, "created_at_utc", now);
+        command.AddParameter("id", Guid.NewGuid());
+        command.AddParameter("fault_id", job.FaultId);
+        command.AddParameter("status", report.Status.ToDbString());
+        command.AddParameter("summary", report.Summary);
+        command.AddParameter("classification", report.Classification);
+        command.AddParameter("confidence", report.Confidence);
+        command.AddParameter("is_mass_issue", isMassIssue);
+        command.AddParameter("recommended_next_action", report.RecommendedNextAction);
+        command.AddParameter("limitations", report.Limitations.ToArray());
+        command.AddParameter("config_hash", job.ConfigHash);
+        command.AddParameter("created_at_utc", now);
         return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
@@ -159,9 +159,9 @@ internal sealed class PostgresTriageReportRepository(
             WHERE id = @fault_id
               AND status IN ('Queued', 'Analyzing');
             """, connection, transaction);
-        AddParameter(command, "status", status == TriageReportStatus.InsufficientEvidence ? "InsufficientEvidence" : "Completed");
-        AddParameter(command, "now", now);
-        AddParameter(command, "fault_id", faultId);
+        command.AddParameter("status", status == TriageReportStatus.InsufficientEvidence ? "InsufficientEvidence" : "Completed");
+        command.AddParameter("now", now);
+        command.AddParameter("fault_id", faultId);
 
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
         if (updated == 1)
@@ -176,8 +176,4 @@ internal sealed class PostgresTriageReportRepository(
         throw new InvalidOperationException($"Fault '{faultId}' could not be marked terminal while publishing triage report.");
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 }

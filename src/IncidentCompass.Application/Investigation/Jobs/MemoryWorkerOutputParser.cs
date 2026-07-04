@@ -1,4 +1,5 @@
 using System.Text.Json;
+using IncidentCompass.Application.Core.Serialization;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
@@ -7,7 +8,10 @@ internal static class MemoryWorkerOutputParser
     public static MemoryWorkerOutput Parse(string content)
     {
         using var document = JsonDocument.Parse(content);
-        var root = document.RootElement;
+        var root = JsonElementReader.RequireObject(
+            document.RootElement,
+            "Memory worker output must be an object.",
+            CreateException);
         if (!root.TryGetProperty("matched", out var matchedElement) ||
             matchedElement.ValueKind is not JsonValueKind.True and not JsonValueKind.False)
         {
@@ -16,15 +20,7 @@ internal static class MemoryWorkerOutputParser
 
         var items = ReadItems(root);
         var matched = matchedElement.GetBoolean();
-        if (matched && items.Count == 0)
-        {
-            throw new InvalidOperationException("Memory worker output matched=true requires at least one item.");
-        }
-
-        var noMatchReason = root.TryGetProperty("noMatchReason", out var reasonElement) &&
-            reasonElement.ValueKind == JsonValueKind.String
-                ? reasonElement.GetString()
-                : null;
+        var noMatchReason = JsonElementReader.ReadOptionalString(root, "noMatchReason", CreateException);
         return new MemoryWorkerOutput(matched, items, noMatchReason);
     }
 
@@ -39,30 +35,28 @@ internal static class MemoryWorkerOutputParser
         var items = new List<MemoryWorkerOutputItem>();
         foreach (var itemElement in itemsElement.EnumerateArray())
         {
+            var item = JsonElementReader.RequireObject(
+                itemElement,
+                "Memory worker output items must be objects.",
+                CreateException);
             items.Add(new MemoryWorkerOutputItem(
-                ReadRequiredString(itemElement, "artifactId"),
-                ReadRequiredString(itemElement, "title"),
-                ReadOptionalString(itemElement, "quote") ?? string.Empty,
-                ReadOptionalDouble(itemElement, "score")));
+                ReadMemoryString(item, "artifactId"),
+                ReadMemoryString(item, "title"),
+                JsonElementReader.ReadOptionalString(item, "quote", CreateException) ?? string.Empty,
+                ReadOptionalDouble(item, "score")));
         }
 
         return items;
     }
 
-    private static string ReadRequiredString(JsonElement root, string propertyName)
+    private static string ReadMemoryString(JsonElement root, string propertyName)
     {
-        var value = ReadOptionalString(root, propertyName);
-        return string.IsNullOrWhiteSpace(value)
-            ? throw new InvalidOperationException($"Memory worker output is missing string {propertyName}.")
-            : value;
-    }
-
-    private static string? ReadOptionalString(JsonElement root, string propertyName)
-    {
-        return root.TryGetProperty(propertyName, out var element) &&
-               element.ValueKind == JsonValueKind.String
-            ? element.GetString()
-            : null;
+        return JsonElementReader.ReadRequiredString(
+            root,
+            propertyName,
+            $"Memory worker output is missing string {propertyName}.",
+            CreateException,
+            trim: false);
     }
 
     private static double? ReadOptionalDouble(JsonElement root, string propertyName)
@@ -72,5 +66,10 @@ internal static class MemoryWorkerOutputParser
                element.TryGetDouble(out var value)
             ? value
             : null;
+    }
+
+    private static Exception CreateException(string message)
+    {
+        return new InvalidOperationException(message);
     }
 }

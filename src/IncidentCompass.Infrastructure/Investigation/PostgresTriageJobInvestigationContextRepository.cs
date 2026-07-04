@@ -36,7 +36,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             JOIN incidentcompass.triage_jobs j ON j.fault_id = f.id
             WHERE j.id = @job_id;
             """, connection);
-        command.Parameters.AddWithValue("job_id", jobId);
+        command.AddParameter("job_id", jobId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -57,8 +57,8 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             reader.GetString(9),
             reader.IsDBNull(10) ? null : reader.GetString(10),
             reader.IsDBNull(11) ? null : reader.GetString(11),
-            PostgresTriageJobMapper.GetDateTimeOffset(reader, 12),
-            reader.IsDBNull(13) ? null : PostgresTriageJobMapper.GetDateTimeOffset(reader, 13),
+            reader.GetDateTimeOffset(12),
+            reader.IsDBNull(13) ? null : reader.GetDateTimeOffset(13),
             reader.IsDBNull(14) ? null : reader.GetGuid(14));
     }
 
@@ -78,7 +78,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             FROM incidentcompass.signals
             WHERE id = @signal_id;
             """, connection);
-        command.Parameters.AddWithValue("signal_id", signalId);
+        command.AddParameter("signal_id", signalId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -118,8 +118,8 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             reader.IsDBNull(26) ? null : reader.GetInt32(26),
             attributes.RootElement.Clone(),
             body.RootElement.Clone(),
-            PostgresTriageJobMapper.GetDateTimeOffset(reader, 29),
-            PostgresTriageJobMapper.GetDateTimeOffset(reader, 30));
+            reader.GetDateTimeOffset(29),
+            reader.GetDateTimeOffset(30));
     }
 
     private static async Task<IReadOnlyCollection<TriageArtifact>> LoadArtifactsAsync(
@@ -133,7 +133,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             WHERE job_id = @job_id
             ORDER BY created_at_utc, id;
             """, connection);
-        command.Parameters.AddWithValue("job_id", jobId);
+        command.AddParameter("job_id", jobId);
 
         var artifacts = new List<TriageArtifact>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -148,7 +148,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 payload.RootElement.Clone(),
                 reader.GetString(6),
-                PostgresTriageJobMapper.GetDateTimeOffset(reader, 7)));
+                reader.GetDateTimeOffset(7)));
         }
 
         return artifacts;

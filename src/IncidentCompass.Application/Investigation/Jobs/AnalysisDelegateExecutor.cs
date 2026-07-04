@@ -93,14 +93,13 @@ internal sealed class AnalysisDelegateExecutor(
     {
         var payload = JsonNode.Parse(content) ?? new JsonObject { ["raw"] = content };
         var canonicalPayload = CanonicalJsonSerializer.Canonicalize(payload);
-        using var payloadDocument = JsonDocument.Parse(payload.ToJsonString());
         var artifact = new TriageArtifact(
             Guid.NewGuid(),
             job.Id,
             job.Attempt,
             ArtifactKind.WorkerOutput,
             $"worker:{roleName}",
-            payloadDocument.RootElement.Clone(),
+            CanonicalJsonSerializer.ToElement(payload),
             CanonicalJsonSerializer.ComputeSha256Hex(canonicalPayload),
             timeProvider.GetUtcNow());
 
@@ -110,25 +109,27 @@ internal sealed class AnalysisDelegateExecutor(
 
     private static (string Role, string Task) ReadDelegateArguments(JsonElement arguments)
     {
-        var role = ReadRequiredString(arguments, "role");
-        var task = ReadRequiredString(arguments, "task");
+        var root = JsonElementReader.RequireObject(
+            arguments,
+            "delegate arguments must be an object.",
+            CreateException);
+        var role = ReadDelegateString(root, "role");
+        var task = ReadDelegateString(root, "task");
         return (role, task);
     }
 
-    private static string ReadRequiredString(JsonElement arguments, string propertyName)
+    private static string ReadDelegateString(JsonElement arguments, string propertyName)
     {
-        if (arguments.ValueKind != JsonValueKind.Object)
-        {
-            throw new DelegateToolCallValidationException("delegate arguments must be an object.");
-        }
+        return JsonElementReader.ReadRequiredString(
+            arguments,
+            propertyName,
+            $"delegate is missing string {propertyName}.",
+            CreateException,
+            trim: false);
+    }
 
-        if (!arguments.TryGetProperty(propertyName, out var element) ||
-            element.ValueKind != JsonValueKind.String ||
-            string.IsNullOrWhiteSpace(element.GetString()))
-        {
-            throw new DelegateToolCallValidationException($"delegate is missing string {propertyName}.");
-        }
-
-        return element.GetString()!;
+    private static Exception CreateException(string message)
+    {
+        return new DelegateToolCallValidationException(message);
     }
 }

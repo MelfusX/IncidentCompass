@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace IncidentCompass.Application.Core.Serialization;
@@ -11,6 +12,12 @@ internal static class CanonicalJsonSerializer
         var builder = new StringBuilder();
         Write(node, builder);
         return builder.ToString();
+    }
+
+    public static JsonElement ToElement(JsonNode node)
+    {
+        using var document = JsonDocument.Parse(node.ToJsonString());
+        return document.RootElement.Clone();
     }
 
     // U+001E (ASCII Record Separator) never appears in canonical JSON output produced by
@@ -67,7 +74,7 @@ internal static class CanonicalJsonSerializer
             }
 
             isFirst = false;
-            builder.Append(System.Text.Json.JsonSerializer.Serialize(key));
+            builder.Append(JsonSerializer.Serialize(key));
             builder.Append(':');
             Write(jsonObject[key], builder);
         }

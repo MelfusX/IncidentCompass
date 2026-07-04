@@ -17,7 +17,7 @@ internal sealed class PostgresPriorReportSummaryProvider(PostgresDataSourceProvi
             ORDER BY created_at_utc DESC, id DESC
             LIMIT 1;
             """, connection);
-        command.Parameters.AddWithValue("fault_id", faultId);
+        command.AddParameter("fault_id", faultId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))

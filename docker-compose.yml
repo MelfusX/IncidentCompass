@@ -36,6 +36,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     restart: on-failure
 
   worker:
@@ -53,6 +59,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -azq 'IncidentCompass.Worker.dll' /proc/1/cmdline"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     restart: on-failure
 
   tester:
@@ -65,9 +79,9 @@ services:
       INCIDENTCOMPASS_TESTER_PUBLIC_BASE_URL: http://localhost:5198
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       worker:
-        condition: service_started
+        condition: service_healthy
     restart: "no"
 
 volumes:

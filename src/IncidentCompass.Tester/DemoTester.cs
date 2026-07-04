@@ -4,6 +4,8 @@ namespace IncidentCompass.Tester;
 
 internal sealed class DemoTester(HttpClient client, TesterOptions options)
 {
+    private readonly TransientHttpRetry httpRetry = new(options.PollInterval);
+
     public Task<int> RunAsync(CancellationToken cancellationToken)
     {
         return DemoDeadlineRunner.RunTotalAsync(
@@ -20,11 +22,18 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
 
         foreach (var scenario in DemoScenario.CreateAll(runId))
         {
-            results.Add(await DemoDeadlineRunner.RunScenarioAsync(
-                scenario,
-                options.ScenarioTimeout,
-                token => RunScenarioAsync(scenario, runId, token),
-                cancellationToken));
+            try
+            {
+                results.Add(await DemoDeadlineRunner.RunScenarioAsync(
+                    scenario,
+                    options.ScenarioTimeout,
+                    token => RunScenarioAsync(scenario, runId, token),
+                    cancellationToken));
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                results.Add(CreateFailedResult(scenario, exception.Message));
+            }
         }
 
         DemoResultPrinter.Print(results);
@@ -79,7 +88,7 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
 
         var reportUrl = BuildUrl($"api/v1/triage-reports/{reportId}");
         var report = await GetReportAsync(reportId.Value, cancellationToken);
-        var passed = MatchesExpectations(scenario, report, out var detail);
+        var passed = DemoExpectationChecker.Matches(scenario, report, out var detail);
         return new DemoResult(
             scenario,
             target.FaultId,
@@ -96,15 +105,18 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
         IncidentEnvelope envelope,
         CancellationToken cancellationToken)
     {
-        using var response = await client.PostAsJsonAsync(
-            "api/v1/incidents",
-            envelope,
-            TesterJsonContext.Default.IncidentEnvelope,
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync(
-            TesterJsonContext.Default.IngestSignalResponse,
-            cancellationToken) ?? throw new InvalidOperationException("Incident response body was empty.");
+        return await httpRetry.ExecuteAsync(async token =>
+        {
+            using var response = await client.PostAsJsonAsync(
+                "api/v1/incidents",
+                envelope,
+                TesterJsonContext.Default.IncidentEnvelope,
+                token);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync(
+                TesterJsonContext.Default.IngestSignalResponse,
+                token) ?? throw new InvalidOperationException("Incident response body was empty.");
+        }, cancellationToken);
     }
 
     private async Task<Guid?> WaitForReportIdAsync(Guid faultId, CancellationToken cancellationToken)
@@ -129,46 +141,27 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
 
     private async Task<FaultLedgerResponse> GetLedgerAsync(Guid faultId, CancellationToken cancellationToken)
     {
-        return await client.GetFromJsonAsync(
-            $"api/v1/faults/{faultId}/ledger",
-            TesterJsonContext.Default.FaultLedgerResponse,
-            cancellationToken) ?? throw new InvalidOperationException("Ledger response body was empty.");
+        return await httpRetry.ExecuteAsync(async token =>
+            await client.GetFromJsonAsync(
+                $"api/v1/faults/{faultId}/ledger",
+                TesterJsonContext.Default.FaultLedgerResponse,
+                token) ?? throw new InvalidOperationException("Ledger response body was empty."),
+            cancellationToken);
     }
 
     private async Task<TriageReportResponse> GetReportAsync(Guid reportId, CancellationToken cancellationToken)
     {
-        return await client.GetFromJsonAsync(
-            $"api/v1/triage-reports/{reportId}",
-            TesterJsonContext.Default.TriageReportResponse,
-            cancellationToken) ?? throw new InvalidOperationException("Report response body was empty.");
+        return await httpRetry.ExecuteAsync(async token =>
+            await client.GetFromJsonAsync(
+                $"api/v1/triage-reports/{reportId}",
+                TesterJsonContext.Default.TriageReportResponse,
+                token) ?? throw new InvalidOperationException("Report response body was empty."),
+            cancellationToken);
     }
 
-    private static bool MatchesExpectations(
-        DemoScenario scenario,
-        TriageReportResponse report,
-        out string detail)
+    private static DemoResult CreateFailedResult(DemoScenario scenario, string detail)
     {
-        if (!string.Equals(report.Classification, scenario.ExpectedClassification, StringComparison.Ordinal))
-        {
-            detail = "classification=" + report.Classification;
-            return false;
-        }
-
-        if (scenario.ExpectedIsMassIssue != report.IsMassIssue)
-        {
-            detail = "is_mass_issue=" + FormatNullableBool(report.IsMassIssue);
-            return false;
-        }
-
-        if (scenario.ExpectedEvidenceKind is not null &&
-            !report.Evidence.Any(evidence => string.Equals(evidence.Kind, scenario.ExpectedEvidenceKind, StringComparison.Ordinal)))
-        {
-            detail = "missing evidence kind " + scenario.ExpectedEvidenceKind;
-            return false;
-        }
-
-        detail = "ok";
-        return true;
+        return new DemoResult(scenario, null, null, null, null, null, null, false, detail);
     }
 
     private string BuildUrl(string path) => new Uri(options.PublicBaseUrl, path).ToString();
@@ -182,5 +175,4 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
             Guid.TryParse(payloadRef[prefix.Length..], out reportId);
     }
 
-    private static string FormatNullableBool(bool? value) => value.HasValue ? value.Value.ToString().ToLowerInvariant() : "null";
 }

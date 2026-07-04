@@ -10,11 +10,11 @@ internal static class DemoResultPrinter
         {
             Console.WriteLine(string.Join(" | ",
                 result.Scenario.Id + " " + result.Scenario.Name,
-                result.FaultId,
+                result.FaultId?.ToString() ?? "missing",
                 result.ReportId?.ToString() ?? "missing",
                 FormatNullableBool(result.IsMassIssue),
                 result.Classification ?? "missing",
-                result.LedgerUrl,
+                result.LedgerUrl ?? "missing",
                 result.ReportUrl ?? "missing",
                 result.Passed ? "ok" : result.Detail));
         }

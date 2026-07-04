@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$previousLocation = Get-Location
 Set-Location $repoRoot
 
 function Write-SmokeResultUnavailable {
@@ -36,23 +37,73 @@ function Write-SmokeResultUnavailable {
     Write-Output "Result written to $absoluteResultPath"
 }
 
-$modelsUri = $BaseUrl.TrimEnd('/') + "/v1/models"
-try {
-    Invoke-WebRequest -Uri $modelsUri -UseBasicParsing -TimeoutSec 5 | Out-Null
-} catch {
-    Write-SmokeResultUnavailable "OpenAI-compatible models endpoint unavailable at $modelsUri ($($_.Exception.GetType().Name))"
-    exit 2
+function Save-EnvironmentVariables {
+    param([string[]] $Names)
+
+    $snapshot = @{}
+    foreach ($name in $Names) {
+        $value = [Environment]::GetEnvironmentVariable($name, "Process")
+        $snapshot[$name] = [pscustomobject]@{
+            Exists = $null -ne $value
+            Value = $value
+        }
+    }
+
+    return $snapshot
 }
 
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE = "true"
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_BASE_URL = $BaseUrl
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_CHAT_PATH = $ChatCompletionsPath
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_MODEL = $Model
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY = $ApiKey
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS = $Runs.ToString()
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS = $TimeoutSeconds.ToString()
-$env:INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ResultPath))
-$env:INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS = "true"
+function Restore-EnvironmentVariables {
+    param([hashtable] $Snapshot)
 
-dotnet test tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj --no-build --filter FullyQualifiedName~TriageInvestigationRealLlmSmokeTests
-exit $LASTEXITCODE
+    foreach ($entry in $Snapshot.GetEnumerator()) {
+        if ($entry.Value.Exists) {
+            [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value.Value, "Process")
+        } else {
+            [Environment]::SetEnvironmentVariable($entry.Key, $null, "Process")
+        }
+    }
+}
+
+try {
+    $modelsUri = $BaseUrl.TrimEnd('/') + "/v1/models"
+    try {
+        Invoke-WebRequest -Uri $modelsUri -UseBasicParsing -TimeoutSec 5 | Out-Null
+    } catch {
+        Write-SmokeResultUnavailable "OpenAI-compatible models endpoint unavailable at $modelsUri ($($_.Exception.GetType().Name))"
+        exit 2
+    }
+
+    $envNames = @(
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_BASE_URL",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_CHAT_PATH",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_MODEL",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS",
+        "INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH",
+        "INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS"
+    )
+    $savedEnvironment = Save-EnvironmentVariables $envNames
+    $exitCode = 0
+    try {
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE = "true"
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_BASE_URL = $BaseUrl
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_CHAT_PATH = $ChatCompletionsPath
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_MODEL = $Model
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY = $ApiKey
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS = $Runs.ToString()
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS = $TimeoutSeconds.ToString()
+        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ResultPath))
+        $env:INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS = "true"
+
+        dotnet test tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj --no-build --filter FullyQualifiedName~TriageInvestigationRealLlmSmokeTests
+        $exitCode = $LASTEXITCODE
+    } finally {
+        Restore-EnvironmentVariables $savedEnvironment
+    }
+
+    exit $exitCode
+} finally {
+    Set-Location $previousLocation
+}

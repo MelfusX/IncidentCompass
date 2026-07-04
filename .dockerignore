@@ -6,7 +6,13 @@
 **/bin/
 **/obj/
 **/TestResults/
+docs/
+tests/
+scripts/
+archive/
 .env
 *.user
 *.suo
 *.log
+*.md
+!samples/**/*.md

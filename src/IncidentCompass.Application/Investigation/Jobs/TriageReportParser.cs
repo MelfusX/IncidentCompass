@@ -1,19 +1,17 @@
 using System.Text.Json;
+using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Investigation.Reports;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal static class TriageReportParser
 {
-    private static readonly HashSet<string> AllowedClassifications = new(
-        ["KnownIncident", "LikelyRegression", "SimpleKnownError", "Unknown", "Noise"],
-        StringComparer.Ordinal);
     private static readonly HashSet<string> AllowedConfidence = new(["Low", "Medium", "High"], StringComparer.Ordinal);
 
     public static TriageReport Parse(JsonElement arguments)
     {
         var root = ResolveReportRoot(arguments);
-        var statusName = ReadRequiredString(root, "status");
+        var statusName = ReadReportString(root, "status");
         if (!Enum.IsDefined(typeof(TriageReportStatus), statusName) ||
             !Enum.TryParse<TriageReportStatus>(statusName, ignoreCase: false, out var status) ||
             status == TriageReportStatus.Failed)
@@ -21,10 +19,10 @@ internal static class TriageReportParser
             throw new TriageReportValidationException("publish_report status must be Completed or InsufficientEvidence.");
         }
 
-        var classification = ReadRequiredString(root, "classification");
+        var classification = ReadReportString(root, "classification");
         ValidateClassification(status, classification);
 
-        var confidence = ReadRequiredString(root, "confidence");
+        var confidence = ReadReportString(root, "confidence");
         if (!AllowedConfidence.Contains(confidence))
         {
             throw new TriageReportValidationException("publish_report confidence must be Low, Medium, or High.");
@@ -38,29 +36,29 @@ internal static class TriageReportParser
 
         return new TriageReport(
             status,
-            ReadRequiredString(root, "summary"),
+            ReadReportString(root, "summary"),
             classification,
             confidence,
             evidence,
             ReadRequiredStringArray(root, "limitations"),
-            ReadRequiredString(root, "recommendedNextAction"));
+            ReadReportString(root, "recommendedNextAction"));
     }
 
     private static void ValidateClassification(TriageReportStatus status, string classification)
     {
-        if (!AllowedClassifications.Contains(classification))
+        if (!TriageClassificationVocabulary.Contains(classification))
         {
             throw new TriageReportValidationException("publish_report classification is not supported.");
         }
 
         if (status == TriageReportStatus.InsufficientEvidence &&
-            !string.Equals(classification, "Unknown", StringComparison.Ordinal))
+            !string.Equals(classification, TriageClassificationVocabulary.Unknown, StringComparison.Ordinal))
         {
             throw new TriageReportValidationException("InsufficientEvidence reports must use classification Unknown.");
         }
 
         if (status == TriageReportStatus.Completed &&
-            string.Equals(classification, "Unknown", StringComparison.Ordinal))
+            string.Equals(classification, TriageClassificationVocabulary.Unknown, StringComparison.Ordinal))
         {
             throw new TriageReportValidationException("Completed reports must use a concrete non-Unknown classification.");
         }
@@ -68,29 +66,25 @@ internal static class TriageReportParser
 
     private static JsonElement ResolveReportRoot(JsonElement arguments)
     {
-        if (arguments.ValueKind != JsonValueKind.Object)
-        {
-            throw new TriageReportValidationException("publish_report arguments must be an object.");
-        }
+        JsonElementReader.RequireObject(
+            arguments,
+            "publish_report arguments must be an object.",
+            CreateException);
 
         if (arguments.TryGetProperty("report_json", out var reportJson))
         {
-            if (reportJson.ValueKind != JsonValueKind.Object)
-            {
-                throw new TriageReportValidationException("publish_report report_json must be an object.");
-            }
-
-            return reportJson;
+            return JsonElementReader.RequireObject(
+                reportJson,
+                "publish_report report_json must be an object.",
+                CreateException);
         }
 
         if (arguments.TryGetProperty("report", out var report))
         {
-            if (report.ValueKind != JsonValueKind.Object)
-            {
-                throw new TriageReportValidationException("publish_report report must be an object.");
-            }
-
-            return report;
+            return JsonElementReader.RequireObject(
+                report,
+                "publish_report report must be an object.",
+                CreateException);
         }
 
         return arguments;
@@ -106,40 +100,31 @@ internal static class TriageReportParser
         var evidence = new List<TriageReportEvidenceReference>();
         foreach (var item in element.EnumerateArray())
         {
-            if (item.ValueKind != JsonValueKind.Object)
-            {
-                throw new TriageReportValidationException("publish_report evidence items must be objects.");
-            }
+            JsonElementReader.RequireObject(
+                item,
+                "publish_report evidence items must be objects.",
+                CreateException);
 
             evidence.Add(new TriageReportEvidenceReference(
-                ReadRequiredString(item, "referenceId"),
-                ReadOptionalString(item, "quote")));
+                ReadReportString(item, "referenceId"),
+                JsonElementReader.ReadOptionalString(
+                    item,
+                    "quote",
+                    CreateException,
+                    "publish_report quote must be a string.")));
         }
 
         return evidence;
     }
 
-    private static string ReadRequiredString(JsonElement root, string propertyName)
+    private static string ReadReportString(JsonElement root, string propertyName)
     {
-        var value = ReadOptionalString(root, propertyName);
-        return string.IsNullOrWhiteSpace(value)
-            ? throw new TriageReportValidationException($"publish_report is missing string {propertyName}.")
-            : value.Trim();
-    }
-
-    private static string? ReadOptionalString(JsonElement root, string propertyName)
-    {
-        if (!root.TryGetProperty(propertyName, out var element) || element.ValueKind == JsonValueKind.Null)
-        {
-            return null;
-        }
-
-        if (element.ValueKind != JsonValueKind.String)
-        {
-            throw new TriageReportValidationException($"publish_report {propertyName} must be a string.");
-        }
-
-        return element.GetString();
+        return JsonElementReader.ReadRequiredString(
+            root,
+            propertyName,
+            $"publish_report is missing string {propertyName}.",
+            CreateException,
+            $"publish_report {propertyName} must be a string.");
     }
 
     private static IReadOnlyList<string> ReadRequiredStringArray(JsonElement root, string propertyName)
@@ -165,5 +150,10 @@ internal static class TriageReportParser
         }
 
         return values;
+    }
+
+    private static Exception CreateException(string message)
+    {
+        return new TriageReportValidationException(message);
     }
 }

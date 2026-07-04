@@ -62,6 +62,31 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
     }
 
     [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_VerifiableQuoteIsKept()
+    {
+        const string quote = "KEEP quote from trigger payload";
+        using var scope = await CreateScopeAsync(services =>
+        {
+            services.RemoveAll<IAiModelClient>();
+            services.AddScoped<IAiModelClient>(_ => new ValidQuoteModelClient(quote));
+        });
+        var unique = Guid.NewGuid().ToString("N");
+        var ingested = await PostIngestAsync(scope.Client, new TesterEnvelopeDto(
+            "tester",
+            "quote-keep-svc-" + unique,
+            "prod",
+            DateTimeOffset.UtcNow,
+            new TesterAttributesDto("TimeoutException", quote, "/phase5")));
+        Assert.NotNull(ingested.JobId);
+
+        await RunClaimedJobAsync(scope, ingested.JobId.Value, "worker-quote-keep", maxAttempts: 1);
+
+        var row = await ReadSingleEvidenceAsync(scope.ConnectionString, ingested.FaultId);
+        Assert.Equal("TriggerSignal", row.Kind);
+        Assert.Equal(quote, row.Quote);
+    }
+
+    [DockerAvailableFact]
     public async Task ProcessClaimedAsync_FinalCommitFailureLeavesNoReportOrPublishedEvent()
     {
         using var scope = await CreateScopeAsync(services =>
@@ -318,6 +343,15 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
 
             var workerOutputId = FindToolResultArtifactId(request);
             return Task.FromResult(Response(request, "publish invalid", [PublishCall(request, workerOutputId, null)]));
+        }
+    }
+
+    private sealed class ValidQuoteModelClient(string quote) : IAiModelClient
+    {
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            var referenceId = FindPromptArtifactId(request, "TriggerSignal");
+            return Task.FromResult(Response(request, "publish", [PublishCall(request, referenceId, quote)]));
         }
     }
 

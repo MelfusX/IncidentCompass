@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace IncidentCompass.Infrastructure.ModelGateway.OpenAi.Dtos;
+namespace IncidentCompass.Infrastructure.OpenAiCompatible;
 
 internal sealed record OpenAiError(
     [property: JsonPropertyName("message")] string? Message,

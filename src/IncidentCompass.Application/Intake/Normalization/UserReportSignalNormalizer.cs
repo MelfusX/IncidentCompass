@@ -10,8 +10,8 @@ internal sealed class UserReportSignalNormalizer : ISignalNormalizer
 
     public NormalizedSignal Normalize(IngestSignalCommand command, DateTimeOffset receivedAtUtc)
     {
-        var serviceName = string.IsNullOrWhiteSpace(command.ServiceName) ? "unknown" : command.ServiceName;
-        var environment = string.IsNullOrWhiteSpace(command.Environment) ? "unknown" : command.Environment;
+        var serviceName = NormalizationDefaults.UnknownIfBlank(command.ServiceName);
+        var environment = NormalizationDefaults.UnknownIfBlank(command.Environment);
 
         var summary = SignalTextTruncator.TruncateSummary(ResolveSummary(command));
 

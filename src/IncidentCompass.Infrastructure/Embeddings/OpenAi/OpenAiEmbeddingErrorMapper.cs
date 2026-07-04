@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using IncidentCompass.Application.Core.Embeddings;
-using IncidentCompass.Infrastructure.Embeddings.OpenAi.Dtos;
+using IncidentCompass.Infrastructure.OpenAiCompatible;
 
 namespace IncidentCompass.Infrastructure.Embeddings.OpenAi;
 
@@ -11,12 +11,12 @@ internal sealed class OpenAiEmbeddingErrorMapper
         HttpStatusCode statusCode,
         string responseContent)
     {
-        var providerError = TryReadError(responseContent);
+        var providerError = OpenAiCompatibleErrorMapper.TryReadError(responseContent);
         return new EmbeddingClientException(
             OpenAiEmbeddingProvider.Name,
             providerError?.Error?.Message
                 ?? $"Embedding provider returned HTTP {(int)statusCode}.",
-            NormalizeProviderErrorCode(statusCode),
+            OpenAiCompatibleErrorMapper.NormalizeProviderErrorCode(statusCode),
             statusCode,
             providerError?.Error?.Code);
     }
@@ -55,32 +55,5 @@ internal sealed class OpenAiEmbeddingErrorMapper
             "Embedding provider returned an invalid JSON response.",
             errorCode: "invalid_json",
             innerException: exception);
-    }
-
-    private static string NormalizeProviderErrorCode(HttpStatusCode statusCode)
-    {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => "invalid_request",
-            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "authentication_error",
-            HttpStatusCode.RequestTimeout => "provider_timeout",
-            HttpStatusCode.TooManyRequests => "rate_limited",
-            _ when (int)statusCode >= 500 => "provider_unavailable",
-            _ => "provider_error"
-        };
-    }
-
-    private static OpenAiErrorResponse? TryReadError(string responseContent)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<OpenAiErrorResponse>(
-                responseContent,
-                OpenAiEmbeddingJson.Options);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }

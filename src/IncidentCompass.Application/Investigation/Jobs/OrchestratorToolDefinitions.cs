@@ -1,6 +1,6 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Intake.Configuration;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
@@ -39,7 +39,7 @@ internal static class OrchestratorToolDefinitions
             "delegate",
             "Delegate one bounded task to a configured worker role and wait for its result.",
             "v1",
-            ToElement(schema));
+            CanonicalJsonSerializer.ToElement(schema));
     }
 
     private static AiToolDefinition CreatePublishReportTool()
@@ -69,7 +69,7 @@ internal static class OrchestratorToolDefinitions
                     {
                         ["status"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Completed", "InsufficientEvidence") },
                         ["summary"] = new JsonObject { ["type"] = "string" },
-                        ["classification"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("KnownIncident", "LikelyRegression", "SimpleKnownError", "Unknown", "Noise") },
+                        ["classification"] = new JsonObject { ["type"] = "string", ["enum"] = TriageClassificationVocabulary.ToJsonArray() },
                         ["confidence"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("Low", "Medium", "High") },
                         ["evidence"] = new JsonObject { ["type"] = "array", ["items"] = evidenceItemSchema },
                         ["limitations"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } },
@@ -85,12 +85,6 @@ internal static class OrchestratorToolDefinitions
             "publish_report",
             "Publish the final grounded triage report and end this investigation.",
             "v1",
-            ToElement(schema));
-    }
-
-    private static JsonElement ToElement(JsonNode node)
-    {
-        using var document = JsonDocument.Parse(node.ToJsonString());
-        return document.RootElement.Clone();
+            CanonicalJsonSerializer.ToElement(schema));
     }
 }

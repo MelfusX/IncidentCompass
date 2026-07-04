@@ -2,7 +2,7 @@ using System.Net;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
-using IncidentCompass.Infrastructure.ModelGateway.OpenAi.Dtos;
+using IncidentCompass.Infrastructure.OpenAiCompatible;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 
@@ -12,12 +12,12 @@ internal sealed class OpenAiModelErrorMapper
         HttpStatusCode statusCode,
         string responseContent)
     {
-        var providerError = TryReadError(responseContent);
+        var providerError = OpenAiCompatibleErrorMapper.TryReadError(responseContent);
         return new AiModelException(
             OpenAiModelProvider.Name,
             providerError?.Error?.Message
                 ?? $"Model provider returned HTTP {(int)statusCode}.",
-            NormalizeProviderErrorCode(statusCode),
+            OpenAiCompatibleErrorMapper.NormalizeProviderErrorCode(statusCode),
             statusCode,
             providerError?.Error?.Code);
     }
@@ -56,32 +56,5 @@ internal sealed class OpenAiModelErrorMapper
             OpenAiModelProvider.Name,
             "Model provider returned no chat completion content.",
             errorCode: "empty_response");
-    }
-
-    private static string NormalizeProviderErrorCode(HttpStatusCode statusCode)
-    {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => "invalid_request",
-            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "authentication_error",
-            HttpStatusCode.RequestTimeout => "provider_timeout",
-            HttpStatusCode.TooManyRequests => "rate_limited",
-            _ when (int)statusCode >= 500 => "provider_unavailable",
-            _ => "provider_error"
-        };
-    }
-
-    private static OpenAiErrorResponse? TryReadError(string responseContent)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<OpenAiErrorResponse>(
-                responseContent,
-                OpenAiModelJson.Options);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }

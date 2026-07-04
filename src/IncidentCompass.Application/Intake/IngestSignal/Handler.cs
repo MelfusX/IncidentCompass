@@ -1,6 +1,5 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Dispatching;
+using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Intake.Fingerprinting;
@@ -78,15 +77,9 @@ public sealed class IngestSignalCommandHandler(
             HttpRoute: redacted.HttpRoute,
             HttpStatusCode: redacted.HttpStatusCode,
             DurationMs: redacted.DurationMs,
-            Attributes: ToElement(redacted.Attributes),
-            Body: ToElement(redacted.Body),
+            Attributes: CanonicalJsonSerializer.ToElement(redacted.Attributes),
+            Body: CanonicalJsonSerializer.ToElement(redacted.Body),
             ObservedAtUtc: redacted.ObservedAtUtc,
             ReceivedAtUtc: receivedAtUtc);
-    }
-
-    private static JsonElement ToElement(JsonNode node)
-    {
-        using var document = JsonDocument.Parse(node.ToJsonString());
-        return document.RootElement.Clone();
     }
 }

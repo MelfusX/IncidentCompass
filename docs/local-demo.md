@@ -51,8 +51,10 @@ docker compose --profile demo down --volumes
   API only over HTTP. The project has no references to Application, Domain or Infrastructure; it
   depends only on the .NET runtime libraries used by HttpClient and JSON serialization.
 
-Compose waits for PostgreSQL health before starting the hosts and uses restart-on-failure for API
-and Worker, because the config warmup intentionally fails fast if durable storage is unavailable.
+Compose waits for PostgreSQL health before starting the hosts, checks API readiness with GET
+/health, and uses a process-level Worker health check before running the Tester. API and Worker
+still use restart-on-failure because config warmup intentionally fails fast if durable storage is
+unavailable.
 
 ## Demo Scenarios
 
@@ -66,7 +68,11 @@ The Tester runs four scenarios from docs and samples-backed local data:
 4. Validation/noise input the analysis worker closes quickly. Expected classification: Noise.
 
 The output table includes FaultId, ReportId, is_mass_issue, Classification, a host-reachable ledger
-URL and a host-reachable report URL. Useful read endpoints after a run are:
+URL and a host-reachable report URL. The Tester accepts --request-timeout-seconds,
+--poll-timeout-seconds, --poll-interval-seconds, --scenario-timeout-seconds and
+--total-timeout-seconds when you run it directly; the same request and poll knobs can also be set
+with INCIDENTCOMPASS_TESTER_REQUEST_TIMEOUT_SECONDS, INCIDENTCOMPASS_TESTER_POLL_TIMEOUT_SECONDS
+and INCIDENTCOMPASS_TESTER_POLL_INTERVAL_SECONDS. Useful read endpoints after a run are:
 
 - GET http://localhost:5198/api/v1/faults/{id}
 - GET http://localhost:5198/api/v1/faults/{id}/ledger

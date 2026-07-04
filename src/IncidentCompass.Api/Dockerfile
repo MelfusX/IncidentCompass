@@ -24,13 +24,16 @@ RUN dotnet publish src/IncidentCompass.Api/IncidentCompass.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-RUN groupadd --system incidentcompass && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system incidentcompass && \
     useradd --system --gid incidentcompass --home-dir /app incidentcompass && \
     chown -R incidentcompass:incidentcompass /app
 
-COPY --from=build /app/publish ./
-COPY config ./config
-COPY samples ./samples
+COPY --chown=incidentcompass:incidentcompass --from=build /app/publish ./
+COPY --chown=incidentcompass:incidentcompass config ./config
+COPY --chown=incidentcompass:incidentcompass samples ./samples
 
 ENV ASPNETCORE_URLS=http://+:8080 \
     IncidentCompass__ConfigSource__Path=/app/config/incidentcompass.config.json \

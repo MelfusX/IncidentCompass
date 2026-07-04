@@ -49,8 +49,8 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
             """ + ScopePredicate(scope),
             connection);
         AddScopeParameters(command, job, scope);
-        command.Parameters.AddWithValue("tool_name", toolName);
-        command.Parameters.AddWithValue("decision", decision.ToString());
+        command.AddParameter("tool_name", toolName);
+        command.AddParameter("decision", decision.ToDbString());
 
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
@@ -73,8 +73,8 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
             """ + ScopePredicate(scope) + ");",
             connection);
         AddScopeParameters(command, job, scope);
-        command.Parameters.AddWithValue("tool_name", toolName);
-        command.Parameters.AddWithValue("tool_status", TriageLedgerToolStatus.Succeeded.ToString());
+        command.AddParameter("tool_name", toolName);
+        command.AddParameter("tool_status", TriageLedgerToolStatus.Succeeded.ToDbString());
 
         return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
@@ -95,7 +95,7 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
             ORDER BY id;
             """,
             connection);
-        command.Parameters.AddWithValue("fault_id", faultId);
+        command.AddParameter("fault_id", faultId);
 
         var entries = new List<TriageLedgerEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -114,7 +114,7 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
                 reader.IsDBNull(9) ? null : reader.GetString(9),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
                 reader.GetString(11),
-                GetDateTimeOffset(reader, 12),
+                reader.GetDateTimeOffset(12),
                 reader.IsDBNull(13) ? null : Enum.Parse<TriageLedgerToolStatus>(reader.GetString(13)),
                 reader.IsDBNull(14) ? null : reader.GetInt32(14),
                 reader.IsDBNull(15) ? null : reader.GetInt32(15)));
@@ -134,25 +134,18 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
     }
 
 
-    private static DateTimeOffset GetDateTimeOffset(NpgsqlDataReader reader, int ordinal)
-    {
-        var value = reader.GetDateTime(ordinal);
-        return value.Kind == DateTimeKind.Utc
-            ? new DateTimeOffset(value)
-            : new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
-    }
     private static void AddScopeParameters(NpgsqlCommand command, TriageJob job, string scope)
     {
         if (scope == "fault")
         {
-            command.Parameters.AddWithValue("fault_id", job.FaultId);
+            command.AddParameter("fault_id", job.FaultId);
             return;
         }
 
-        command.Parameters.AddWithValue("job_id", job.Id);
+        command.AddParameter("job_id", job.Id);
         if (scope != "job")
         {
-            command.Parameters.AddWithValue("attempt", job.Attempt);
+            command.AddParameter("attempt", job.Attempt);
         }
     }
 }

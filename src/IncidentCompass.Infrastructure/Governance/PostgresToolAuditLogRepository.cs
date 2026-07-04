@@ -29,24 +29,24 @@ internal sealed class PostgresToolAuditLogRepository(PostgresDataSourceProvider 
                 @error_message, @created_at_utc);
             """, connection);
 
-        AddParameter(command, "id", entry.Id);
-        AddParameter(command, "conversation_id", entry.ConversationId);
-        AddParameter(command, "tenant_id", entry.TenantId);
-        AddParameter(command, "user_id", entry.UserId);
-        AddParameter(command, "correlation_id", entry.CorrelationId);
-        AddParameter(command, "tool_call_id", entry.ToolCallId);
-        AddParameter(command, "tool_name", entry.ToolName);
-        AddParameter(command, "schema_version", entry.SchemaVersion);
-        AddParameter(command, "policy_version", entry.PolicyVersion);
-        AddParameter(command, "validation_status", entry.ValidationStatus);
-        AddParameter(command, "policy_decision", entry.PolicyDecision);
-        AddParameter(command, "approval_state", entry.ApprovalState);
-        AddParameter(command, "execution_status", entry.ExecutionStatus);
-        AddJsonParameter(command, "arguments", entry.Arguments.GetRawText());
-        AddJsonParameter(command, "output", entry.Output?.GetRawText());
-        AddParameter(command, "error_code", entry.ErrorCode);
-        AddParameter(command, "error_message", entry.ErrorMessage);
-        AddParameter(command, "created_at_utc", entry.CreatedAtUtc);
+        command.AddParameter("id", entry.Id);
+        command.AddParameter("conversation_id", entry.ConversationId);
+        command.AddParameter("tenant_id", entry.TenantId);
+        command.AddParameter("user_id", entry.UserId);
+        command.AddParameter("correlation_id", entry.CorrelationId);
+        command.AddParameter("tool_call_id", entry.ToolCallId);
+        command.AddParameter("tool_name", entry.ToolName);
+        command.AddParameter("schema_version", entry.SchemaVersion);
+        command.AddParameter("policy_version", entry.PolicyVersion);
+        command.AddParameter("validation_status", entry.ValidationStatus);
+        command.AddParameter("policy_decision", entry.PolicyDecision);
+        command.AddParameter("approval_state", entry.ApprovalState);
+        command.AddParameter("execution_status", entry.ExecutionStatus);
+        command.AddJsonbParameter("arguments", entry.Arguments.GetRawText());
+        command.AddJsonbParameter("output", entry.Output?.GetRawText());
+        command.AddParameter("error_code", entry.ErrorCode);
+        command.AddParameter("error_message", entry.ErrorMessage);
+        command.AddParameter("created_at_utc", entry.CreatedAtUtc);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -56,13 +56,5 @@ internal sealed class PostgresToolAuditLogRepository(PostgresDataSourceProvider 
         return await dataSourceProvider.OpenConnectionAsync(cancellationToken);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-    }
 
-    private static void AddJsonParameter(NpgsqlCommand command, string name, string? value)
-    {
-        command.Parameters.AddWithValue(name, NpgsqlDbType.Jsonb, value is null ? DBNull.Value : value);
-    }
 }

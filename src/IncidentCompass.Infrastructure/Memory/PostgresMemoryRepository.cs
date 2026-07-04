@@ -42,13 +42,13 @@ internal sealed class PostgresMemoryRepository(
             ORDER BY score DESC, chunk_id
             LIMIT @top_k;
             """, connection);
-        AddParameter(command, "tenant_id", request.TenantId);
-        AddParameter(command, "embedding_provider", request.EmbeddingProvider);
-        AddParameter(command, "embedding_model", request.EmbeddingModel);
-        AddParameter(command, "embedding_dimensions", request.EmbeddingDimensions);
+        command.AddParameter("tenant_id", request.TenantId);
+        command.AddParameter("embedding_provider", request.EmbeddingProvider);
+        command.AddParameter("embedding_model", request.EmbeddingModel);
+        command.AddParameter("embedding_dimensions", request.EmbeddingDimensions);
         AddVectorParameter(command, "query_vector", request.QueryVector);
-        AddParameter(command, "min_score", request.MinScore);
-        AddParameter(command, "top_k", request.TopK);
+        command.AddParameter("min_score", request.MinScore);
+        command.AddParameter("top_k", request.TopK);
         var results = new List<MemorySearchMatch>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
@@ -89,10 +89,6 @@ internal sealed class PostgresMemoryRepository(
             cancellationToken);
     }
 
-    private static void AddParameter(NpgsqlCommand command, string name, object value)
-    {
-        command.Parameters.AddWithValue(name, value);
-    }
 
     private static void AddVectorParameter(NpgsqlCommand command, string name, IReadOnlyList<float> value)
     {

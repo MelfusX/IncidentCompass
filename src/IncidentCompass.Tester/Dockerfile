@@ -22,7 +22,7 @@ RUN groupadd --system incidentcompass && \
     useradd --system --gid incidentcompass --home-dir /app incidentcompass && \
     chown -R incidentcompass:incidentcompass /app
 
-COPY --from=build /app/publish ./
+COPY --chown=incidentcompass:incidentcompass --from=build /app/publish ./
 
 ENV INCIDENTCOMPASS_TESTER_BASE_URL=http://api:8080
 

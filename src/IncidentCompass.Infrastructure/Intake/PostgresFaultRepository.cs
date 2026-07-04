@@ -13,7 +13,7 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         recurrence_of
         """;
 
-    public async Task<Fault?> FindOpenFaultAsync(
+    public Task<Fault?> FindOpenFaultAsync(
         string tenantId,
         string serviceName,
         string environment,
@@ -21,26 +21,18 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         CancellationToken cancellationToken)
     {
-        await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
-        await using var command = new NpgsqlCommand($"""
-            SELECT {SelectColumns}
-            FROM incidentcompass.faults
-            WHERE tenant_id = @tenant_id
-              AND service_name = @service_name
-              AND environment = @environment
-              AND fingerprint = @fingerprint
-              AND fingerprint_version = @fingerprint_version
-              AND status IN ('Queued', 'Analyzing')
-            LIMIT 1;
-            """, lease.Connection, lease.Transaction);
-
-        AddGroupKeyParameters(command, tenantId, serviceName, environment, fingerprint, fingerprintVersion);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? MapFault(reader) : null;
+        return FindByGroupKeyAsync(
+            tenantId,
+            serviceName,
+            environment,
+            fingerprint,
+            fingerprintVersion,
+            "('Queued', 'Analyzing')",
+            orderByCreatedDesc: false,
+            cancellationToken);
     }
 
-    public async Task<Fault?> FindMostRecentClosedFaultAsync(
+    public Task<Fault?> FindMostRecentClosedFaultAsync(
         string tenantId,
         string serviceName,
         string environment,
@@ -48,24 +40,15 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         CancellationToken cancellationToken)
     {
-        await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
-        await using var command = new NpgsqlCommand($"""
-            SELECT {SelectColumns}
-            FROM incidentcompass.faults
-            WHERE tenant_id = @tenant_id
-              AND service_name = @service_name
-              AND environment = @environment
-              AND fingerprint = @fingerprint
-              AND fingerprint_version = @fingerprint_version
-              AND status IN ('Completed', 'Failed', 'InsufficientEvidence')
-            ORDER BY created_at_utc DESC
-            LIMIT 1;
-            """, lease.Connection, lease.Transaction);
-
-        AddGroupKeyParameters(command, tenantId, serviceName, environment, fingerprint, fingerprintVersion);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? MapFault(reader) : null;
+        return FindByGroupKeyAsync(
+            tenantId,
+            serviceName,
+            environment,
+            fingerprint,
+            fingerprintVersion,
+            "('Completed', 'Failed', 'InsufficientEvidence')",
+            orderByCreatedDesc: true,
+            cancellationToken);
     }
 
     public async Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken)
@@ -84,20 +67,20 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
             RETURNING id;
             """, lease.Connection, lease.Transaction);
 
-        AddParameter(command, "id", fault.Id);
-        AddParameter(command, "trigger_signal_id", fault.TriggerSignalId);
-        AddParameter(command, "tenant_id", fault.TenantId);
-        AddParameter(command, "status", fault.Status.ToString());
-        AddParameter(command, "fingerprint", fault.Fingerprint);
-        AddParameter(command, "fingerprint_version", fault.FingerprintVersion);
-        AddParameter(command, "fingerprint_strength", ToDbString(fault.FingerprintStrength));
-        AddParameter(command, "service_name", fault.ServiceName);
-        AddParameter(command, "environment", fault.Environment);
-        AddParameter(command, "severity", fault.Severity);
-        AddParameter(command, "correlation_id", fault.CorrelationId);
-        AddParameter(command, "created_at_utc", fault.CreatedAtUtc);
-        AddParameter(command, "completed_at_utc", fault.CompletedAtUtc);
-        AddParameter(command, "recurrence_of", fault.RecurrenceOf);
+        command.AddParameter("id", fault.Id);
+        command.AddParameter("trigger_signal_id", fault.TriggerSignalId);
+        command.AddParameter("tenant_id", fault.TenantId);
+        command.AddParameter("status", fault.Status.ToDbString());
+        command.AddParameter("fingerprint", fault.Fingerprint);
+        command.AddParameter("fingerprint_version", fault.FingerprintVersion);
+        command.AddParameter("fingerprint_strength", fault.FingerprintStrength.ToLowerDbString());
+        command.AddParameter("service_name", fault.ServiceName);
+        command.AddParameter("environment", fault.Environment);
+        command.AddParameter("severity", fault.Severity);
+        command.AddParameter("correlation_id", fault.CorrelationId);
+        command.AddParameter("created_at_utc", fault.CreatedAtUtc);
+        command.AddParameter("completed_at_utc", fault.CompletedAtUtc);
+        command.AddParameter("recurrence_of", fault.RecurrenceOf);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var inserted = await reader.ReadAsync(cancellationToken);
@@ -114,7 +97,38 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
             LIMIT 1;
             """, lease.Connection, lease.Transaction);
 
-        AddParameter(command, "id", id);
+        command.AddParameter("id", id);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? MapFault(reader) : null;
+    }
+
+    private async Task<Fault?> FindByGroupKeyAsync(
+        string tenantId,
+        string serviceName,
+        string environment,
+        string fingerprint,
+        int fingerprintVersion,
+        string statuses,
+        bool orderByCreatedDesc,
+        CancellationToken cancellationToken)
+    {
+        var orderBy = orderByCreatedDesc ? "ORDER BY created_at_utc DESC" : string.Empty;
+        await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
+        await using var command = new NpgsqlCommand($"""
+            SELECT {SelectColumns}
+            FROM incidentcompass.faults
+            WHERE tenant_id = @tenant_id
+              AND service_name = @service_name
+              AND environment = @environment
+              AND fingerprint = @fingerprint
+              AND fingerprint_version = @fingerprint_version
+              AND status IN {statuses}
+            {orderBy}
+            LIMIT 1;
+            """, lease.Connection, lease.Transaction);
+
+        AddGroupKeyParameters(command, tenantId, serviceName, environment, fingerprint, fingerprintVersion);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? MapFault(reader) : null;
@@ -128,11 +142,11 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         string fingerprint,
         int fingerprintVersion)
     {
-        AddParameter(command, "tenant_id", tenantId);
-        AddParameter(command, "service_name", serviceName);
-        AddParameter(command, "environment", environment);
-        AddParameter(command, "fingerprint", fingerprint);
-        AddParameter(command, "fingerprint_version", fingerprintVersion);
+        command.AddParameter("tenant_id", tenantId);
+        command.AddParameter("service_name", serviceName);
+        command.AddParameter("environment", environment);
+        command.AddParameter("fingerprint", fingerprint);
+        command.AddParameter("fingerprint_version", fingerprintVersion);
     }
 
     private static Fault MapFault(NpgsqlDataReader reader)
@@ -150,27 +164,8 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
             Environment: reader.GetString(9),
             Severity: reader.IsDBNull(10) ? null : reader.GetString(10),
             CorrelationId: reader.IsDBNull(11) ? null : reader.GetString(11),
-            CreatedAtUtc: GetDateTimeOffset(reader, 12),
-            CompletedAtUtc: reader.IsDBNull(13) ? null : GetDateTimeOffset(reader, 13),
+            CreatedAtUtc: reader.GetDateTimeOffset(12),
+            CompletedAtUtc: reader.IsDBNull(13) ? null : reader.GetDateTimeOffset(13),
             RecurrenceOf: reader.IsDBNull(14) ? null : reader.GetGuid(14));
-    }
-
-    // Matches PostgresObservabilityRepository's precedent: read timestamptz columns via
-    // GetDateTime (never GetFieldValue<DateTimeOffset> directly) and convert explicitly, since
-    // the column is always UTC-normalized by Postgres regardless of the CLR DateTime.Kind Npgsql
-    // returns it with.
-    private static DateTimeOffset GetDateTimeOffset(NpgsqlDataReader reader, int ordinal)
-    {
-        var value = reader.GetDateTime(ordinal);
-        return value.Kind == DateTimeKind.Utc
-            ? new DateTimeOffset(value)
-            : new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc));
-    }
-
-    private static string ToDbString(FingerprintStrength strength) => strength.ToString().ToLowerInvariant();
-
-    private static void AddParameter(NpgsqlCommand command, string name, object? value)
-    {
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
     }
 }

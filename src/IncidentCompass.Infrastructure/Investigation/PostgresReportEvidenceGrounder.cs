@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
+using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 
 namespace IncidentCompass.Infrastructure.Investigation;
@@ -50,9 +51,9 @@ internal sealed class PostgresReportEvidenceGrounder
               AND a.kind = ANY(ARRAY['TriggerSignal','NeighborSet','PriorReport','RetrievedItem','ToolResult'])
             LIMIT 1;
             """, connection, transaction);
-        command.Parameters.AddWithValue("artifact_id", artifactId);
-        command.Parameters.AddWithValue("job_id", job.Id);
-        command.Parameters.AddWithValue("attempt", job.Attempt);
+        command.AddParameter("artifact_id", artifactId);
+        command.AddParameter("job_id", job.Id);
+        command.AddParameter("attempt", job.Attempt);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -110,4 +111,3 @@ internal sealed class PostgresReportEvidenceGrounder
         return redactedPayload.Contains(quote, StringComparison.Ordinal) ? quote : null;
     }
 }
-

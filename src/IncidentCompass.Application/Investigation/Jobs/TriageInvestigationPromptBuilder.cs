@@ -1,11 +1,14 @@
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
+using IncidentCompass.Application.Core.Text;
 using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal static class TriageInvestigationPromptBuilder
 {
+    private const int MaxArtifactPayloadPromptLength = 800;
+
     public static string BuildOrchestratorPrompt(TriageJob job, TriageJobInvestigationContext context)
     {
         var builder = new StringBuilder();
@@ -51,7 +54,6 @@ internal static class TriageInvestigationPromptBuilder
 
     private static string TrimPayload(JsonElement payload)
     {
-        var text = payload.GetRawText();
-        return text.Length <= 800 ? text : text[..800];
+        return TextTruncator.Truncate(payload.GetRawText(), MaxArtifactPayloadPromptLength);
     }
 }
