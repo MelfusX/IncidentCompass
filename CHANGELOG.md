@@ -2,10 +2,16 @@
 
 ## Unreleased
 
-Initial bootstrap of IncidentCompass, a governed incident-triage agent backend.
-**Not a release** - v0.1.0 is reserved for the first public reference release after the MVP.
+Nothing yet.
 
-This snapshot includes:
+## 0.1.0 - 2026-07-04
+
+First public reference release of IncidentCompass, a governed incident-triage agent backend:
+deterministic backend intake, a governed orchestrator/worker investigation loop over a durable
+audit ledger, grounded triage reports, and a one-command local demo. Reference quality, not a
+production system.
+
+This release includes:
 
 - Phase 0 repository bootstrap from the upstream starter-kit reference: layered .NET structure, model/embedding gateway, generic dispatch/health/security/user scaffolding, and PostgreSQL infrastructure.
 - Phase 1 intake: POST /api/v1/incidents, GET /api/v1/faults/{id}, source allow-list validation, tester/OTel/user/manual normalizers, redaction, deterministic fingerprinting, strong/weak grouping semantics, silence-window suppression, recurrence linking, triage config snapshots, pending triage jobs, and job-level intake artifacts.
