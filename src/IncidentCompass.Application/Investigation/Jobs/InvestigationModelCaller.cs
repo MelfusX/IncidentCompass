@@ -30,6 +30,7 @@ internal sealed class InvestigationModelCaller(
         using var callCancellation = CreateCallCancellation(context, cancellationToken);
         try
         {
+            callCancellation.Token.ThrowIfCancellationRequested();
             var response = await modelClient.CompleteAsync(request, callCancellation.Token);
             var duration = timeProvider.GetUtcNow() - startedAtUtc;
             await RecordModelCallAsync(context, request, response, duration, usageBefore, cancellationToken);
@@ -104,6 +105,10 @@ internal sealed class InvestigationModelCaller(
         {
             linked.CancelAfter(remaining);
         }
+        else
+        {
+            linked.Cancel();
+        }
 
         return linked;
     }
@@ -118,10 +123,10 @@ internal sealed class InvestigationModelCaller(
     {
         var estimatedInputTokens = TriageTokenEstimator.EstimateMessages(request.Messages, request.Tools);
         var estimatedOutputTokens = TriageTokenEstimator.EstimateText(response.Content);
-        var usageSource = response.Usage?.TotalTokens is > 0 ? "provider" : "estimate";
-        var inputTokens = response.Usage?.InputTokens ?? estimatedInputTokens;
-        var outputTokens = response.Usage?.OutputTokens ?? estimatedOutputTokens;
-        var totalTokens = response.Usage?.TotalTokens ?? inputTokens + outputTokens;
+        var usageSource = response.Usage is { InputTokens: > 0, OutputTokens: > 0, TotalTokens: > 0 } ? "provider" : "estimate";
+        var inputTokens = PositiveOrEstimate(response.Usage?.InputTokens, estimatedInputTokens);
+        var outputTokens = PositiveOrEstimate(response.Usage?.OutputTokens, estimatedOutputTokens);
+        var totalTokens = PositiveOrEstimate(response.Usage?.TotalTokens, inputTokens + outputTokens);
 
         await ledgerAppender.AppendModelCallAsync(
             context.Job,
@@ -157,5 +162,10 @@ internal sealed class InvestigationModelCaller(
                 workersDelta: null,
                 cancellationToken: cancellationToken);
         }
+    }
+
+    private static int PositiveOrEstimate(int? reportedTokens, int estimatedTokens)
+    {
+        return reportedTokens is > 0 ? reportedTokens.Value : estimatedTokens;
     }
 }

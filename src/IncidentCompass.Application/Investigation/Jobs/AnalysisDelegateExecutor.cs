@@ -117,11 +117,16 @@ internal sealed class AnalysisDelegateExecutor(
 
     private static string ReadRequiredString(JsonElement arguments, string propertyName)
     {
+        if (arguments.ValueKind != JsonValueKind.Object)
+        {
+            throw new DelegateToolCallValidationException("delegate arguments must be an object.");
+        }
+
         if (!arguments.TryGetProperty(propertyName, out var element) ||
             element.ValueKind != JsonValueKind.String ||
             string.IsNullOrWhiteSpace(element.GetString()))
         {
-            throw new InvalidOperationException($"delegate is missing string {propertyName}.");
+            throw new DelegateToolCallValidationException($"delegate is missing string {propertyName}.");
         }
 
         return element.GetString()!;

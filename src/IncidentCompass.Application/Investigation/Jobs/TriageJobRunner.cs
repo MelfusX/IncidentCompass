@@ -25,10 +25,12 @@ internal sealed class TriageJobRunner(
         TriageJobProcessingSettings settings,
         CancellationToken cancellationToken)
     {
-        var configuration = await configurationRepository.GetByHashAsync(job.ConfigHash, cancellationToken);
+        var configurationLoaded = false;
 
         try
         {
+            var configuration = await configurationRepository.GetByHashAsync(job.ConfigHash, cancellationToken);
+            configurationLoaded = true;
             await processor.ProcessAsync(job, configuration, workerId, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -40,7 +42,7 @@ internal sealed class TriageJobRunner(
             await runtimeRepository.RecordAttemptFailureAsync(
                 job,
                 workerId,
-                CreateFailure(job, settings, exception),
+                CreateFailure(job, settings, exception, configurationLoaded),
                 CancellationToken.None);
         }
     }
@@ -48,21 +50,23 @@ internal sealed class TriageJobRunner(
     private TriageJobAttemptFailure CreateFailure(
         TriageJob job,
         TriageJobProcessingSettings settings,
-        Exception exception)
+        Exception exception,
+        bool configurationLoaded)
     {
         var maxAttempts = Math.Max(1, settings.MaxAttempts);
+        var errorCode = configurationLoaded ? "triage_job_attempt_failed" : "config_snapshot_unavailable";
         if (job.Attempt >= maxAttempts)
         {
             return new TriageJobAttemptFailure(
                 TriageJobStatus.DeadLettered,
-                "triage_job_attempt_failed",
+                errorCode,
                 NormalizeMessage(exception),
                 NextAttemptAtUtc: null);
         }
 
         return new TriageJobAttemptFailure(
             TriageJobStatus.RetryPending,
-            "triage_job_attempt_failed",
+            errorCode,
             NormalizeMessage(exception),
             timeProvider.GetUtcNow().Add(settings.RetryDelay));
     }

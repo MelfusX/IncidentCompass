@@ -61,13 +61,28 @@ internal static class TriageReportParser
 
     private static JsonElement ResolveReportRoot(JsonElement arguments)
     {
+        if (arguments.ValueKind != JsonValueKind.Object)
+        {
+            throw new TriageReportValidationException("publish_report arguments must be an object.");
+        }
+
         if (arguments.TryGetProperty("report_json", out var reportJson))
         {
+            if (reportJson.ValueKind != JsonValueKind.Object)
+            {
+                throw new TriageReportValidationException("publish_report report_json must be an object.");
+            }
+
             return reportJson;
         }
 
         if (arguments.TryGetProperty("report", out var report))
         {
+            if (report.ValueKind != JsonValueKind.Object)
+            {
+                throw new TriageReportValidationException("publish_report report must be an object.");
+            }
+
             return report;
         }
 

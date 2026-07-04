@@ -8,6 +8,7 @@ internal sealed class WorkerRoleRunner(
     InvestigationModelCaller modelCaller,
     WorkerToolCallExecutor toolCallExecutor)
 {
+    private const int WorkerTurnSlack = 4;
     public async Task<string> RunAsync(
         TriageJob job,
         TriageConfiguration configuration,
@@ -27,7 +28,7 @@ internal sealed class WorkerRoleRunner(
         };
 
         var reprompts = 0;
-        var maxTurns = Math.Max(4, configuration.Orchestrator.Budget.MaxWorkers + configuration.Orchestrator.Budget.MaxReprompts + role.Tools.Count + 4);
+        var maxTurns = Math.Max(4, configuration.Orchestrator.Budget.MaxReprompts + role.Tools.Count + WorkerTurnSlack);
         for (var turn = 0; turn < maxTurns; turn++)
         {
             var response = await modelCaller.CompleteAsync(

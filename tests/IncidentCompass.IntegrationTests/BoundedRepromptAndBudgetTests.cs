@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Intake.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -57,6 +58,90 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
     }
 
     [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_NonObjectDelegateArgumentsRepromptAndRecovers()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.NonObjectDelegateArgumentsThenValid, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var orchestratorModelCalls = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'ModelCall' AND role IS NULL;",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("Succeeded", job.Status);
+        Assert.Equal(3, orchestratorModelCalls);
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_NonObjectPublishArgumentsRepromptAndRecovers()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.NonObjectPublishArgumentsThenValid, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var orchestratorModelCalls = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'ModelCall' AND role IS NULL;",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("Succeeded", job.Status);
+        Assert.Equal(3, orchestratorModelCalls);
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_UnknownOrchestratorToolConsumesRepromptBudgetThenFailsClosed()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.UnknownOrchestratorTool, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var orchestratorModelCalls = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'ModelCall' AND role IS NULL;",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Equal(2, orchestratorModelCalls);
+        Assert.Contains("unknown tool", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_MaxWorkersReachedFailsClosedWithBudgetEvent()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.MaxWorkersExceeded, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192, maxWorkers: 1);
+        var ingested = await RunOneAsync(scope);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId!.Value);
+        var budgetEvents = await ReadBudgetRationalesAsync(scope.ConnectionString, ingested.JobId.Value);
+        var workerDeltas = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COALESCE(SUM(workers_delta), 0) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent';",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Equal(1, workerDeltas);
+        Assert.Contains(budgetEvents, value => value.Contains("max_workers_reached", StringComparison.Ordinal));
+    }
+
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_MissingConfigSnapshotRetriesThenDeadLetters()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.Valid, maxReprompts: 1, maxTokens: 100000, contextWindowTokens: 8192);
+        var ingested = await IngestOneAsync(scope);
+        Assert.NotNull(ingested.JobId);
+
+        await ProcessNextWithMissingConfigAsync(scope, "worker-config-missing", maxAttempts: 2, retryDelay: TimeSpan.Zero);
+        var retry = await ReadJobAsync(scope.ConnectionString, ingested.JobId.Value);
+        Assert.Equal("RetryPending", retry.Status);
+        Assert.Equal("config_snapshot_unavailable", retry.LastErrorCode);
+
+        await ProcessNextWithMissingConfigAsync(scope, "worker-config-missing", maxAttempts: 2, retryDelay: TimeSpan.Zero);
+        var deadLettered = await ReadJobAsync(scope.ConnectionString, ingested.JobId.Value);
+        Assert.Equal("DeadLettered", deadLettered.Status);
+        Assert.Equal("config_snapshot_unavailable", deadLettered.LastErrorCode);
+    }
+    [DockerAvailableFact]
     public async Task ProcessClaimedAsync_TokenBudgetStopsBeforeNextCallAfterOneCallOvershoot()
     {
         using var scope = await CreateScopeAsync(RepromptScenario.NoOrchestratorTool, maxReprompts: 2, maxTokens: 10, contextWindowTokens: 8192);
@@ -90,12 +175,13 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         RepromptScenario scenario,
         int maxReprompts,
         int maxTokens,
-        int contextWindowTokens)
+        int contextWindowTokens,
+        int maxWorkers = 2)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
         await PostgresTriageJobTestIsolation.CompleteClaimableJobsAsync(connectionString);
-        var configPath = await CreateConfigurationAsync(maxReprompts, maxTokens, contextWindowTokens);
+        var configPath = await CreateConfigurationAsync(maxReprompts, maxTokens, contextWindowTokens, maxWorkers);
 
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -113,6 +199,13 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
     private static async Task<IngestSignalResponseDto> RunOneAsync(TestScope scope)
     {
+        var ingested = await IngestOneAsync(scope);
+        await ProcessNextAsync(scope, "worker-reprompt", maxAttempts: 1, retryDelay: TimeSpan.FromSeconds(1));
+        return ingested;
+    }
+
+    private static async Task<IngestSignalResponseDto> IngestOneAsync(TestScope scope)
+    {
         var unique = Guid.NewGuid().ToString("N");
         var response = await scope.Client.PostAsJsonAsync(
             "/api/v1/incidents",
@@ -127,20 +220,50 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         var ingested = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
         Assert.NotNull(ingested);
         Assert.NotNull(ingested.JobId);
-
-        using var serviceScope = scope.Factory.Services.CreateScope();
-        var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
-        var claimed = await runner.ClaimNextAsync("worker-reprompt", TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
-        Assert.NotNull(claimed);
-        await runner.ProcessClaimedAsync(
-            claimed,
-            "worker-reprompt",
-            new TriageJobProcessingSettings(MaxAttempts: 1, RetryDelay: TimeSpan.FromSeconds(1)),
-            TestContext.Current.CancellationToken);
         return ingested;
     }
 
-    private static async Task<string> CreateConfigurationAsync(int maxReprompts, int maxTokens, int contextWindowTokens)
+    private static async Task ProcessNextAsync(
+        TestScope scope,
+        string workerId,
+        int maxAttempts,
+        TimeSpan retryDelay)
+    {
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
+        var claimed = await runner.ClaimNextAsync(workerId, TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+        await runner.ProcessClaimedAsync(
+            claimed,
+            workerId,
+            new TriageJobProcessingSettings(maxAttempts, retryDelay),
+            TestContext.Current.CancellationToken);
+    }
+
+    private static async Task ProcessNextWithMissingConfigAsync(
+        TestScope scope,
+        string workerId,
+        int maxAttempts,
+        TimeSpan retryDelay)
+    {
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var runtimeRepository = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRuntimeRepository>();
+        var processor = serviceScope.ServiceProvider.GetRequiredService<IClaimedTriageJobProcessor>();
+        var timeProvider = serviceScope.ServiceProvider.GetRequiredService<TimeProvider>();
+        var runner = new TriageJobRunner(
+            runtimeRepository,
+            new MissingSnapshotConfigurationRepository(),
+            processor,
+            timeProvider);
+        var claimed = await runner.ClaimNextAsync(workerId, TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+        await runner.ProcessClaimedAsync(
+            claimed,
+            workerId,
+            new TriageJobProcessingSettings(maxAttempts, retryDelay),
+            TestContext.Current.CancellationToken);
+    }
+    private static async Task<string> CreateConfigurationAsync(int maxReprompts, int maxTokens, int contextWindowTokens, int maxWorkers)
     {
         var directory = Path.Combine(Path.GetTempPath(), "incidentcompass-reprompt-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(directory, "instructions"));
@@ -164,7 +287,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
                 ["Tools"] = new JsonArray("delegate", "publish_report"),
                 ["Budget"] = new JsonObject
                 {
-                    ["MaxWorkers"] = 2,
+                    ["MaxWorkers"] = maxWorkers,
                     ["MaxTokens"] = maxTokens,
                     ["MaxWallClockSeconds"] = 120,
                     ["MaxReprompts"] = maxReprompts
@@ -231,11 +354,11 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
-        await using var command = new NpgsqlCommand("SELECT status, last_error_message FROM incidentcompass.triage_jobs WHERE id = @job_id;", connection);
+        await using var command = new NpgsqlCommand("SELECT status, last_error_code, last_error_message FROM incidentcompass.triage_jobs WHERE id = @job_id;", connection);
         command.Parameters.AddWithValue("job_id", jobId);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
-        return new JobRow(reader.GetString(0), reader.IsDBNull(1) ? string.Empty : reader.GetString(1));
+        return new JobRow(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? string.Empty : reader.GetString(2));
     }
 
     private static async Task<IReadOnlyList<string>> ReadBudgetRationalesAsync(string connectionString, Guid jobId)
@@ -286,17 +409,56 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             orchestratorCalls++;
             if (scenario == RepromptScenario.NoOrchestratorTool)
             {
-                if (orchestratorCalls > 1 && !request.Messages.Any(message => message.Content.Contains("Validation error", StringComparison.Ordinal)))
+                EnsureValidationErrorAfterFirstTurn(request, "No-tool");
+                return Response(request, "I will answer without a tool.", []);
+            }
+
+            if (scenario == RepromptScenario.UnknownOrchestratorTool)
+            {
+                EnsureValidationErrorAfterFirstTurn(request, "Unknown-tool");
+                return Response(request, "unknown", [ToolCall("unknown-" + orchestratorCalls, "unknown_tool", "{}")]);
+            }
+
+            if (scenario == RepromptScenario.NonObjectDelegateArgumentsThenValid)
+            {
+                if (orchestratorCalls == 1)
                 {
-                    throw new InvalidOperationException("No-tool reprompt did not include validation error.");
+                    return Response(request, "delegate malformed", [StringArgumentToolCall("delegate-malformed", "delegate", "{\"role\"")]);
                 }
 
-                return Response(request, "I will answer without a tool.", []);
+                if (orchestratorCalls == 2)
+                {
+                    EnsureValidationError(request, "Malformed delegate reprompt did not include validation error.");
+                    return Response(request, "delegate", [DelegateToolCall()]);
+                }
+
+                return Response(request, "publish", [PublishToolCall(request)]);
+            }
+
+            if (scenario == RepromptScenario.NonObjectPublishArgumentsThenValid)
+            {
+                if (orchestratorCalls == 1)
+                {
+                    return Response(request, "delegate", [DelegateToolCall()]);
+                }
+
+                if (orchestratorCalls == 2)
+                {
+                    return Response(request, "publish malformed", [StringArgumentToolCall("publish-malformed", "publish_report", "{\"report_json\":")]);
+                }
+
+                EnsureValidationError(request, "Malformed publish_report reprompt did not include validation error.");
+                return Response(request, "publish", [PublishToolCall(request)]);
+            }
+
+            if (scenario == RepromptScenario.MaxWorkersExceeded)
+            {
+                return Response(request, "delegate", [ToolCall("delegate-analysis-" + orchestratorCalls, "delegate", "{\"role\":\"analysis\",\"task\":\"Analyze the signal again.\"}")]);
             }
 
             if (orchestratorCalls == 1)
             {
-                return Response(request, "delegate", [ToolCall("delegate-analysis", "delegate", "{\"role\":\"analysis\",\"task\":\"Analyze the signal.\"}")]);
+                return Response(request, "delegate", [DelegateToolCall()]);
             }
 
             return Response(request, "publish", [PublishToolCall(request)]);
@@ -306,7 +468,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         {
             if (scenario == RepromptScenario.InvalidWorkerOutput)
             {
-                if (request.Messages.Count > 2 && !request.Messages.Any(message => message.Content.Contains("Validation error", StringComparison.Ordinal)))
+                if (request.Messages.Count > 2 && !request.Messages.Any(chatMessage => chatMessage.Content.Contains("Validation error", StringComparison.Ordinal)))
                 {
                     throw new InvalidOperationException("Worker reprompt did not include validation error.");
                 }
@@ -323,12 +485,31 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             }), []);
         }
 
+        private void EnsureValidationErrorAfterFirstTurn(AiModelRequest request, string label)
+        {
+            if (orchestratorCalls > 1)
+            {
+                EnsureValidationError(request, label + " reprompt did not include validation error.");
+            }
+        }
+
+        private static void EnsureValidationError(AiModelRequest request, string message)
+        {
+            if (!request.Messages.Any(chatMessage => chatMessage.Content.Contains("Validation error", StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException(message);
+            }
+        }
         private static bool IsOrchestrator(AiModelRequest request)
         {
             var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
             return toolNames.SetEquals(["delegate", "publish_report"]);
         }
 
+        private static AiToolCall DelegateToolCall()
+        {
+            return ToolCall("delegate-analysis", "delegate", "{\"role\":\"analysis\",\"task\":\"Analyze the signal.\"}");
+        }
         private static AiModelResponse Response(AiModelRequest request, string content, IReadOnlyList<AiToolCall> toolCalls)
         {
             return new AiModelResponse(content, request.Model, "reprompt-test", new AiModelUsage(10, 5, 15), request.CorrelationId, toolCalls);
@@ -361,6 +542,11 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             return Guid.Empty.ToString();
         }
 
+        private static AiToolCall StringArgumentToolCall(string id, string name, string arguments)
+        {
+            var element = JsonSerializer.SerializeToElement(arguments);
+            return new AiToolCall(id, name, "v1", element);
+        }
         private static AiToolCall ToolCall(string id, string name, string argumentsJson)
         {
             using var arguments = JsonDocument.Parse(argumentsJson);
@@ -368,7 +554,15 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         }
     }
 
-    private enum RepromptScenario { Valid, InvalidWorkerOutput, NoOrchestratorTool }
+    private sealed class MissingSnapshotConfigurationRepository : ITriageConfigurationRepository
+    {
+        public Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Current configuration is not used by this test.");
+
+        public Task<TriageConfiguration> GetByHashAsync(string configHash, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Injected config snapshot load failure for " + configHash + ".");
+    }
+    private enum RepromptScenario { Valid, InvalidWorkerOutput, NoOrchestratorTool, NonObjectDelegateArgumentsThenValid, NonObjectPublishArgumentsThenValid, UnknownOrchestratorTool, MaxWorkersExceeded }
 
     private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable
     {
@@ -397,5 +591,5 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Guid? JobId,
         string? ConfigHash);
 
-    private sealed record JobRow(string Status, string LastErrorMessage);
+    private sealed record JobRow(string Status, string? LastErrorCode, string LastErrorMessage);
 }

@@ -8,6 +8,8 @@ namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobProcessor
 {
+    private const int MaxOrchestratorTurns = 16;
+
     private readonly ITriageJobInvestigationContextRepository contextRepository;
     private readonly InvestigationModelCaller modelCaller;
     private readonly AnalysisDelegateExecutor delegateExecutor;
@@ -43,7 +45,7 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
         };
 
         var reprompts = 0;
-        var maxTurns = Math.Max(4, configuration.Orchestrator.Budget.MaxWorkers + configuration.Orchestrator.Budget.MaxReprompts + 4);
+        var maxTurns = Math.Max(4, MaxOrchestratorTurns + configuration.Orchestrator.Budget.MaxReprompts);
         for (var turn = 0; turn < maxTurns; turn++)
         {
             var response = await CompleteOrchestratorAsync(job, configuration, attemptStartedAtUtc, messages, cancellationToken);
@@ -61,14 +63,12 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
             messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content, ToolCalls: [toolCall]));
             if (string.Equals(toolCall.Name, "delegate", StringComparison.Ordinal))
             {
-                var toolResult = await delegateExecutor.ExecuteAsync(
-                    job,
-                    configuration,
-                    context,
-                    toolCall,
-                    attemptStartedAtUtc,
-                    cancellationToken);
-                messages.Add(new AiChatMessage(AiMessageRole.Tool, toolResult, toolCall.Id));
+                if (await TryDelegateAsync(job, configuration, context, toolCall, attemptStartedAtUtc, messages, reprompts, cancellationToken) is { } nextReprompts)
+                {
+                    reprompts = nextReprompts;
+                    continue;
+                }
+
                 continue;
             }
 
@@ -83,7 +83,9 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
                 return;
             }
 
+            RepromptOrThrow(configuration, ref reprompts, "Orchestrator proposed an unknown tool after bounded reprompts: " + toolCall.Name);
             messages.Add(new AiChatMessage(AiMessageRole.Tool, UnknownToolResult(toolCall.Name), toolCall.Id));
+            messages.Add(new AiChatMessage(AiMessageRole.User, "Validation error: unknown tool '" + toolCall.Name + "'. Call delegate or publish_report."));
         }
 
         throw new InvalidOperationException("Orchestrator exceeded the bounded investigation turn limit before publish_report.");
@@ -115,6 +117,42 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
             messages.Add(new AiChatMessage(
                 AiMessageRole.User,
                 "Validation error: " + exception.Message + " Call publish_report again with the corrected report_json."));
+            return reprompts;
+        }
+    }
+
+    private async Task<int?> TryDelegateAsync(
+        TriageJob job,
+        TriageConfiguration configuration,
+        TriageJobInvestigationContext context,
+        AiToolCall toolCall,
+        DateTimeOffset attemptStartedAtUtc,
+        List<AiChatMessage> messages,
+        int reprompts,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var toolResult = await delegateExecutor.ExecuteAsync(
+                job,
+                configuration,
+                context,
+                toolCall,
+                attemptStartedAtUtc,
+                cancellationToken);
+            messages.Add(new AiChatMessage(AiMessageRole.Tool, toolResult, toolCall.Id));
+            return null;
+        }
+        catch (DelegateToolCallValidationException exception)
+        {
+            RepromptOrThrow(configuration, ref reprompts, "delegate remained invalid after bounded reprompts: " + exception.Message, exception);
+            var validationResult = JsonSerializer.Serialize(new
+            {
+                errorCode = "delegate_validation_failed",
+                errorMessage = exception.Message
+            });
+            messages.Add(new AiChatMessage(AiMessageRole.Tool, validationResult, toolCall.Id));
+            messages.Add(new AiChatMessage(AiMessageRole.User, "Validation error: " + exception.Message + " Call delegate again with object arguments containing role and task."));
             return reprompts;
         }
     }
