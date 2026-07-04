@@ -62,3 +62,6 @@ Phase 4 memory retrieval filters by tenant, embedding provider, embedding model 
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.
+## Fixed Worker Leases
+
+The MVP worker claims jobs with a fixed lease and does not renew leases while a job is running. The default lease is intentionally longer than the local poll cadence so normal bounded investigations have room to finish, but a production deployment should add explicit lease renewal or heartbeat handling before increasing concurrency.

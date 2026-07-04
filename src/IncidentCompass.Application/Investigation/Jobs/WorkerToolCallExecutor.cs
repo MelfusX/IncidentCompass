@@ -58,13 +58,11 @@ internal sealed class WorkerToolCallExecutor(
 
         if (decision.Decision == TriageLedgerDecision.ApprovalRequired)
         {
-            await AppendNonExecutedToolResultAsync(job, roleName, toolCall.Name, ToolExecutionStatus.ApprovalRequired.ToString(), decision.Reason, cancellationToken);
             return SerializeToolFailure(ToolExecutionStatus.ApprovalRequired.ToString(), "approval_required", decision.Reason, limitation: decision.Reason);
         }
 
         if (!decision.MayExecute)
         {
-            await AppendNonExecutedToolResultAsync(job, roleName, toolCall.Name, ToolExecutionStatus.Rejected.ToString(), decision.Reason, cancellationToken);
             throw new InvalidOperationException("Worker tool call denied: " + decision.Reason);
         }
 
@@ -72,7 +70,6 @@ internal sealed class WorkerToolCallExecutor(
         if (!validation.IsValid)
         {
             var reason = validation.ErrorMessage ?? "Tool arguments failed validation.";
-            await AppendNonExecutedToolResultAsync(job, roleName, toolCall.Name, ToolExecutionStatus.ValidationFailed.ToString(), reason, cancellationToken);
             throw new InvalidOperationException("Worker tool call validation failed: " + reason);
         }
 
@@ -87,7 +84,7 @@ internal sealed class WorkerToolCallExecutor(
         }
 
         var errorReason = execution.ErrorMessage ?? "Tool execution failed.";
-        await AppendNonExecutedToolResultAsync(job, roleName, toolCall.Name, execution.Status.ToString(), errorReason, cancellationToken);
+        await AppendExecutedToolFailureAsync(job, roleName, toolCall.Name, execution.Status.ToString(), errorReason, cancellationToken);
         return SerializeToolFailure(execution.Status.ToString(), execution.ErrorCode, errorReason, limitation: errorReason);
     }
 
@@ -134,7 +131,7 @@ internal sealed class WorkerToolCallExecutor(
             cancellationToken);
     }
 
-    private async Task AppendNonExecutedToolResultAsync(
+    private async Task AppendExecutedToolFailureAsync(
         TriageJob job,
         string roleName,
         string toolName,

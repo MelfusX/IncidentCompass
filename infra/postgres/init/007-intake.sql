@@ -132,3 +132,7 @@ CREATE TABLE IF NOT EXISTS incidentcompass.triage_artifacts (
 
 CREATE INDEX IF NOT EXISTS ix_triage_artifacts_job_attempt
     ON incidentcompass.triage_artifacts (job_id, attempt);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_triage_artifacts_job_level_kind
+    ON incidentcompass.triage_artifacts (job_id, kind)
+    WHERE attempt IS NULL;

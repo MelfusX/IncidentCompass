@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Serialization;
@@ -137,7 +139,7 @@ public sealed class GroundedFactsAssembler(
         var canonicalPayload = CanonicalJsonSerializer.Canonicalize(payload);
         using var payloadDocument = JsonDocument.Parse(payload.ToJsonString());
         return new TriageArtifact(
-            Id: Guid.NewGuid(),
+            Id: attempt is null ? CreateJobLevelArtifactId(jobId, kind) : Guid.NewGuid(),
             JobId: jobId,
             Attempt: attempt,
             Kind: kind,
@@ -145,5 +147,13 @@ public sealed class GroundedFactsAssembler(
             RedactedPayload: payloadDocument.RootElement.Clone(),
             ContentHash: CanonicalJsonSerializer.ComputeSha256Hex(canonicalPayload),
             CreatedAtUtc: timeProvider.GetUtcNow());
+    }
+
+    private static Guid CreateJobLevelArtifactId(Guid jobId, ArtifactKind kind)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(jobId.ToString("N") + ":" + kind));
+        hash[6] = (byte)((hash[6] & 0x0F) | 0x50);
+        hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
+        return new Guid(hash.AsSpan(0, 16));
     }
 }

@@ -42,10 +42,13 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
 
         var job = await ReadJobStatusAsync(scope.ConnectionString, ingested.JobId!.Value);
         var decisions = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "PolicyDecision");
+        var toolResults = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "ToolResult");
 
         Assert.Equal("DeadLettered", job.Status);
         Assert.Contains(decisions, row => row.ToolName == "tool_x" && row.Decision == "Allowed");
         Assert.Contains(decisions, row => row.ToolName == "tool_x" && row.Decision == "Denied" && row.DecisionReason!.Contains("rate_cap exceeded", StringComparison.Ordinal));
+        var toolXResult = Assert.Single(toolResults, row => row.ToolName == "tool_x");
+        Assert.Equal("Succeeded", toolXResult.ToolStatus);
     }
 
     [DockerAvailableFact]
@@ -55,12 +58,14 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         var ingested = await RunOneAsync(scope);
 
         var decisions = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId!.Value, "PolicyDecision");
+        var toolResults = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "ToolResult");
         var workerRationale = await ScalarAsync<string>(
             scope.ConnectionString,
             "SELECT redacted_payload->>'rationale' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'WorkerOutput';",
             ("job_id", ingested.JobId.Value));
 
         Assert.Contains(decisions, row => row.ToolName == "tool_x" && row.Decision == "ApprovalRequired");
+        Assert.DoesNotContain(toolResults, row => row.ToolName == "tool_x");
         Assert.Contains("approval required", workerRationale, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -72,9 +77,11 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
 
         var job = await ReadJobStatusAsync(scope.ConnectionString, ingested.JobId!.Value);
         var decisions = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "PolicyDecision");
+        var toolResults = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "ToolResult");
 
         Assert.Equal("DeadLettered", job.Status);
         Assert.Contains(decisions, row => row.ToolName == "unknown_tool" && row.Decision == "Denied");
+        Assert.DoesNotContain(toolResults, row => row.ToolName == "unknown_tool");
     }
 
     [DockerAvailableFact]

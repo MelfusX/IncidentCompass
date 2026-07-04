@@ -32,3 +32,6 @@ CREATE TABLE IF NOT EXISTS incidentcompass.triage_ledger (
 
 CREATE INDEX IF NOT EXISTS ix_triage_ledger_job_order
     ON incidentcompass.triage_ledger (job_id, id);
+
+CREATE INDEX IF NOT EXISTS ix_triage_ledger_fault_order
+    ON incidentcompass.triage_ledger (fault_id, id);

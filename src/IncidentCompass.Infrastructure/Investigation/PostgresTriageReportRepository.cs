@@ -2,6 +2,7 @@ using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Postgres;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace IncidentCompass.Infrastructure.Investigation;
@@ -9,7 +10,8 @@ namespace IncidentCompass.Infrastructure.Investigation;
 internal sealed class PostgresTriageReportRepository(
     PostgresDataSourceProvider dataSourceProvider,
     ITriageReportFinalCommitFaultInjector faultInjector,
-    TimeProvider timeProvider) : ITriageReportRepository
+    TimeProvider timeProvider,
+    ILogger<PostgresTriageReportRepository> logger) : ITriageReportRepository
 {
     private readonly PostgresReportEvidenceGrounder evidenceGrounder = new();
 
@@ -35,9 +37,9 @@ internal sealed class PostgresTriageReportRepository(
 
             var reportId = await UpsertReportAsync(connection, transaction, job, report, isMassIssue, now, cancellationToken);
             await PostgresTriageEvidenceWriter.ReplaceAsync(connection, transaction, reportId, evidence, now, cancellationToken);
-            await MarkFaultTerminalAsync(connection, transaction, job.FaultId, report.Status, now, cancellationToken);
+            await MarkFaultTerminalAsync(connection, transaction, job.FaultId, job.Id, report.Status, now, cancellationToken);
             await faultInjector.BeforeReportPublishedLedgerEventAsync(cancellationToken);
-            await InsertReportPublishedEventAsync(connection, transaction, job, reportId, report.Summary, now, cancellationToken);
+            await PostgresReportPublishedEventWriter.InsertAsync(connection, transaction, job, reportId, report.Summary, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return reportId;
         }
@@ -66,8 +68,7 @@ internal sealed class PostgresTriageReportRepository(
             WHERE id = @job_id
               AND attempt = @attempt
               AND locked_by = @worker_id
-              AND status = 'Processing'
-              AND status <> 'Succeeded';
+              AND status = 'Processing';
             """, connection, transaction);
         AddParameter(command, "now", now);
         AddParameter(command, "job_id", job.Id);
@@ -142,10 +143,11 @@ internal sealed class PostgresTriageReportRepository(
         return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
-    private static async Task MarkFaultTerminalAsync(
+    private async Task MarkFaultTerminalAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid faultId,
+        Guid jobId,
         TriageReportStatus status,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -160,35 +162,18 @@ internal sealed class PostgresTriageReportRepository(
         AddParameter(command, "status", status == TriageReportStatus.InsufficientEvidence ? "InsufficientEvidence" : "Completed");
         AddParameter(command, "now", now);
         AddParameter(command, "fault_id", faultId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
 
-    private static async Task InsertReportPublishedEventAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TriageJob job,
-        Guid reportId,
-        string summary,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand("""
-            INSERT INTO incidentcompass.triage_ledger (
-                fault_id, job_id, attempt, event_type, role, tool_name, rationale,
-                decision, decision_reason, tool_status, tokens_delta, workers_delta,
-                payload_ref, config_hash, created_at_utc)
-            VALUES (
-                @fault_id, @job_id, @attempt, 'ReportPublished', NULL, 'publish_report', @rationale,
-                NULL, NULL, NULL, NULL, NULL, @payload_ref, @config_hash, @created_at_utc);
-            """, connection, transaction);
-        AddParameter(command, "fault_id", job.FaultId);
-        AddParameter(command, "job_id", job.Id);
-        AddParameter(command, "attempt", job.Attempt);
-        AddParameter(command, "rationale", summary);
-        AddParameter(command, "payload_ref", "report:" + reportId);
-        AddParameter(command, "config_hash", job.ConfigHash);
-        AddParameter(command, "created_at_utc", now);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken);
+        if (updated == 1)
+        {
+            return;
+        }
+
+        logger.LogError(
+            "Fault {FaultId} was not terminalized while publishing triage report for job {JobId}.",
+            faultId,
+            jobId);
+        throw new InvalidOperationException($"Fault '{faultId}' could not be marked terminal while publishing triage report.");
     }
 
     private static void AddParameter(NpgsqlCommand command, string name, object? value)

@@ -14,7 +14,8 @@ internal static class TriageReportParser
     {
         var root = ResolveReportRoot(arguments);
         var statusName = ReadRequiredString(root, "status");
-        if (!Enum.TryParse<TriageReportStatus>(statusName, ignoreCase: false, out var status) ||
+        if (!Enum.IsDefined(typeof(TriageReportStatus), statusName) ||
+            !Enum.TryParse<TriageReportStatus>(statusName, ignoreCase: false, out var status) ||
             status == TriageReportStatus.Failed)
         {
             throw new TriageReportValidationException("publish_report status must be Completed or InsufficientEvidence.");
@@ -29,12 +30,18 @@ internal static class TriageReportParser
             throw new TriageReportValidationException("publish_report confidence must be Low, Medium, or High.");
         }
 
+        var evidence = ReadEvidence(root);
+        if (status == TriageReportStatus.Completed && evidence.Count == 0)
+        {
+            throw new TriageReportValidationException("Completed reports must include at least one evidence item.");
+        }
+
         return new TriageReport(
             status,
             ReadRequiredString(root, "summary"),
             classification,
             confidence,
-            ReadEvidence(root),
+            evidence,
             ReadRequiredStringArray(root, "limitations"),
             ReadRequiredString(root, "recommendedNextAction"));
     }

@@ -28,8 +28,8 @@ internal static partial class SecretRedactor
         signal with
         {
             ErrorMessage = RedactText(signal.ErrorMessage),
-            Description = RedactText(signal.Description),
-            Summary = RedactText(signal.Summary) ?? string.Empty,
+            Description = SignalTextTruncator.TruncateDescription(RedactText(signal.Description)),
+            Summary = SignalTextTruncator.TruncateSummary(RedactText(signal.Summary) ?? string.Empty),
             Attributes = RedactJsonNode(signal.Attributes),
             Body = RedactJsonNode(signal.Body),
         };
@@ -104,7 +104,7 @@ internal static partial class SecretRedactor
     [GeneratedRegex(@"\bAKIA[0-9A-Z]{16}\b")]
     private static partial Regex AwsAccessKeyPattern();
 
-    [GeneratedRegex(@"\b(?:sk|ghp|gho|ghu|ghs|glpat|xox[baprs])-[A-Za-z0-9\-_]{10,}\b")]
+    [GeneratedRegex(@"\b(?:(?:sk|glpat|xox[baprs])-[A-Za-z0-9\-_]{10,}|(?:ghp|gho|ghu|ghs)[_-][A-Za-z0-9\-_]{10,}|github_pat_[A-Za-z0-9_]{10,})\b")]
     private static partial Regex SecretPrefixedTokenPattern();
 
     [GeneratedRegex(@"(password|pwd)\s*=\s*[^;]+", RegexOptions.IgnoreCase)]

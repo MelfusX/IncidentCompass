@@ -2,9 +2,6 @@ namespace IncidentCompass.Application.Intake.Normalization;
 
 internal static class SummarySynthesizer
 {
-    private const int MaxLength = 500;
-    private const int TruncatedLength = MaxLength - 3;
-
     public static string ForStructuredSignal(
         string serviceName,
         string? operationName,
@@ -27,13 +24,6 @@ internal static class SummarySynthesizer
             summary += $" - {detail}";
         }
 
-        return Truncate(summary);
-    }
-
-    private static string Truncate(string value)
-    {
-        return value.Length > MaxLength
-            ? value[..TruncatedLength] + "..."
-            : value;
+        return SignalTextTruncator.TruncateSummary(summary);
     }
 }

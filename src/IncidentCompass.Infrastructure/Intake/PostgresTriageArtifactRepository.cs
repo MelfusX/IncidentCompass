@@ -31,15 +31,15 @@ internal sealed class PostgresTriageArtifactRepository(PostgresDataSourceProvide
 
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand("""
-            DELETE FROM incidentcompass.triage_artifacts
-            WHERE job_id = @job_id
-              AND attempt IS NULL
-              AND kind = @kind;
-
             INSERT INTO incidentcompass.triage_artifacts (
                 id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
             VALUES (
-                @id, @job_id, @attempt, @kind, @domain_ref, @redacted_payload, @content_hash, @created_at_utc);
+                @id, @job_id, @attempt, @kind, @domain_ref, @redacted_payload, @content_hash, @created_at_utc)
+            ON CONFLICT (job_id, kind) WHERE attempt IS NULL
+            DO UPDATE SET
+                redacted_payload = EXCLUDED.redacted_payload,
+                content_hash = EXCLUDED.content_hash,
+                created_at_utc = EXCLUDED.created_at_utc;
             """, lease.Connection, lease.Transaction);
 
         AddArtifactParameters(command, artifact);

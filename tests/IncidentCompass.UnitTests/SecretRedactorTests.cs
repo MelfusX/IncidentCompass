@@ -122,4 +122,19 @@ public sealed class SecretRedactorTests
         Assert.Equal("payments-api", redacted["serviceName"]!.GetValue<string>());
         Assert.Equal(3, redacted["count"]!.GetValue<int>());
     }
+
+    [Theory]
+    [InlineData("ghp_1234567890abcdefghijklmnopqrstuvwxyzAB")]
+    [InlineData("gho_1234567890abcdefghijklmnopqrstuvwxyzAB")]
+    [InlineData("ghu_1234567890abcdefghijklmnopqrstuvwxyzAB")]
+    [InlineData("ghs_1234567890abcdefghijklmnopqrstuvwxyzAB")]
+    [InlineData("github_pat_11AABBCC0abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz1234567890")]
+    [InlineData("ghp-1234567890abcdefghijklmnopqrstuvwxyzAB")]
+    public void RedactText_RedactsGitHubTokenPrefixes(string token)
+    {
+        var result = SecretRedactor.RedactText("token=" + token)!;
+
+        Assert.Equal("token=[REDACTED]", result);
+        Assert.DoesNotContain(token, result, StringComparison.Ordinal);
+    }
 }

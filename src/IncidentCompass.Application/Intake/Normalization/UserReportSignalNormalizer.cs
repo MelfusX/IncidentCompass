@@ -13,7 +13,7 @@ internal sealed class UserReportSignalNormalizer : ISignalNormalizer
         var serviceName = string.IsNullOrWhiteSpace(command.ServiceName) ? "unknown" : command.ServiceName;
         var environment = string.IsNullOrWhiteSpace(command.Environment) ? "unknown" : command.Environment;
 
-        var summary = ResolveSummary(command);
+        var summary = SignalTextTruncator.TruncateSummary(ResolveSummary(command));
 
         return new NormalizedSignal(
             Source: command.SourceKind,
@@ -28,7 +28,7 @@ internal sealed class UserReportSignalNormalizer : ISignalNormalizer
             ErrorType: null,
             ErrorMessage: null,
             Summary: summary,
-            Description: command.Description,
+            Description: SignalTextTruncator.TruncateDescription(command.Description),
             HttpMethod: null,
             HttpRoute: null,
             HttpStatusCode: null,
@@ -47,9 +47,7 @@ internal sealed class UserReportSignalNormalizer : ISignalNormalizer
 
         if (!string.IsNullOrWhiteSpace(command.Description))
         {
-            return command.Description.Length > 500
-                ? command.Description[..497] + "..."
-                : command.Description;
+            return command.Description;
         }
 
         // Unreachable given upfront validation: IngestSignalCommandValidator requires at

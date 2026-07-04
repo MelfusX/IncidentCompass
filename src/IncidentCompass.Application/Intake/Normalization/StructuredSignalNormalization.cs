@@ -23,7 +23,7 @@ internal static class StructuredSignalNormalization
 
         var summary = string.IsNullOrWhiteSpace(command.Summary)
             ? SummarySynthesizer.ForStructuredSignal(serviceName, operationName, httpRoute, errorType, errorMessage)
-            : command.Summary;
+            : SignalTextTruncator.TruncateSummary(command.Summary);
 
         return new NormalizedSignal(
             Source: source,
@@ -38,7 +38,7 @@ internal static class StructuredSignalNormalization
             ErrorType: errorType,
             ErrorMessage: errorMessage,
             Summary: summary,
-            Description: command.Description,
+            Description: SignalTextTruncator.TruncateDescription(command.Description),
             HttpMethod: httpMethod,
             HttpRoute: httpRoute,
             HttpStatusCode: httpStatusCode,

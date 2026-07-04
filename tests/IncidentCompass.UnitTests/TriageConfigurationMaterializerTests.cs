@@ -100,6 +100,36 @@ public sealed class TriageConfigurationMaterializerTests
         Assert.Contains("Rules.RequiresSuccessfulToolResult", exception.Message, StringComparison.Ordinal);
     }
 
+
+    [Theory]
+    [InlineData("LookbackMinutes", "FaultGrouping.LookbackMinutes")]
+    [InlineData("SilenceWindowMinutes", "FaultGrouping.SilenceWindowMinutes")]
+    public void Materialize_NonPositiveFaultGroupingWindow_FailsLoadValidation(string settingName, string expectedMessage)
+    {
+        var node = ValidConfigNode();
+        var faultGrouping = (JsonObject)node["FaultGrouping"]!;
+        faultGrouping[settingName] = 0;
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_NonPositiveMassIssueMinNeighborCount_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        var faultGrouping = (JsonObject)node["FaultGrouping"]!;
+        var massIssue = (JsonObject)faultGrouping["MassIssue"]!;
+        massIssue["MinNeighborCount"] = 0;
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("FaultGrouping.MassIssue.MinNeighborCount", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Materialize_NegativeMaxReprompts_FailsLoadValidation()
     {
@@ -134,6 +164,7 @@ public sealed class TriageConfigurationMaterializerTests
         Assert.Contains("Rules.rate_cap.Scope", exception.Message, StringComparison.Ordinal);
         Assert.Contains("attempt, job", exception.Message, StringComparison.Ordinal);
     }
+
     [Fact]
     public void Materialize_MemorySearchRouteMustBeEmbeddingRoute()
     {
@@ -175,6 +206,7 @@ public sealed class TriageConfigurationMaterializerTests
 
         Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
     }
+
     private static TriageConfigurationMaterializer CreateMaterializer()
     {
         var registry = new SignalNormalizerRegistry([

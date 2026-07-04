@@ -109,6 +109,42 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         Assert.Equal(0, reports);
     }
 
+
+    [DockerAvailableFact]
+    public async Task PublishAsync_RefreshedNeighborSetKeepsStableEvidenceReference()
+    {
+        using var scope = await CreateScopeAsync();
+        var serviceName = "neighbor-refresh-svc-" + Guid.NewGuid().ToString("N");
+        var envelope = new TesterEnvelopeDto(
+            "tester",
+            serviceName,
+            "prod",
+            DateTimeOffset.UtcNow,
+            new TesterAttributesDto("TimeoutException", "Neighbor refresh timeout", "/neighbor-refresh"));
+        var ingested = await PostIngestAsync(scope.Client, envelope);
+        Assert.NotNull(ingested.JobId);
+        var neighborArtifactId = await ReadArtifactIdAsync(scope.ConnectionString, ingested.JobId!.Value, "NeighborSet");
+
+        var attached = await PostIngestAsync(scope.Client, envelope with { ObservedAtUtc = DateTimeOffset.UtcNow.AddSeconds(1) });
+        Assert.Equal(ingested.FaultId, attached.FaultId);
+        Assert.False(attached.IsNewJob);
+
+        var refreshedNeighborArtifactId = await ReadArtifactIdAsync(scope.ConnectionString, ingested.JobId.Value, "NeighborSet");
+        Assert.Equal(neighborArtifactId, refreshedNeighborArtifactId);
+
+        var claimed = await ClaimAsync(scope, ingested.JobId.Value, "worker-neighbor-refresh");
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<ITriageReportRepository>();
+        await repository.PublishAsync(
+            claimed,
+            "worker-neighbor-refresh",
+            CreateReport(neighborArtifactId),
+            TestContext.Current.CancellationToken);
+
+        var evidence = await ReadSingleEvidenceAsync(scope.ConnectionString, ingested.FaultId);
+        Assert.Equal("NeighborSet", evidence.Kind);
+    }
+
     private async Task<TestScope> CreateScopeAsync(Action<IServiceCollection>? configureServices = null)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
@@ -158,6 +194,19 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
             [new TriageReportEvidenceReference(referenceId.ToString(), null)],
             [],
             "Review the trigger signal.");
+    }
+
+
+    private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, TesterEnvelopeDto envelope)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/incidents",
+            envelope,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
+        Assert.NotNull(body);
+        return body;
     }
 
     private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, string prefix)

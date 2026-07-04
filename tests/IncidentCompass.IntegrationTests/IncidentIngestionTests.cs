@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
@@ -190,12 +191,51 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
             TesterEnvelope("some-service", "prod", "Error", "message", "/route") with { SourceKind = "webhook" },
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, webhookResponse.StatusCode);
+        using (var problem = await ReadJsonAsync(webhookResponse))
+        {
+            Assert.True(problem.RootElement.TryGetProperty("errors", out var errors));
+            Assert.True(errors.TryGetProperty("sourceKind", out var sourceErrors));
+            Assert.Contains(
+                sourceErrors.EnumerateArray(),
+                error => error.GetString()!.Contains("no registered normalizer", StringComparison.Ordinal));
+        }
 
         var bogusResponse = await scope.Client.PostAsJsonAsync(
             "/api/v1/incidents",
             TesterEnvelope("some-service", "prod", "Error", "message", "/route") with { SourceKind = "bogus" },
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, bogusResponse.StatusCode);
+    }
+
+
+    [DockerAvailableFact]
+    public async Task IngestSignal_ConcurrentAttachments_KeepSingleNeighborSetArtifact()
+    {
+        using var scope = await CreateScopeAsync();
+        var envelope = TesterEnvelope(
+            "concurrent-neighbor-svc-" + Guid.NewGuid().ToString("N"),
+            "prod",
+            "TimeoutException",
+            "Concurrent neighbor probe timed out",
+            "/concurrent-neighbor");
+
+        var first = await PostIngestAsync(scope.Client, envelope);
+        var attached = await Task.WhenAll(Enumerable.Range(0, 8).Select(index =>
+            PostIngestAsync(
+                scope.Client,
+                envelope with { Correlation = ExternalId("concurrent-neighbor-" + index) })));
+
+        Assert.All(attached, item =>
+        {
+            Assert.Equal(first.FaultId, item.FaultId);
+            Assert.False(item.IsNewJob);
+        });
+
+        var neighborRows = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet' AND attempt IS NULL;",
+            ("job_id", first.JobId!.Value));
+        Assert.Equal(1, neighborRows);
     }
 
     [DockerAvailableFact]
@@ -269,6 +309,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         Assert.Equal(0, jobCount);
         Assert.Equal(0, artifactCount);
     }
+
     [DockerAvailableFact]
     public async Task IngestSignal_ConcurrentSameFingerprintStrongSignals_SettleOnOneFaultWithoutUniqueViolation()
     {
@@ -448,6 +489,13 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         return body;
     }
 
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken);
+        return await JsonDocument.ParseAsync(stream, cancellationToken: TestContext.Current.CancellationToken);
+    }
+
     private static TesterEnvelopeDto TesterEnvelope(
         string serviceName,
         string environment,
@@ -539,6 +587,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
                 }
                 """));
     }
+
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -593,6 +642,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
             throw new InvalidOperationException("Injected artifact persistence failure.");
         }
     }
+
     private sealed record ArtifactRow(string Kind, int? Attempt);
 
     private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable

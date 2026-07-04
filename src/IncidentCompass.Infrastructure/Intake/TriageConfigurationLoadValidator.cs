@@ -16,7 +16,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
 
     public void Validate(TriageConfiguration configuration)
     {
-        ValidateFaultGroupingSettings(configuration.FaultGrouping);
+        FaultGroupingSettingsLoadValidator.Validate(configuration.FaultGrouping);
         ValidateAllowedSources(configuration.Ingestion);
         ValidateProviders(configuration.Providers);
         ValidateRoutes(configuration.Providers, configuration.Routes);
@@ -24,14 +24,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         ValidateRoles(configuration.Routes, configuration.Tools, configuration.Roles);
         ValidateTools(configuration.Routes, configuration.Tools);
         TriageRuleLoadValidator.Validate(configuration.Tools, configuration.Rules);
-    }
-
-    private static void ValidateFaultGroupingSettings(FaultGroupingSettings settings)
-    {
-        if (!settings.MassIssue.TryGetMinimumFingerprintStrength(out _))
-        {
-            throw Invalid("FaultGrouping.MassIssue.MinFingerprintStrength", settings.MassIssue.MinFingerprintStrength, "one of: weak, strong");
-        }
     }
 
     private void ValidateAllowedSources(IngestionSettings settings)

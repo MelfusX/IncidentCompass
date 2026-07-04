@@ -8,7 +8,7 @@ public sealed class WorkerOptions
 
     public int PollIntervalSeconds { get; set; } = 30;
 
-    public int LeaseSeconds { get; set; } = 300;
+    public int LeaseSeconds { get; set; } = 900;
 
     public int MaxAttempts { get; set; } = 3;
 
