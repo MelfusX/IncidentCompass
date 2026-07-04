@@ -65,3 +65,10 @@ Phase 5 report grounding proves that each persisted evidence row came from a cit
 ## Fixed Worker Leases
 
 The MVP worker claims jobs with a fixed lease and does not renew leases while a job is running. The default lease is intentionally longer than the local poll cadence so normal bounded investigations have room to finish, but a production deployment should add explicit lease renewal or heartbeat handling before increasing concurrency.
+## Dormant Components Kept for the Roadmap
+
+Two upstream-derived component groups are intentionally retained but not registered in DI.
+
+IC-BL-010 keeps the standalone governed tool execution/audit stack dormant: `ToolPolicy`, `ToolRisk`, `ToolPolicyDecision`, `ToolPolicyMetadata`, `GovernedAgentToolExecutor`, `AgentToolAuditLogWriter`, `IToolAuditLogRepository`, `PostgresToolAuditLogRepository` and `infra/postgres/init/006-tool-audit.sql`. The live Worker path uses its own role-scoped rule engine and triage-ledger audit events instead.
+
+IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingRecord`, `IPricingRepository`, `PostgresObservabilityRepository` and the `incidentcompass.ai_model_pricing` half of `infra/postgres/init/004-observability-cost.sql`. Live model usage is recorded as `ModelCall` and `BudgetEvent` ledger rows; cost rollup is deferred until a reporting workflow consumes those rows.

@@ -1,8 +1,9 @@
-using IncidentCompass.Application.Governance.Validation;
-using IncidentCompass.Application.Governance.Tools;
-using IncidentCompass.Domain.Governance;
-using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Governance.Validation;
+using IncidentCompass.Domain.Governance;
+using IncidentCompass.Domain.Incidents;
+using System.Text.Json;
 
 namespace IncidentCompass.UnitTests;
 
@@ -112,8 +113,9 @@ public sealed class AgentToolPolicyTests
         var validation = ticketTool.Validate(arguments.RootElement);
         Assert.True(validation.IsValid);
 
-        var first = await ticketTool.ExecuteAsync(validation.SanitizedArguments, CancellationToken.None);
-        var second = await ticketTool.ExecuteAsync(validation.SanitizedArguments, CancellationToken.None);
+        var context = CreateExecutionContext("CreateSupportTicket");
+        var first = await ticketTool.ExecuteAsync(context, validation.SanitizedArguments, CancellationToken.None);
+        var second = await ticketTool.ExecuteAsync(context, validation.SanitizedArguments, CancellationToken.None);
 
         Assert.Equal(
             first.Output.GetProperty("ticketId").GetString(),
@@ -142,6 +144,31 @@ public sealed class AgentToolPolicyTests
         return document.RootElement.Clone();
     }
 
+    private static AgentToolExecutionContext CreateExecutionContext(string toolName)
+    {
+        var now = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var job = new TriageJob(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            TriageJobStatus.Processing,
+            Attempt: 1,
+            LockedBy: null,
+            LockedUntilUtc: null,
+            NextAttemptAtUtc: null,
+            LastErrorCode: null,
+            LastErrorMessage: null,
+            ConfigHash: "test-config",
+            CreatedAtUtc: now,
+            UpdatedAtUtc: now);
+
+        return new AgentToolExecutionContext(
+            job,
+            TestTriageConfiguration.Create(),
+            RoleName: "test",
+            ToolName: toolName,
+            TenantId: "tenant-a");
+    }
+
     private sealed class MetadataOnlyTestTool : IAgentTool
     {
         public AiToolDefinition Definition { get; } = new(
@@ -159,6 +186,7 @@ public sealed class AgentToolPolicyTests
         }
 
         public Task<ToolExecutionResult> ExecuteAsync(
+            AgentToolExecutionContext context,
             JsonElement sanitizedArguments,
             CancellationToken cancellationToken)
         {
@@ -185,6 +213,7 @@ public sealed class AgentToolPolicyTests
         }
 
         public Task<ToolExecutionResult> ExecuteAsync(
+            AgentToolExecutionContext context,
             JsonElement sanitizedArguments,
             CancellationToken cancellationToken)
         {
@@ -219,6 +248,7 @@ public sealed class AgentToolPolicyTests
         }
 
         public Task<ToolExecutionResult> ExecuteAsync(
+            AgentToolExecutionContext context,
             JsonElement sanitizedArguments,
             CancellationToken cancellationToken)
         {
@@ -270,6 +300,7 @@ public sealed class AgentToolPolicyTests
         }
 
         public Task<ToolExecutionResult> ExecuteAsync(
+            AgentToolExecutionContext context,
             JsonElement sanitizedArguments,
             CancellationToken cancellationToken)
         {

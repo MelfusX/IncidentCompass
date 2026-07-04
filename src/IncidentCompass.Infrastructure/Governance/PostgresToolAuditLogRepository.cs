@@ -7,6 +7,7 @@ using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Governance;
 
+/// DORMANT: reserved for IC-BL-010 governed tool execution work.
 internal sealed class PostgresToolAuditLogRepository(PostgresDataSourceProvider dataSourceProvider)
     : IToolAuditLogRepository
 {

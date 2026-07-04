@@ -16,8 +16,7 @@ public sealed class HostCompositionTests
 {
     public static IEnumerable<object[]> InvalidApplicationConfigurations =>
     [
-        [new Dictionary<string, string?> { ["IncidentCompass:Application:ApiVersion"] = " " }],
-        [new Dictionary<string, string?> { ["IncidentCompass:Application:RunnerVersion"] = "" }]
+        [new Dictionary<string, string?> { ["IncidentCompass:Application:ApiVersion"] = " " }]
     ];
 
     public static IEnumerable<object[]> InvalidModelGatewayConfigurations =>

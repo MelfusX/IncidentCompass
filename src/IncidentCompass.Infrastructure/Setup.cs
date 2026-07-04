@@ -1,16 +1,19 @@
-using IncidentCompass.Application.Governance.Ledger;
-using IncidentCompass.Infrastructure.Investigation;
-using IncidentCompass.Application.Investigation.Reports;
-using IncidentCompass.Application.Investigation.Jobs;
-using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Core.Embeddings;
-using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.Ledger;
+using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Infrastructure.Configuration;
+using IncidentCompass.Infrastructure.Embeddings.Mock;
+using IncidentCompass.Infrastructure.Embeddings.OpenAi;
 using IncidentCompass.Infrastructure.Governance;
 using IncidentCompass.Infrastructure.Intake;
+using IncidentCompass.Infrastructure.Investigation;
 using IncidentCompass.Infrastructure.Memory;
+using IncidentCompass.Infrastructure.ModelGateway.Mock;
+using IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 using IncidentCompass.Infrastructure.Observability;
 using IncidentCompass.Infrastructure.Postgres;
 using IncidentCompass.Infrastructure.Security;
@@ -18,10 +21,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
-using IncidentCompass.Infrastructure.ModelGateway.Mock;
-using IncidentCompass.Infrastructure.ModelGateway.OpenAi;
-using IncidentCompass.Infrastructure.Embeddings.Mock;
-using IncidentCompass.Infrastructure.Embeddings.OpenAi;
 
 namespace IncidentCompass.Infrastructure;
 
@@ -48,7 +47,6 @@ public static class Setup
         return services;
     }
 
-
     private static IServiceCollection AddGovernedInvestigationServices(this IServiceCollection services)
     {
         services.TryAddScoped<TriageLedgerAppender>();
@@ -61,6 +59,7 @@ public static class Setup
 
         return services;
     }
+
     private static IServiceCollection AddInfrastructureOptions(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -163,12 +162,6 @@ public static class Setup
     private static IServiceCollection AddPersistenceAdapters(this IServiceCollection services)
     {
         services.TryAddSingleton<PostgresDataSourceProvider>();
-        services.TryAddScoped<PostgresObservabilityRepository>();
-        services.TryAddScoped<IAiRequestLogRepository>(
-            serviceProvider => serviceProvider.GetRequiredService<PostgresObservabilityRepository>());
-        services.TryAddScoped<IPricingRepository>(
-            serviceProvider => serviceProvider.GetRequiredService<PostgresObservabilityRepository>());
-        services.TryAddScoped<IToolAuditLogRepository, PostgresToolAuditLogRepository>();
         services.TryAddScoped<ITriageLedgerWriter, PostgresTriageLedgerWriter>();
         services.TryAddScoped<ITriageLedgerReader, PostgresTriageLedgerReader>();
         services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
@@ -179,6 +172,3 @@ public static class Setup
         return services;
     }
 }
-
-
-

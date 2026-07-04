@@ -1,18 +1,31 @@
 # Cost Tracking
 
-Model-backed features are cost-sensitive. Cost estimation is computed and stored at request-log time so it stays reproducible even after pricing changes.
+Model-backed features are cost-sensitive. The live system records token usage in triage-ledger `ModelCall` events and charges attempt budgets with first-class `BudgetEvent.tokens_delta` rows.
 
-## Inputs
+## Live Inputs
 
 - input tokens;
 - output tokens;
-- embedding tokens;
-- model pricing;
-- request count.
+- total tokens;
+- usage source (`provider` or `estimate`);
+- provider;
+- model;
+- route ID;
+- request count derived from `ModelCall` rows.
 
-## Pricing
+## Planned Rollup
 
-The observability schema stores pricing records in `incidentcompass.ai_model_pricing`. Records include:
+Cost rollup is planned under IC-BL-014. The intended source data is:
+
+- `ModelCall` rows in `incidentcompass.triage_ledger` for usage, provider and model;
+- the dormant `incidentcompass.ai_model_pricing` table for effective-dated pricing;
+- the dormant `AiCostEstimator`, `PricingRecord` and `IPricingRepository` code retained for that backlog item.
+
+The current system does not write estimated cost to a separate request-log table and does not expose a usage dashboard. The mock models still seed zero-cost USD pricing records so future rollup work can remain deterministic for local runs and tests.
+
+## Pricing Table
+
+`incidentcompass.ai_model_pricing` records include:
 
 - provider;
 - model;
@@ -21,14 +34,6 @@ The observability schema stores pricing records in `incidentcompass.ai_model_pri
 - output token price;
 - embedding token price where applicable;
 - effective dates.
-
-When a model request is logged, estimated cost is calculated from the pricing
-record effective at the request timestamp and stored on the request log. Storing
-the estimate at write time keeps historical cost data reproducible after later
-pricing changes, even though no reporting endpoint reads it back yet.
-
-The local mock models are seeded with zero-cost USD pricing for deterministic
-local runs and tests.
 
 ## Quotas
 

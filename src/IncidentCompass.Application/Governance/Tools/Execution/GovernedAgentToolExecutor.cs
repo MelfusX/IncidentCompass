@@ -1,9 +1,10 @@
+using System.Text.Json;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Domain.Governance;
-using System.Text.Json;
 
 namespace IncidentCompass.Application.Governance.Tools.Execution;
 
+/// DORMANT: reserved for IC-BL-010 governed tool execution work.
 internal sealed class GovernedAgentToolExecutor(
     ToolPolicy toolPolicy,
     AgentToolAuditLogWriter auditLogWriter)
@@ -78,6 +79,7 @@ internal sealed class GovernedAgentToolExecutor(
             ? AgentToolExecutionOutcome.Rejected("unknown_tool", "The requested tool is not available.")
             : await ExecuteBackendToolAsync(
                 tool,
+                request.Context,
                 validation.SanitizedArguments,
                 policy,
                 cancellationToken);
@@ -85,6 +87,7 @@ internal sealed class GovernedAgentToolExecutor(
 
     private static async Task<AgentToolExecutionOutcome> ExecuteBackendToolAsync(
         IAgentTool tool,
+        AgentToolExecutionContext context,
         JsonElement sanitizedArguments,
         ToolPolicyDecision policy,
         CancellationToken cancellationToken)
@@ -92,6 +95,7 @@ internal sealed class GovernedAgentToolExecutor(
         try
         {
             var execution = await tool.ExecuteAsync(
+                context,
                 sanitizedArguments,
                 cancellationToken);
             if (!IsBackendExecutionStatus(execution.Status))

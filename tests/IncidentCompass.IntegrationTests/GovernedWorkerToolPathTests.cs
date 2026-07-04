@@ -495,7 +495,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
                 : ToolValidationResult.Invalid("invalid_arguments", "Synthetic tool arguments must be an object.");
         }
 
-        public Task<ToolExecutionResult> ExecuteAsync(JsonElement sanitizedArguments, CancellationToken cancellationToken)
+        public Task<ToolExecutionResult> ExecuteAsync(AgentToolExecutionContext context, JsonElement sanitizedArguments, CancellationToken cancellationToken)
         {
             return Task.FromResult(new ToolExecutionResult(ToolExecutionStatus.Succeeded, Element("{\"tool\":\"" + name + "\",\"status\":\"ok\"}")));
         }

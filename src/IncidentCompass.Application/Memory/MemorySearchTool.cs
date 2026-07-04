@@ -64,12 +64,6 @@ internal sealed class MemorySearchTool(
         }));
     }
 
-    public Task<ToolExecutionResult> ExecuteAsync(
-        JsonElement sanitizedArguments,
-        CancellationToken cancellationToken)
-    {
-        throw new InvalidOperationException("memory_search requires worker execution context.");
-    }
     public async Task<ToolExecutionResult> ExecuteAsync(
         AgentToolExecutionContext context,
         JsonElement sanitizedArguments,

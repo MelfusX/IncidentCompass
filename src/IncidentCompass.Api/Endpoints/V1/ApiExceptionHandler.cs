@@ -1,5 +1,4 @@
 using IncidentCompass.Application.Core.Dispatching;
-using IncidentCompass.Application.Core.Errors;
 using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Domain.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
@@ -34,11 +33,7 @@ internal sealed class ApiExceptionHandler(
 
         return exception switch
         {
-            UnauthorizedRequestException current => ApiErrorMapping.Unauthorized(current),
-            ForbiddenRequestException current => ApiErrorMapping.Forbidden(current),
             NotFoundException current => ApiErrorMapping.NotFound(current),
-            ConflictException current => ApiErrorMapping.Conflict(current),
-            ProviderException current => ApiErrorMapping.ProviderProblem(current),
             RequestValidationException current => ApiErrorMapping.RequestValidation(current),
             ValidationException current => ApiErrorMapping.BadRequest(current.Message),
             DomainException current => ApiErrorMapping.InternalDomainViolation(current),

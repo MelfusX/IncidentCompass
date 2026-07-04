@@ -1,7 +1,7 @@
+using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Domain.Governance;
 using System.Text.Json;
-using IncidentCompass.Application.Core.ModelClients;
 
 namespace IncidentCompass.Application.Governance.Tools;
 
@@ -14,14 +14,7 @@ public interface IAgentTool
     ToolValidationResult Validate(JsonElement arguments);
 
     Task<ToolExecutionResult> ExecuteAsync(
-        JsonElement sanitizedArguments,
-        CancellationToken cancellationToken);
-
-    Task<ToolExecutionResult> ExecuteAsync(
         AgentToolExecutionContext context,
         JsonElement sanitizedArguments,
-        CancellationToken cancellationToken)
-    {
-        return ExecuteAsync(sanitizedArguments, cancellationToken);
-    }
+        CancellationToken cancellationToken);
 }

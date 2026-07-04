@@ -1,3 +1,4 @@
+-- DORMANT: reserved for IC-BL-014 cost rollup work.
 CREATE TABLE IF NOT EXISTS incidentcompass.ai_model_pricing (
     id uuid PRIMARY KEY,
     provider text NOT NULL CHECK (length(btrim(provider)) > 0),
@@ -14,36 +15,6 @@ CREATE TABLE IF NOT EXISTS incidentcompass.ai_model_pricing (
 
 CREATE INDEX IF NOT EXISTS ix_ai_model_pricing_effective
     ON incidentcompass.ai_model_pricing (provider, model, effective_from_utc DESC, effective_to_utc);
-
-CREATE TABLE IF NOT EXISTS incidentcompass.ai_request_logs (
-    request_id uuid PRIMARY KEY,
-    api_version text NOT NULL CHECK (length(btrim(api_version)) > 0),
-    user_id text NULL,
-    tenant_id text NULL,
-    correlation_id text NOT NULL CHECK (length(btrim(correlation_id)) > 0),
-    provider text NOT NULL CHECK (length(btrim(provider)) > 0),
-    model text NOT NULL CHECK (length(btrim(model)) > 0),
-    status text NOT NULL CHECK (status IN ('Succeeded', 'Failed')),
-    error_code text NULL,
-    latency_ms integer NOT NULL CHECK (latency_ms >= 0),
-    input_tokens integer NULL CHECK (input_tokens IS NULL OR input_tokens >= 0),
-    output_tokens integer NULL CHECK (output_tokens IS NULL OR output_tokens >= 0),
-    total_tokens integer NULL CHECK (total_tokens IS NULL OR total_tokens >= 0),
-    embedding_tokens integer NULL CHECK (embedding_tokens IS NULL OR embedding_tokens >= 0),
-    estimated_cost numeric(18, 8) NULL CHECK (estimated_cost IS NULL OR estimated_cost >= 0),
-    cost_currency text NULL CHECK (cost_currency IS NULL OR cost_currency ~ '^[A-Z]{3}$'),
-    created_at_utc timestamptz NOT NULL,
-    CHECK ((estimated_cost IS NULL AND cost_currency IS NULL) OR (estimated_cost IS NOT NULL AND cost_currency IS NOT NULL))
-);
-
-CREATE INDEX IF NOT EXISTS ix_ai_request_logs_created
-    ON incidentcompass.ai_request_logs (created_at_utc);
-
-CREATE INDEX IF NOT EXISTS ix_ai_request_logs_usage_filters
-    ON incidentcompass.ai_request_logs (tenant_id, user_id, model, created_at_utc);
-
-CREATE INDEX IF NOT EXISTS ix_ai_request_logs_correlation
-    ON incidentcompass.ai_request_logs (correlation_id);
 
 INSERT INTO incidentcompass.ai_model_pricing (
     id, provider, model, currency, input_token_price_per_million,

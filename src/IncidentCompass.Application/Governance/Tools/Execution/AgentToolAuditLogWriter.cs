@@ -2,6 +2,7 @@ using IncidentCompass.Domain.Governance;
 
 namespace IncidentCompass.Application.Governance.Tools.Execution;
 
+/// DORMANT: reserved for IC-BL-010 governed tool execution work.
 internal sealed class AgentToolAuditLogWriter(
     IToolAuditLogRepository auditLogRepository,
     TimeProvider timeProvider)

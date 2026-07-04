@@ -34,7 +34,7 @@ Do not auto-increment release versions in CI. The version is part of the reviewe
 ## Database
 
 - Keep schema changes in source control.
-- Observability and tool-audit tables currently use explicit raw SQL/init scripts and small Npgsql adapters while the persistence surface is still stabilizing.
+- Live ledger/report/memory tables and dormant pricing/tool-audit tables use explicit raw SQL/init scripts and small Npgsql adapters while the persistence surface is still stabilizing.
 - If EF Core is introduced later for broader persistence, use migrations and name them after the use case or schema change.
 
 ## Pricing

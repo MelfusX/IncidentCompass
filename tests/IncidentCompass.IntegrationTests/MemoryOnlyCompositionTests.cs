@@ -4,7 +4,6 @@ using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.Ledger;
-using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
@@ -12,7 +11,6 @@ using IncidentCompass.Application.Investigation.Reports.Get;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
-using IncidentCompass.Domain.Governance;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
 using Microsoft.Extensions.Configuration;
@@ -34,11 +32,6 @@ public sealed class MemoryOnlyCompositionTests
             serviceProvider.GetRequiredService<MemoryOnlyUserContext>());
         services.AddSingleton<IBackgroundUserContext>(serviceProvider =>
             serviceProvider.GetRequiredService<MemoryOnlyUserContext>());
-        // The Governance subsystem (kept as currently-uncalled library code) depends on
-        // IToolAuditLogRepository, which is an Infrastructure-provided port. This test
-        // composes Application in isolation, so it supplies an in-memory stand-in instead
-        // of pulling in IncidentCompass.Infrastructure.
-        services.AddSingleton<IToolAuditLogRepository, InMemoryToolAuditLogRepository>();
         // IngestSignalCommandValidator (Phase 1 intake) depends on ITriageConfigurationRepository,
         // another Infrastructure-provided port. Same reasoning as above: supply a trivial
         // in-memory stand-in instead of pulling in IncidentCompass.Infrastructure.
@@ -80,14 +73,6 @@ public sealed class MemoryOnlyCompositionTests
         public IReadOnlyCollection<string> Roles => ["system"];
 
         public IReadOnlyCollection<string> Groups => [];
-    }
-
-    private sealed class InMemoryToolAuditLogRepository : IToolAuditLogRepository
-    {
-        public Task AddAsync(ToolAuditLogEntry entry, CancellationToken cancellationToken)
-        {
-            return Task.CompletedTask;
-        }
     }
 
     private sealed class InMemoryTriageConfigurationRepository : ITriageConfigurationRepository
@@ -272,4 +257,3 @@ public sealed class MemoryOnlyCompositionTests
             Task.FromResult<PriorReportSummary?>(null);
     }
 }
-

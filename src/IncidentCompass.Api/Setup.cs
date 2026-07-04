@@ -1,3 +1,4 @@
+using IncidentCompass.Api.Health;
 using IncidentCompass.Api.Security;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,7 +15,8 @@ public static class Setup
         services.AddApiUserContext(configuration, environment);
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
-        services.AddHealthChecks();
+        services.AddHealthChecks()
+            .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
         services.AddOpenApi();
 
         return services;

@@ -8,4 +8,15 @@ public sealed record AgentToolExecutionContext(
     TriageConfiguration Configuration,
     string RoleName,
     string ToolName,
-    string TenantId);
+    string TenantId)
+{
+    public Guid ConversationId { get; init; }
+
+    public string UserId { get; init; } = string.Empty;
+
+    public string CorrelationId { get; init; } = string.Empty;
+
+    public string PolicyVersion { get; init; } = string.Empty;
+
+    public bool ApproveRiskyTools { get; init; }
+}

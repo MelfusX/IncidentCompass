@@ -1,10 +1,11 @@
-using IncidentCompass.Domain.Observability;
-using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Domain.Observability;
 using IncidentCompass.Infrastructure.Observability;
 
 namespace IncidentCompass.Infrastructure.Observability.Pricing;
 
+/// DORMANT: reserved for IC-BL-014 cost rollup work.
 public sealed class AiCostEstimator(IPricingRepository pricingRepository)
 {
     public async Task<CostEstimate?> EstimateAsync(

@@ -31,7 +31,7 @@ No pipeline behaviors are registered by default in v0.1. Validation, correlation
 - Pipeline behaviors should be application concerns, not HTTP middleware replacements.
 - HTTP-only concerns stay in `IncidentCompass.Api`.
 - Persistence transactions can be opened by an application pipeline behavior but implemented by Infrastructure.
-- AI request logging should be triggered consistently through application services and/or pipeline behaviors.
+- Model-call telemetry should stay on the Worker investigation path through durable `ModelCall` ledger events.
 
 ## Use Case Layout
 

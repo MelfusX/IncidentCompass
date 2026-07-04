@@ -27,9 +27,4 @@ public static class Setup
 
         return services;
     }
-
-    public static IServiceCollection AddWorker(this IServiceCollection services)
-    {
-        return services.AddWorker(new ConfigurationBuilder().Build());
-    }
 }

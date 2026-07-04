@@ -1,17 +1,15 @@
 using FluentValidation;
-using IncidentCompass.Application.Governance;
-using IncidentCompass.Application.Governance.Tools.Execution;
 using IncidentCompass.Application.Core.Configuration;
 using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.Health;
-using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Application.Core.Users;
+using IncidentCompass.Application.Governance;
 using IncidentCompass.Application.Intake;
-using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Memory;
-using IncidentCompass.Domain.Governance;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -38,13 +36,6 @@ public static class Setup
         services.AddGovernanceCore();
         services.AddInvestigationCore();
         services.AddMemoryCore();
-
-        services.TryAddScoped<ModelGatewayRequestPolicy>();
-        services.TryAddScoped<IAiModelRequestLogger, NoopAiModelRequestLogger>();
-
-        services.TryAddScoped<ToolPolicy>();
-        services.TryAddScoped<AgentToolAuditLogWriter>();
-        services.TryAddScoped<GovernedAgentToolExecutor>();
 
         return services;
     }

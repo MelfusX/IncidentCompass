@@ -20,13 +20,12 @@ Tester-driven local demo.
 - A Phase 1 intake pipeline (Intake) with POST /api/v1/incidents, GET /api/v1/faults/{id}, source
   normalizers, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake
   artifacts.
-- A governed tool-execution/policy/audit subsystem (Governance): typed tool schemas, backend policy
-  decisions (allow/require-approval/forbid), a durable triage ledger writer and an older standalone
-  tool-audit log writer. The Worker path records Delegated, WorkerCompleted, ToolProposed,
-  PolicyDecision, ToolResult and same-transaction ReportPublished events, and the API exposes
-  GET /api/v1/faults/{id}/ledger for readback.
-- Sanitized AI-request logging, cost estimation, grounded triage report readback, deterministic
-  Docker demo packaging, and generic dispatch/health/security/user scaffolding over PostgreSQL.
+- Governance rails for the investigation loop: typed tool schemas, role-scoped backend tool grants,
+  backend policy decisions, a durable triage ledger writer and GET /api/v1/faults/{id}/ledger for
+  readback. The Worker path records Delegated, WorkerCompleted, ToolProposed, PolicyDecision,
+  ToolResult and same-transaction ReportPublished events.
+- ModelCall ledger telemetry, grounded triage report readback, deterministic Docker demo packaging,
+  and generic dispatch/health/security/user scaffolding over PostgreSQL.
 
 ## What This Is Not
 
@@ -55,8 +54,8 @@ flowchart LR
 ~~~
 
 IncidentCompass.Application is a single project organized by feature folder: Core/ (dispatcher,
-identity/correlation, model/embedding gateway abstractions, options), Governance/ (tool-execution
-policy plus the triage ledger), Intake/ (signal normalization, redaction, fingerprinting, fault
+identity/correlation, model/embedding gateway abstractions, options), Governance/ (triage
+ledger and worker policy helpers), Intake/ (signal normalization, redaction, fingerprinting, fault
 grouping and triage-job orchestration), Investigation/ (Worker claim/runtime orchestration, config
 rehydration and the governed processor) and Memory/ (memory search contracts, seed records and
 memory_search) are populated today. Infrastructure implements persistence and provider adapters. Api
@@ -156,8 +155,7 @@ and [samples/http/local-demo.http](samples/http/local-demo.http).
 ## Relationship to dotnet-genai-starter
 
 IncidentCompass was bootstrapped from the dotnet-genai-starter repo's patterns: its layered .NET
-structure, its model/embedding gateway abstractions, and its governed tool-execution/policy/audit
-primitive. It was then specialized into a single-purpose incident-triage agent. Everything else from
+structure and its model/embedding gateway abstractions. It was then specialized into a single-purpose incident-triage agent. Everything else from
 that starter kit - chat (direct, RAG, and agentic), RAG document ingestion, evaluations, usage
 tracking, and MCP (both the local host and the external-MCP client) - was stripped out because it
 doesn't belong to this product's scope.

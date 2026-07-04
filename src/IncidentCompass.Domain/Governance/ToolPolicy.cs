@@ -2,6 +2,7 @@ using System.Text;
 
 namespace IncidentCompass.Domain.Governance;
 
+/// DORMANT: reserved for IC-BL-010 governed tool execution work.
 public sealed class ToolPolicy
 {
     // Keeps audit classification explicit for well-known destructive names even

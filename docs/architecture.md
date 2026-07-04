@@ -20,12 +20,12 @@ flowchart LR
 - `IncidentCompass.Api`: HTTP endpoints, OpenAPI, demo auth adapter, request/response mapping.
 - `IncidentCompass.Application`: single application project with populated feature folders:
   - `Core/`: dispatcher, pipeline behaviors, identity/correlation contracts, shared configuration, base errors, health echo, current-user use case, and model/embedding gateway abstractions.
-  - `Governance/`: backend-governed tool-execution contracts, tool policy/audit orchestration, validation primitives and the durable triage ledger append contract.
+  - `Governance/`: worker policy helpers, validation primitives, dormant standalone tool-execution/audit primitives and the durable triage ledger append contract.
   - `Intake/`: source normalization, input limits, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts for the Phase 1 ingestion flow.
   - `Investigation/`: Worker job claim/runtime seams that rehydrate claimed jobs by config hash and hand them to the governed investigation processor.
   - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
-- `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, sanitized AI request logging, pricing/cost estimation and other adapters.
+- `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, memory adapters, dormant pricing/audit adapters and other infrastructure adapters.
 - `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, leases and per-process `MaxConcurrentJobs`.
 
 ## Phase 1 Intake Flow
@@ -48,7 +48,7 @@ Phase 5 makes `publish_report` a backend-grounded closeout instead of a model-au
 
 - Domain must not depend on Application, Infrastructure, Api, Worker, provider SDKs or persistence libraries.
 - Application owns use-case contracts, ports, orchestration, validation policies and pipeline behavior.
-- Infrastructure implements application ports and owns the observability mechanism, including sanitized request logging and pricing/cost estimation.
+- Infrastructure implements application ports and persistence adapters. Live model observability is recorded through triage-ledger `ModelCall` and `BudgetEvent` rows; pricing rollup remains deferred.
 - API and Worker hosts should call application use cases instead of duplicating orchestration.
 - Provider SDKs must not appear in controllers or use-case handlers.
 - Keep the system a layered monolith for this project's scope.
