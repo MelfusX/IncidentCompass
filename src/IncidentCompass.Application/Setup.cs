@@ -8,6 +8,7 @@ using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Governance;
 using IncidentCompass.Application.Intake;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Intake.Redaction;
 using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Memory;
 using Microsoft.Extensions.Configuration;
@@ -70,7 +71,15 @@ public static class Setup
 
         services
             .AddOptions<IngestionLimitsOptions>()
-            .Bind(configuration.GetSection(IngestionLimitsOptions.SectionName));
+            .Bind(configuration.GetSection(IngestionLimitsOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<IngestionLimitsOptions>,
+            IngestionLimitsOptionsValidator>());
+
+        services
+            .AddOptions<PseudonymizationOptions>()
+            .Bind(configuration.GetSection(PseudonymizationOptions.SectionName));
 
         return services;
     }

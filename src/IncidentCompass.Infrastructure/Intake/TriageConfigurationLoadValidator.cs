@@ -17,6 +17,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
     public void Validate(TriageConfiguration configuration)
     {
         FaultGroupingSettingsLoadValidator.Validate(configuration.FaultGrouping);
+        RedactionSettingsLoadValidator.Validate(configuration.Redaction);
         ValidateAllowedSources(configuration.Ingestion);
         ValidateProviders(configuration.Providers);
         ValidateRoutes(configuration.Providers, configuration.Routes);

@@ -192,6 +192,38 @@ public sealed class HostCompositionTests
             failure => failure.Contains("Model gateway configuration", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData("1023", "1")]
+    [InlineData("1048577", "1")]
+    [InlineData("1024", "0")]
+    [InlineData("1024", "1025")]
+    public async Task HostServices_RejectInvalidIngestionLimitsOnStart(string payloadBytes, string attributesBytes)
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:IngestionLimits:MaxPayloadBytes"] = payloadBytes,
+            ["IncidentCompass:IngestionLimits:MaxAttributesBytes"] = attributesBytes
+        });
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync());
+
+        Assert.NotNull(exception);
+        Assert.NotEmpty(GetOptionsValidationFailures(exception));
+    }
+
+    [Theory]
+    [InlineData("1024", "1")]
+    [InlineData("1048576", "1048576")]
+    public async Task HostServices_AcceptsIngestionLimitsAtInclusiveBounds(string payloadBytes, string attributesBytes)
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:IngestionLimits:MaxPayloadBytes"] = payloadBytes,
+            ["IncidentCompass:IngestionLimits:MaxAttributesBytes"] = attributesBytes
+        });
+
+        await host.StartAsync();
+    }
     [Fact]
     public async Task MockEmbeddingClient_UsesConfiguredDimensions()
     {

@@ -10,6 +10,20 @@ Real model calls are expensive and nondeterministic. Automated tests use mock cl
 
 Full prompt logs help debugging but may leak sensitive data. Default logging is metadata-only.
 
+## Configurable Redaction Is Best Effort
+
+Built-in and configured redaction rules reduce exposure before persistence and model calls, but a
+pattern list cannot prove that all secret and PII formats are covered. New realistic data sources must
+add regression fixtures for their known sensitive fields, and operators should keep full prompt/body
+logging disabled.
+
+## Pseudonymization Salt Rotation
+
+User identifiers can be replaced with stable HMAC-SHA256 pseudonyms so later blast-radius logic can
+count distinct users without storing raw identifiers. The host-only salt is intentionally outside the
+snapshotted triage config. Rotating it breaks continuity with older pseudonyms; running without it
+fails safe to redaction and therefore loses distinct-user counting.
+
 ## Simple Access Control vs Enterprise RBAC
 
 The current implementation relies on a minimal demo `IUserContext` rather than enterprise RBAC. Real auth providers and finer-grained authorization are deferred; the architecture should not block later RBAC or Entra ID integration.

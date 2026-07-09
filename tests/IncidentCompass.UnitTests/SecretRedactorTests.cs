@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
+using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Intake.Redaction;
+using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.UnitTests;
 
@@ -137,4 +139,84 @@ public sealed class SecretRedactorTests
         Assert.Equal("token=[REDACTED]", result);
         Assert.DoesNotContain(token, result, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void RedactJsonNode_ConfiguredKeyAndPattern_AreRedacted()
+    {
+        var settings = new RedactionSettings(
+            AttributeKeys: ["customer.ssn"],
+            Patterns: [new RedactionPatternSettings("internal-id", @"INC-[0-9]+")],
+            UserIdentifierAttributes: []);
+        var node = JsonNode.Parse("""
+            {
+              "customer": { "ssn": "123-45-6789" },
+              "message": "failed request INC-1042"
+            }
+            """)!;
+
+        var redacted = SecretRedactor.RedactJsonNode(node, settings);
+
+        Assert.Equal("[REDACTED]", redacted["customer"]!["ssn"]!.GetValue<string>());
+        Assert.Equal("failed request [REDACTED]", redacted["message"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Protect_SameSaltIsStableAndDifferentSaltChangesPseudonym()
+    {
+        var settings = new RedactionSettings(
+            AttributeKeys: ["user.id"],
+            Patterns: [],
+            UserIdentifierAttributes: ["user.id"]);
+        var signal = CreateSignal(JsonNode.Parse("""{"user":{"id":"operator-42"}}""")!);
+
+        var first = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions { Salt = "salt-one" }))
+            .Protect(signal, settings);
+        var repeated = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions { Salt = "salt-one" }))
+            .Protect(signal, settings);
+        var rotated = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions { Salt = "salt-two" }))
+            .Protect(signal, settings);
+
+        var firstValue = first.Attributes["user"]!["id"]!.GetValue<string>();
+        Assert.StartsWith(UserIdentifierPseudonymizer.Prefix, firstValue, StringComparison.Ordinal);
+        Assert.Equal(firstValue, repeated.Attributes["user"]!["id"]!.GetValue<string>());
+        Assert.NotEqual(firstValue, rotated.Attributes["user"]!["id"]!.GetValue<string>());
+
+        var redacted = SecretRedactor.Redact(first, settings);
+        Assert.Equal(firstValue, redacted.Attributes["user"]!["id"]!.GetValue<string>());
+        Assert.DoesNotContain("operator-42", redacted.Attributes.ToJsonString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Protect_MissingSaltFailsSafeByRedactingIdentifier()
+    {
+        var settings = new RedactionSettings([], [], ["user.id"]);
+        var signal = CreateSignal(JsonNode.Parse("""{"user":{"id":"operator-42"}}""")!);
+        var pseudonymizer = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions()));
+
+        var protectedSignal = pseudonymizer.Protect(signal, settings);
+
+        Assert.Equal("[REDACTED]", protectedSignal.Attributes["user"]!["id"]!.GetValue<string>());
+    }
+
+    private static NormalizedSignal CreateSignal(JsonNode attributes) => new(
+        Source: "tester",
+        ExternalId: null,
+        TraceId: null,
+        SpanId: null,
+        ParentSpanId: null,
+        ServiceName: "payments-api",
+        Environment: "test",
+        OperationName: null,
+        Severity: null,
+        ErrorType: "ExampleError",
+        ErrorMessage: null,
+        Summary: "Example failure",
+        Description: null,
+        HttpMethod: null,
+        HttpRoute: null,
+        HttpStatusCode: null,
+        DurationMs: null,
+        Attributes: attributes,
+        Body: new JsonObject(),
+        ObservedAtUtc: DateTimeOffset.UtcNow);
 }

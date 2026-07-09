@@ -1,4 +1,5 @@
 {
+  "$schema": "../../../../config/incidentcompass.schema.json",
   "Providers": {
     "local-oai": { "Kind": "OpenAICompatible", "Endpoint": "http://localhost:1234/v1", "ApiKeySecretRef": "LOCAL_OAI_KEY" }
   },
@@ -24,6 +25,11 @@
     { "Type": "rate_cap", "Tool": "*", "Scope": "attempt", "Max": 50 }
   ],
   "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"] },
+  "Redaction": {
+    "AttributeKeys": [],
+    "Patterns": [],
+    "UserIdentifierAttributes": []
+  },
   "FaultGrouping": {
     "LookbackMinutes": 15,
     "SilenceWindowMinutes": 1,

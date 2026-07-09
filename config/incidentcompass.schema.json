@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://incidentcompass.local/schemas/triage-config-v1.json",
+  "title": "IncidentCompass triage configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["Providers", "Routes", "Orchestrator", "Roles", "Tools", "Rules", "Ingestion", "FaultGrouping", "Redaction"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "Providers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/provider" }
+    },
+    "Routes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/route" }
+    },
+    "Orchestrator": { "$ref": "#/$defs/orchestrator" },
+    "Roles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/role" }
+    },
+    "Tools": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/tool" }
+    },
+    "Rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    },
+    "Ingestion": { "$ref": "#/$defs/ingestion" },
+    "FaultGrouping": { "$ref": "#/$defs/faultGrouping" },
+    "Redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "nonBlankString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "referenceString": {
+      "type": "string",
+      "pattern": "^ref:.+"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Kind"],
+      "properties": {
+        "Kind": { "enum": ["Mock", "OpenAICompatible"] },
+        "Endpoint": { "type": ["string", "null"] },
+        "ApiKeySecretRef": { "type": ["string", "null"] }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Kind", "ProviderId", "Model"],
+      "properties": {
+        "Kind": { "enum": ["Chat", "Embedding"] },
+        "ProviderId": { "$ref": "#/$defs/nonBlankString" },
+        "Model": { "$ref": "#/$defs/nonBlankString" },
+        "Temperature": { "type": ["number", "null"] },
+        "MaxOutputTokens": { "type": ["integer", "null"], "minimum": 1 },
+        "ContextWindowTokens": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "orchestrator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Instructions", "RouteId", "Tools", "Budget"],
+      "properties": {
+        "Instructions": { "$ref": "#/$defs/referenceString" },
+        "RouteId": { "$ref": "#/$defs/nonBlankString" },
+        "Tools": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "allOf": [
+            { "contains": { "const": "delegate" } },
+            { "contains": { "const": "publish_report" } }
+          ]
+        },
+        "Budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["MaxWorkers", "MaxTokens", "MaxWallClockSeconds"],
+          "properties": {
+            "MaxWorkers": { "type": "integer", "minimum": 1 },
+            "MaxTokens": { "type": "integer", "minimum": 1 },
+            "MaxWallClockSeconds": { "type": "integer", "minimum": 1 },
+            "MaxReprompts": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["RouteId", "Instructions", "Tools", "OutputSchema"],
+      "properties": {
+        "RouteId": { "$ref": "#/$defs/nonBlankString" },
+        "Instructions": { "$ref": "#/$defs/referenceString" },
+        "Tools": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonBlankString" },
+          "uniqueItems": true
+        },
+        "OutputSchema": { "$ref": "#/$defs/referenceString" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Kind"],
+      "properties": {
+        "Kind": { "const": "internal" },
+        "EmbeddingRouteId": { "type": ["string", "null"] },
+        "TopK": { "type": ["integer", "null"], "minimum": 1 },
+        "MinScore": { "type": ["number", "null"], "minimum": -1, "maximum": 1 }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Type", "Tool"],
+      "properties": {
+        "Type": { "enum": ["rate_cap", "precondition", "grounding", "requires_approval"] },
+        "Tool": { "$ref": "#/$defs/nonBlankString" },
+        "Scope": { "enum": ["attempt", "job"] },
+        "Max": { "type": ["integer", "null"], "minimum": 1 },
+        "RequiresSuccessfulToolResult": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "Type": { "const": "rate_cap" } } },
+          "then": { "required": ["Max"] }
+        },
+        {
+          "if": { "properties": { "Type": { "const": "precondition" } } },
+          "then": { "required": ["RequiresSuccessfulToolResult"] }
+        }
+      ]
+    },
+    "ingestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["DefaultTenant", "AllowedSources"],
+      "properties": {
+        "DefaultTenant": { "$ref": "#/$defs/nonBlankString" },
+        "AllowedSources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["otel", "user", "tester", "manual"] }
+        }
+      }
+    },
+    "faultGrouping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["LookbackMinutes", "SilenceWindowMinutes", "FingerprintVersion", "MassIssue"],
+      "properties": {
+        "LookbackMinutes": { "type": "integer", "minimum": 1 },
+        "SilenceWindowMinutes": { "type": "integer", "minimum": 1 },
+        "FingerprintVersion": { "type": "integer", "minimum": 1 },
+        "MassIssue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["MinNeighborCount", "MinFingerprintStrength"],
+          "properties": {
+            "MinNeighborCount": { "type": "integer", "minimum": 1 },
+            "MinFingerprintStrength": { "enum": ["weak", "strong"] }
+          }
+        }
+      }
+    },
+    "redactionPattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Name", "Pattern"],
+      "properties": {
+        "Name": { "$ref": "#/$defs/nonBlankString" },
+        "Pattern": { "$ref": "#/$defs/nonBlankString" },
+        "Replacement": { "$ref": "#/$defs/nonBlankString" },
+        "IgnoreCase": { "type": "boolean" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["AttributeKeys", "Patterns", "UserIdentifierAttributes"],
+      "properties": {
+        "AttributeKeys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonBlankString" }
+        },
+        "Patterns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/redactionPattern" }
+        },
+        "UserIdentifierAttributes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/nonBlankString" }
+        }
+      }
+    }
+  }
+}

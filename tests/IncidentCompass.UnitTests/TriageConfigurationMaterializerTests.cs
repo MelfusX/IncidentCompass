@@ -20,6 +20,7 @@ public sealed class TriageConfigurationMaterializerTests
         Assert.Equal("{ \"type\": \"object\" }", configuration.Roles["analysis"].OutputSchema);
         var rule = Assert.Single(configuration.Rules);
         Assert.Equal("attempt", rule.Scope);
+        Assert.Empty(configuration.Redaction.Patterns);
     }
 
     [Fact]
@@ -205,6 +206,24 @@ public sealed class TriageConfigurationMaterializerTests
             CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
 
         Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_InvalidConfiguredRedactionPattern_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        node["Redaction"] = JsonNode.Parse("""
+            {
+              "AttributeKeys": [],
+              "Patterns": [{ "Name": "broken", "Pattern": "[" }],
+              "UserIdentifierAttributes": []
+            }
+            """);
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Redaction.Patterns[0].Pattern", exception.Message, StringComparison.Ordinal);
     }
 
     private static TriageConfigurationMaterializer CreateMaterializer()

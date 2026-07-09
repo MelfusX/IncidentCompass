@@ -105,7 +105,8 @@ public sealed class MemoryOnlyCompositionTests
                 LookbackMinutes: 15,
                 SilenceWindowMinutes: 30,
                 FingerprintVersion: 1,
-                MassIssue: new MassIssueSettings(MinNeighborCount: 5, MinFingerprintStrength: "strong")));
+                MassIssue: new MassIssueSettings(MinNeighborCount: 5, MinFingerprintStrength: "strong")),
+            Redaction: RedactionSettings.Default);
 
         public Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken) =>
             Task.FromResult(Configuration);

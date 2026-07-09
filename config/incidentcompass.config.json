@@ -1,4 +1,5 @@
 {
+  "$schema": "./incidentcompass.schema.json",
   "Providers": {
     "local-oai": { "Kind": "OpenAICompatible", "Endpoint": "${INCIDENTCOMPASS_LLM_BASE_URL:-http://localhost:1234}", "ApiKeySecretRef": "INCIDENTCOMPASS_LLM_API_KEY" }
   },
@@ -24,6 +25,13 @@
     { "Type": "rate_cap", "Tool": "*", "Scope": "attempt", "Max": 50 }
   ],
   "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"] },
+  "Redaction": {
+    "AttributeKeys": ["http.request.header.authorization", "db.connection_string", "customer.account.id"],
+    "Patterns": [
+      { "Name": "email", "Pattern": "\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b", "Replacement": "[REDACTED_EMAIL]", "IgnoreCase": true }
+    ],
+    "UserIdentifierAttributes": ["user.id", "enduser.id", "user.email"]
+  },
   "FaultGrouping": {
     "LookbackMinutes": 15,
     "SilenceWindowMinutes": 30,

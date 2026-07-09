@@ -25,6 +25,18 @@ Demo headers such as `X-Demo-User-Id`, `X-Demo-Tenant-Id` and `X-Demo-Roles` are
 - If full prompt logging is ever enabled, it must require opt-in, redaction, encryption, retention policy and restricted access.
 - Tool execution is controlled by backend policy. The model may propose tool calls, but it cannot execute tools directly and never receives infrastructure credentials.
 
+## Intake Redaction And Pseudonymization
+
+Built-in secret patterns remain active for every signal. The triage config can add attribute-key
+redaction and bounded .NET regular-expression replacements before persistence and before model calls.
+These rules are defense in depth, not a guarantee that every possible secret or PII shape is known.
+
+Configured user-identifier attributes are replaced before redaction with an HMAC-SHA256 pseudonym.
+The salt comes only from host secrets or `IncidentCompass__Pseudonymization__Salt`; it is not stored in
+the triage config, config snapshot, artifact or ledger. If the salt is absent, identifiers fail safe to
+`[REDACTED]`, so distinct-user continuity is unavailable but raw identifiers are not stored. Rotating
+the salt changes every pseudonym and breaks counts across the rotation boundary.
+
 ## Tools
 
 Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. `ApprovalRequired` denies the call and records a limitation; there is still no suspend/resume lifecycle in MVP. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.

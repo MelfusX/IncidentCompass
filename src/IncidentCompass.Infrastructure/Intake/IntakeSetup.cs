@@ -24,6 +24,8 @@ internal static class IntakeSetup
         services.TryAddSingleton<TriageConfigurationLoadValidator>();
         services.TryAddSingleton<TriageConfigurationMaterializer>();
         services.TryAddSingleton<TriageConfigurationSnapshotStore>();
+        services.TryAddSingleton<ITriageConfigurationSnapshotStore>(
+            serviceProvider => serviceProvider.GetRequiredService<TriageConfigurationSnapshotStore>());
         services.TryAddSingleton<FileTriageConfigurationRepository>();
         services.TryAddSingleton<ITriageConfigurationRepository>(
             serviceProvider => serviceProvider.GetRequiredService<FileTriageConfigurationRepository>());

@@ -12,6 +12,7 @@ namespace IncidentCompass.Application.Intake.IngestSignal;
 public sealed class IngestSignalCommandHandler(
     ITriageConfigurationRepository configurationRepository,
     SignalNormalizerRegistry normalizerRegistry,
+    UserIdentifierPseudonymizer pseudonymizer,
     FaultGroupingCoordinator faultGroupingCoordinator,
     TimeProvider timeProvider) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
 {
@@ -21,7 +22,8 @@ public sealed class IngestSignalCommandHandler(
         var receivedAtUtc = timeProvider.GetUtcNow();
         var normalizer = normalizerRegistry.Resolve(command.SourceKind);
         var normalized = normalizer.Normalize(command, receivedAtUtc);
-        var redacted = SecretRedactor.Redact(normalized);
+        var pseudonymized = pseudonymizer.Protect(normalized, configuration.Redaction);
+        var redacted = SecretRedactor.Redact(pseudonymized, configuration.Redaction);
         var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping.FingerprintVersion);
         var draftSignal = BuildSignal(
             redacted,

@@ -83,6 +83,23 @@ file are the model names used by the Worker investigation loop:
 `IncidentCompass__ModelGateway__DefaultModel` is still validated as gateway configuration, but it is
 not the source of truth for triage route calls. The route config is.
 
+The checked-in config references `config/incidentcompass.schema.json` for editor completion and
+structural feedback. Run the same semantic validator used at startup before launching either host:
+
+~~~powershell
+dotnet run --project src/IncidentCompass.Api -- config validate
+~~~
+
+The command resolves instruction and output-schema references, expands environment placeholders and
+checks routes, roles, tools, rules, budgets, grouping and redaction settings. It validates without
+starting the server or writing a configuration snapshot to PostgreSQL.
+
+If `Redaction.UserIdentifierAttributes` is configured, set the pseudonymization salt only through a
+host secret or environment variable, for example
+`IncidentCompass__Pseudonymization__Salt`. The salt is intentionally absent from the checked-in
+triage config and config snapshots. Without a salt, matching identifiers are replaced with
+`[REDACTED]` instead of being persisted in raw form.
+
 ## Build And Test
 
 ~~~powershell

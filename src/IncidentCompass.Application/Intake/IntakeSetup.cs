@@ -4,6 +4,7 @@ using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Intake.GetFault;
 using IncidentCompass.Application.Intake.IngestSignal;
 using IncidentCompass.Application.Intake.Normalization;
+using IncidentCompass.Application.Intake.Redaction;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -17,6 +18,7 @@ internal static class IntakeSetup
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISignalNormalizer, OtelShapedSignalNormalizer>());
         services.TryAddEnumerable(ServiceDescriptor.Singleton<ISignalNormalizer, UserReportSignalNormalizer>());
         services.TryAddSingleton<SignalNormalizerRegistry>();
+        services.TryAddSingleton<UserIdentifierPseudonymizer>();
 
         services.TryAddScoped<GroundedFactsAssembler>();
         services.TryAddScoped<OpenFaultNeighborSetRefresher>();

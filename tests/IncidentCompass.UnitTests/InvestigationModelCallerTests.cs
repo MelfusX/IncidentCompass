@@ -149,9 +149,9 @@ public sealed class InvestigationModelCallerTests
             new Dictionary<string, TriageToolSettings>(),
             [],
             new IngestionSettings("local", ["tester"]),
-            new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")));
+            new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")),
+            RedactionSettings.Default);
     }
-
     private static TriageJob CreateJob(DateTimeOffset now)
     {
         return new TriageJob(

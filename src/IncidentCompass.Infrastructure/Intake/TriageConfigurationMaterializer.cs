@@ -25,8 +25,8 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
             RequireDictionary(document.Tools, "Tools", allowEmpty: true),
             rules,
             RequireValue(document.Ingestion, "Ingestion"),
-            RequireValue(document.FaultGrouping, "FaultGrouping"));
-
+            RequireValue(document.FaultGrouping, "FaultGrouping"),
+            document.Redaction ?? RedactionSettings.Default);
         validator.Validate(configuration);
         return configuration;
     }
