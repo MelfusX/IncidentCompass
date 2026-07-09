@@ -1,13 +1,13 @@
 param(
     [switch] $NoBuild,
-    [switch] $RealLlm
+    [switch] $Mock
 )
 
 $ErrorActionPreference = "Stop"
 
 $composeArgs = @("compose", "--profile", "demo")
-if ($RealLlm) {
-    $composeArgs = @("compose", "-f", "docker-compose.yml", "-f", "compose.real-llm.yml", "--profile", "demo")
+if ($Mock) {
+    $composeArgs = @("compose", "-f", "docker-compose.yml", "-f", "compose.mock.yml", "--profile", "demo")
 }
 
 function Invoke-DemoCompose {

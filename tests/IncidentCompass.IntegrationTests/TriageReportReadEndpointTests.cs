@@ -51,6 +51,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IAiModelClient>();

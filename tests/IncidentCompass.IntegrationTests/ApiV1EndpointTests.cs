@@ -8,8 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace IncidentCompass.IntegrationTests;
 
-public sealed class ApiV1EndpointTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ApiV1EndpointTests(MockProvidersWebApplicationFactory factory)
+    : IClassFixture<MockProvidersWebApplicationFactory>
 {
     [Fact]
     public async Task Health_ReturnsHealthyStatusUnderApiV1()

@@ -16,7 +16,7 @@ public interface IAiModelClient
 Implemented adapters:
 
 - OpenAI-compatible client;
-- mock/fake client for tests and demos.
+- mock/fake client for tests and explicit mock-only checks.
 
 Possible future adapters:
 
@@ -41,7 +41,7 @@ Implemented adapters:
 - OpenAI-compatible embedding client;
 - mock embedding client.
 
-Application use cases call `IEmbeddingClient` through the Application layer. The mock provider is the default for local development and tests; the OpenAI-compatible provider uses the configured embeddings endpoint, model, timeout and retry settings.
+Application use cases call `IEmbeddingClient` through the Application layer. The OpenAI-compatible provider is the normal local/demo runtime path and uses the configured embeddings endpoint, model, timeout and retry settings. The mock provider is for tests and explicit mock-only checks.
 
 ## Requirements
 

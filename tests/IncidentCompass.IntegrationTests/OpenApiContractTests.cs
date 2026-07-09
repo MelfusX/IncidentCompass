@@ -22,6 +22,7 @@ public sealed class OpenApiContractTests
         using var developmentFactory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
+            builder.UseExplicitMockProviders();
             builder.ConfigureTestServices(services => services.RemoveAll<IHostedService>());
         });
         using var client = developmentFactory.CreateClient(new WebApplicationFactoryClientOptions

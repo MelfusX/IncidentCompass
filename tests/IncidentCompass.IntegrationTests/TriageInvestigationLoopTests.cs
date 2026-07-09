@@ -114,6 +114,7 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             if (configureServices is not null)
             {
                 builder.ConfigureTestServices(configureServices);

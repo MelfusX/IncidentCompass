@@ -58,7 +58,7 @@ Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the app
 
 ## Memory Embedding Model Changes Require Re-Embedding
 
-Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. The deterministic demo pins `mock-memory-embedding-v1` for `memory-embed`; any real provider/model change should be paired with a full memory re-seed or migration.
+Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. Changing the configured embedding provider or model should be paired with a full memory re-seed or migration.
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.

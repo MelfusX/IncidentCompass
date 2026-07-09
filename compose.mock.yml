@@ -1,0 +1,14 @@
+services:
+  api:
+    environment:
+      IncidentCompass__ModelGateway__Provider: Mock
+      IncidentCompass__Embeddings__Provider: Mock
+      INCIDENTCOMPASS_LLM_MODEL: mock-chat
+      INCIDENTCOMPASS_EMBEDDINGS_MODEL: mock-memory-embedding-v1
+
+  worker:
+    environment:
+      IncidentCompass__ModelGateway__Provider: Mock
+      IncidentCompass__Embeddings__Provider: Mock
+      INCIDENTCOMPASS_LLM_MODEL: mock-chat
+      INCIDENTCOMPASS_EMBEDDINGS_MODEL: mock-memory-embedding-v1

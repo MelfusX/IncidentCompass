@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Changed local/demo defaults to OpenAI-compatible model and embedding providers. Mock providers now require explicit test/mock configuration such as `compose.mock.yml` or test host overrides.
+- Added environment substitution for route-level model names in `config/incidentcompass.config.json` through `INCIDENTCOMPASS_LLM_MODEL` and `INCIDENTCOMPASS_EMBEDDINGS_MODEL`.
+- Replaced the opt-in `compose.real-llm.yml` with `compose.mock.yml`: `scripts/demo.ps1` now runs real providers by default and takes `-Mock` to select the deterministic mock override.
+
 ## 0.1.1 - 2026-07-10
 
 - Added `IC_API_PORT` and `IC_POSTGRES_PORT` overrides for Compose host mappings while keeping

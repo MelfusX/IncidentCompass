@@ -74,27 +74,27 @@ try {
     }
 
     $envNames = @(
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_BASE_URL",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_CHAT_PATH",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_MODEL",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS",
-        "INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH",
+        "INCIDENTCOMPASS_LLM_SMOKE_ENABLED",
+        "INCIDENTCOMPASS_LLM_SMOKE_BASE_URL",
+        "INCIDENTCOMPASS_LLM_SMOKE_CHAT_PATH",
+        "INCIDENTCOMPASS_LLM_SMOKE_MODEL",
+        "INCIDENTCOMPASS_LLM_SMOKE_API_KEY",
+        "INCIDENTCOMPASS_LLM_SMOKE_RUNS",
+        "INCIDENTCOMPASS_LLM_SMOKE_TIMEOUT_SECONDS",
+        "INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH",
         "INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS"
     )
     $savedEnvironment = Save-EnvironmentVariables $envNames
     $exitCode = 0
     try {
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE = "true"
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_BASE_URL = $BaseUrl
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_CHAT_PATH = $ChatCompletionsPath
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_MODEL = $Model
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY = $ApiKey
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS = $Runs.ToString()
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS = $TimeoutSeconds.ToString()
-        $env:INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ResultPath))
+        $env:INCIDENTCOMPASS_LLM_SMOKE_ENABLED = "true"
+        $env:INCIDENTCOMPASS_LLM_SMOKE_BASE_URL = $BaseUrl
+        $env:INCIDENTCOMPASS_LLM_SMOKE_CHAT_PATH = $ChatCompletionsPath
+        $env:INCIDENTCOMPASS_LLM_SMOKE_MODEL = $Model
+        $env:INCIDENTCOMPASS_LLM_SMOKE_API_KEY = $ApiKey
+        $env:INCIDENTCOMPASS_LLM_SMOKE_RUNS = $Runs.ToString()
+        $env:INCIDENTCOMPASS_LLM_SMOKE_TIMEOUT_SECONDS = $TimeoutSeconds.ToString()
+        $env:INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ResultPath))
         $env:INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS = "true"
 
         dotnet test tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj --no-build --filter FullyQualifiedName~TriageInvestigationRealLlmSmokeTests

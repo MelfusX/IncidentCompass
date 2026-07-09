@@ -360,6 +360,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ITriageArtifactRepository>();
@@ -554,6 +555,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             if (useSmallSilenceWindowConfig)
             {
                 builder.UseSetting("IncidentCompass:ConfigSource:Path", TestFixtureConfigPath());

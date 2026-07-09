@@ -37,7 +37,7 @@ The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `sign
 
 ## Phase 4 Memory Worker
 
-Phase 4 adds PostgreSQL-backed incident memory through `incidentcompass.memory_items` and `incidentcompass.memory_chunks`. Memory is seeded from sample runbooks and known incidents, embedded with the pinned mock embedding model by default, and searched only through the governed worker tool path. The `memory` role is the only shipped role granted `memory_search`; the orchestrator never searches memory directly.
+Phase 4 adds PostgreSQL-backed incident memory through `incidentcompass.memory_items` and `incidentcompass.memory_chunks`. Memory is seeded from sample runbooks and known incidents, embedded with the configured embedding model (OpenAI-compatible by default; the mock embedder is reserved for tests and explicit mock-only checks), and searched only through the governed worker tool path. The `memory` role is the only shipped role granted `memory_search`; the orchestrator never searches memory directly.
 
 `memory_search` embeds the worker query through the tool's configured `EmbeddingRouteId`, then searches chunks with exact tenant, embedding provider, embedding model and embedding dimension filters before applying score and `TopK`. A model/provider/dimension mismatch returns an honest empty result instead of falling back to fuzzy retrieval. Successful matches are written as attempt-level `RetrievedItem` artifacts with `domain_ref = memory_item:<id>`, and those artifacts commit in the same transaction as the `ToolResult` artifact and ledger event.
 ## Phase 5 Grounded Reports

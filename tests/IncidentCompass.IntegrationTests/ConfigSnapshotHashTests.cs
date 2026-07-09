@@ -36,6 +36,7 @@ public sealed class ConfigSnapshotHashTests(PostgresRepositoryFixture postgres)
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
         });
     }

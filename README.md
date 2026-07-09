@@ -6,38 +6,34 @@ workers under policy/audit/budget rails, and the system produces a grounded repo
 This is reference-quality software, not a production system. This snapshot includes the Phase 0
 repository bootstrap, Phase 1 intake, the Phase 2 governed investigation loop, Phase 3 governance
 rails, Phase 4 memory worker, Phase 5 grounded report closeout and Phase 6 demo packaging: typed
-triage configuration rehydration, a durable triage ledger, a bounded Worker claim loop,
-deterministic analysis and memory delegation, governed memory_search, backend-grounded
-publish_report persistence, ledger/report readback, Docker Compose packaging and a deterministic
-Tester-driven local demo.
+triage configuration rehydration, a durable triage ledger, bounded Worker claims, analysis and
+memory delegation, governed memory_search, backend-grounded publish_report persistence,
+ledger/report readback, Docker Compose packaging and an HTTP-only Tester.
 
 ## What This Is
 
-- A layered-monolith .NET 10 skeleton using Clean Architecture and a lightweight internal
+- A layered-monolith .NET 10 application using Clean Architecture and a lightweight internal
   application pipeline.
-- A model/embedding gateway abstraction with deterministic mock providers (default) and
-  OpenAI-compatible adapters behind the same ports.
-- A Phase 1 intake pipeline (Intake) with POST /api/v1/incidents, GET /api/v1/faults/{id}, source
-  normalizers, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake
-  artifacts.
+- A model/embedding gateway abstraction with OpenAI-compatible providers as the normal local/demo
+  runtime path.
+- Mock model and embedding adapters for automated tests and explicit mock-only local checks.
+- A Phase 1 intake pipeline with POST /api/v1/incidents, GET /api/v1/faults/{id}, source normalizers,
+  redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts.
 - Governance rails for the investigation loop: typed tool schemas, role-scoped backend tool grants,
   backend policy decisions, a durable triage ledger writer and GET /api/v1/faults/{id}/ledger for
-  readback. The Worker path records Delegated, WorkerCompleted, ToolProposed, PolicyDecision,
-  ToolResult and same-transaction ReportPublished events.
-- ModelCall ledger telemetry, grounded triage report readback, deterministic Docker demo packaging,
-  and generic dispatch/health/security/user scaffolding over PostgreSQL.
+  readback.
+- ModelCall ledger telemetry, grounded triage report readback, Docker Compose packaging, and generic
+  dispatch/health/security/user scaffolding over PostgreSQL.
 
 ## What This Is Not
 
 - Not a chat backend, a RAG/document-ingestion system, an evaluation harness, a usage dashboard, or
-  an MCP host/client. All of that existed in the upstream starter kit and was deliberately removed
-  here.
+  an MCP host/client.
 - Not a full framework with stable public extension contracts.
-- Not production-ready as-is: demo auth and mock providers are intentionally replaceable adapters
-  with no battle-testing and no SLA.
-- Not proof that a local LLM can reliably complete the multi-turn investigation loop. The gated demo
-  uses scripted mock providers to prove the backend rails and packaging; optional real-LLM smoke runs
-  are separate evidence.
+- Not production-ready as-is: demo auth, local credentials and local compose defaults are for local
+  review only.
+- Not a guarantee that any arbitrary local model will complete the multi-turn investigation well.
+  The backend enforces grounding and governance; model quality still depends on the configured model.
 
 ## Architecture
 
@@ -50,20 +46,18 @@ flowchart LR
     App --> Domain["IncidentCompass.Domain"]
     Infrastructure["IncidentCompass.Infrastructure"] --> App
     Infrastructure --> Postgres["PostgreSQL"]
-    Infrastructure --> Providers["Mock or OpenAI-compatible providers"]
+    Infrastructure --> Providers["OpenAI-compatible providers"]
+    Infrastructure --> TestProviders["Mock providers (tests only)"]
 ~~~
 
-IncidentCompass.Application is a single project organized by feature folder: Core/ (dispatcher,
-identity/correlation, model/embedding gateway abstractions, options), Governance/ (triage
-ledger and worker policy helpers), Intake/ (signal normalization, redaction, fingerprinting, fault
-grouping and triage-job orchestration), Investigation/ (Worker claim/runtime orchestration, config
-rehydration and the governed processor) and Memory/ (memory search contracts, seed records and
-memory_search) are populated today. Infrastructure implements persistence and provider adapters. Api
-maps HTTP input/output only. Worker polls PostgreSQL, claims bounded triage jobs and runs the
-configured orchestrator with only delegate and publish_report available. Tester is a console HTTP
-client for the deterministic local demo; it has no dependency on the application assemblies. The
-memory role can call only the governed memory_search worker tool. publish_report can cite only
-backend-grounded artifacts; the backend derives mass-issue state and evidence kind.
+IncidentCompass.Application is organized by feature folder: Core/ (dispatcher, identity/correlation,
+model/embedding gateway abstractions, options), Governance/ (triage ledger and worker policy helpers),
+Intake/ (signal normalization, redaction, fingerprinting, fault grouping and triage-job orchestration),
+Investigation/ (Worker claim/runtime orchestration, config rehydration and governed processing) and
+Memory/ (memory search contracts, seed records and memory_search). Infrastructure implements
+persistence and provider adapters. Api maps HTTP input/output only. Worker polls PostgreSQL, claims
+bounded triage jobs and runs the configured orchestrator with only delegate and publish_report
+available. Tester is a console HTTP client; it has no dependency on the application assemblies.
 
 Start here:
 
@@ -91,39 +85,27 @@ Start here:
 - PostgreSQL with pgvector.
 - Docker Compose.
 - OpenAI-compatible model and embedding clients.
-- Mock model and embedding clients for tests and the deterministic demo.
-- xUnit, Testcontainers for integration tests.
-
-## Project Structure
-
-~~~text
-src/
-  IncidentCompass.Api
-  IncidentCompass.Application
-  IncidentCompass.Domain
-  IncidentCompass.Infrastructure
-  IncidentCompass.Tester
-  IncidentCompass.Worker
-tests/
-  IncidentCompass.UnitTests
-  IncidentCompass.IntegrationTests
-~~~
+- Mock model and embedding clients for tests only.
+- xUnit and Testcontainers for integration tests.
 
 ## Quickstart
 
-Recommended deterministic demo path:
+Default local/demo runs expect an OpenAI-compatible chat endpoint and embeddings endpoint. For Docker
+Compose on Windows/macOS, `host.docker.internal:1234` is the default host-side model server address.
+Override model settings in `.env` when your local server uses different names.
 
 ~~~powershell
+Copy-Item .env.example .env
+# Edit INCIDENTCOMPASS_LLM_MODEL and INCIDENTCOMPASS_EMBEDDINGS_MODEL if your provider requires exact model ids.
 # Optional collision overrides: IC_API_PORT=5298 and IC_POSTGRES_PORT=55432
 powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 ~~~
 
-That command builds and starts PostgreSQL, API and Worker containers, runs the HTTP-only Tester
-against all four local scenarios, and prints host URLs for the fault ledger and triage report. See
-[docs/local-demo.md](docs/local-demo.md) for -NoBuild, -RealLlm, service layout and the honesty
-caveats around scripted mocks versus optional real-LLM runs.
+That command builds and starts PostgreSQL, API and Worker containers, runs the HTTP-only Tester, and
+prints host URLs for the fault ledger and triage report. `scripts/demo.ps1 -Mock` exists for automated
+or deterministic checks only; it is not the normal product demo path.
 
-See [docs/quickstart.md](docs/quickstart.md) for manual local setup and provider override examples.
+See [docs/quickstart.md](docs/quickstart.md) for manual local setup and provider configuration.
 
 Minimal manual path:
 
@@ -148,18 +130,13 @@ $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=inc
 dotnet run --project src/IncidentCompass.Worker
 ~~~
 
-Sample HTTP requests (health check, current-user lookup, incident ingestion, source rejection and
-fault lookup) are available in
+Sample HTTP requests are available in
 [src/IncidentCompass.Api/IncidentCompass.Api.http](src/IncidentCompass.Api/IncidentCompass.Api.http)
 and [samples/http/local-demo.http](samples/http/local-demo.http).
 
 ## Relationship to dotnet-genai-starter
 
 IncidentCompass was bootstrapped from the dotnet-genai-starter repo's patterns: its layered .NET
-structure and its model/embedding gateway abstractions. It was then specialized into a single-purpose incident-triage agent. Everything else from
-that starter kit - chat (direct, RAG, and agentic), RAG document ingestion, evaluations, usage
-tracking, and MCP (both the local host and the external-MCP client) - was stripped out because it
-doesn't belong to this product's scope.
-
-This is reference-quality, not production, software: no battle-testing, no SLA, and the demo adapters
-(header-based demo auth, mock providers) are intentionally replaceable rather than deployment-ready.
+structure and model/embedding gateway abstractions. It was then specialized into a single-purpose
+incident-triage agent. Chat, RAG document ingestion, evaluations, usage tracking and MCP product
+surfaces from the starter kit were stripped out because they do not belong to this product's scope.

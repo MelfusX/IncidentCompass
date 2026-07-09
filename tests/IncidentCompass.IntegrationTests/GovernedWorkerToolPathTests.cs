@@ -123,6 +123,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
             builder.ConfigureTestServices(services =>
             {

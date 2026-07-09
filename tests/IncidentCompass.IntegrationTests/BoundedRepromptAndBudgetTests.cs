@@ -191,6 +191,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
             builder.ConfigureTestServices(services =>
             {

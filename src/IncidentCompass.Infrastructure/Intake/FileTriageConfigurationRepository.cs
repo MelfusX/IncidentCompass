@@ -82,7 +82,9 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
         var text = await File.ReadAllTextAsync(absolutePath);
         try
         {
-            return JsonNode.Parse(text) ?? throw TriageConfigurationLoadException.InvalidJson(absolutePath, new JsonException("Empty document."));
+            var node = JsonNode.Parse(text) ?? throw TriageConfigurationLoadException.InvalidJson(absolutePath, new JsonException("Empty document."));
+            EnvironmentPlaceholderExpander.Expand(node);
+            return node;
         }
         catch (JsonException exception)
         {

@@ -18,6 +18,7 @@ public sealed class FaultLedgerEndpointTests(PostgresRepositoryFixture postgres)
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
         });
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         {

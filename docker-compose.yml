@@ -1,5 +1,20 @@
 name: incidentcompass
 
+x-incidentcompass-ai-env: &incidentcompass-ai-env
+  IncidentCompass__ModelGateway__Provider: OpenAICompatible
+  IncidentCompass__ModelGateway__OpenAiCompatible__BaseUrl: ${INCIDENTCOMPASS_LLM_BASE_URL:-http://host.docker.internal:1234}
+  IncidentCompass__ModelGateway__OpenAiCompatible__ChatCompletionsPath: ${INCIDENTCOMPASS_LLM_CHAT_COMPLETIONS_PATH:-/v1/chat/completions}
+  IncidentCompass__ModelGateway__OpenAiCompatible__ApiKey: ${INCIDENTCOMPASS_LLM_API_KEY:-local-dev-key}
+  IncidentCompass__ModelGateway__OpenAiCompatible__AllowInsecureHttpForLoopback: "true"
+  IncidentCompass__Embeddings__Provider: OpenAICompatible
+  IncidentCompass__Embeddings__OpenAiCompatible__BaseUrl: ${INCIDENTCOMPASS_EMBEDDINGS_BASE_URL:-http://host.docker.internal:1234}
+  IncidentCompass__Embeddings__OpenAiCompatible__EmbeddingsPath: ${INCIDENTCOMPASS_EMBEDDINGS_PATH:-/v1/embeddings}
+  IncidentCompass__Embeddings__OpenAiCompatible__ApiKey: ${INCIDENTCOMPASS_EMBEDDINGS_API_KEY:-local-dev-key}
+  IncidentCompass__Embeddings__OpenAiCompatible__AllowInsecureHttpForLoopback: "true"
+  INCIDENTCOMPASS_LLM_BASE_URL: ${INCIDENTCOMPASS_LLM_BASE_URL:-http://host.docker.internal:1234}
+  INCIDENTCOMPASS_LLM_MODEL: ${INCIDENTCOMPASS_LLM_MODEL:-local-model}
+  INCIDENTCOMPASS_EMBEDDINGS_MODEL: ${INCIDENTCOMPASS_EMBEDDINGS_MODEL:-local-embedding-model}
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -26,6 +41,7 @@ services:
       context: .
       dockerfile: src/IncidentCompass.Api/Dockerfile
     environment:
+      <<: *incidentcompass-ai-env
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
@@ -49,6 +65,7 @@ services:
       context: .
       dockerfile: src/IncidentCompass.Worker/Dockerfile
     environment:
+      <<: *incidentcompass-ai-env
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
       IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
