@@ -14,4 +14,9 @@ internal interface IMemoryRepository
         MemorySeedItem item,
         IReadOnlyList<MemorySeedChunk> chunks,
         CancellationToken cancellationToken);
+
+    Task DeactivateMissingSeedsAsync(
+        string tenantId,
+        IReadOnlyCollection<string> activeSources,
+        CancellationToken cancellationToken);
 }

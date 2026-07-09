@@ -223,6 +223,11 @@ public sealed class MemoryOnlyCompositionTests
 
         public Task UpsertSeedAsync(MemorySeedItem item, IReadOnlyList<MemorySeedChunk> chunks, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task DeactivateMissingSeedsAsync(
+            string tenantId,
+            IReadOnlyCollection<string> activeSources,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
 

@@ -70,6 +70,13 @@ Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the app
 
 `MaxTokens` means the backend will not start a new model call once the current-attempt budget is already reached. A single in-flight call can still overshoot the limit because final usage is known only after the provider responds. The overshoot is recorded as a `BudgetEvent` instead of hidden.
 
+## File-Backed Memory Is The Write Path
+
+Memory content stays in reviewed files instead of an unauthenticated admin endpoint. Source path is
+the stable database identity; a content change updates and re-embeds that item, and a removed file is
+deactivated from retrieval. This keeps provenance simple and prevents an edited file from leaving a
+second stale live item. It also means operators need a repository change and restart to update memory.
+
 ## Memory Embedding Model Changes Require Re-Embedding
 
 Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. Changing the configured embedding provider or model should be paired with a full memory re-seed or migration.

@@ -1,7 +1,6 @@
 using IncidentCompass.Application.Memory;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Memory;
 
@@ -13,22 +12,12 @@ internal static class PostgresMemorySeedWriter
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("""
-            SELECT EXISTS (
-                SELECT 1
-                FROM incidentcompass.memory_items
-                WHERE tenant_id = @tenant_id
-                  AND source = @source
-                  AND content_hash = @content_hash
-                  AND version = @version);
-            """, connection);
-        AddItemIdentityParameters(command, item);
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+        return await CurrentSeedMatchesAsync(connection, transaction: null, item, cancellationToken);
     }
 
     public static async Task UpsertSeedAsync(
         PostgresDataSourceProvider dataSourceProvider,
-        DateTimeOffset createdAtUtc,
+        DateTimeOffset timestamp,
         MemorySeedItem item,
         IReadOnlyList<MemorySeedChunk> chunks,
         CancellationToken cancellationToken)
@@ -37,12 +26,25 @@ internal static class PostgresMemorySeedWriter
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            var itemId = await InsertItemAsync(connection, transaction, item, createdAtUtc, cancellationToken);
-            foreach (var chunk in chunks)
+            await LockSourceAsync(connection, transaction, item, cancellationToken);
+            if (await CurrentSeedMatchesAsync(connection, transaction, item, cancellationToken))
             {
-                await InsertChunkAsync(connection, transaction, item, itemId, chunk, createdAtUtc, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return;
             }
 
+            var itemId = await FindSeedItemIdAsync(connection, transaction, item, cancellationToken);
+            if (itemId.HasValue)
+            {
+                await UpdateItemAsync(connection, transaction, itemId.Value, item, timestamp, cancellationToken);
+            }
+            else
+            {
+                itemId = await InsertItemAsync(connection, transaction, item, timestamp, cancellationToken);
+            }
+
+            await PostgresMemorySeedChunkWriter.ReplaceAsync(
+                connection, transaction, itemId.Value, item, chunks, timestamp, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -52,34 +54,71 @@ internal static class PostgresMemorySeedWriter
         }
     }
 
-    private static async Task<Guid> InsertItemAsync(
+    public static async Task DeactivateMissingSeedsAsync(
+        PostgresDataSourceProvider dataSourceProvider,
+        DateTimeOffset timestamp,
+        string tenantId,
+        IReadOnlyCollection<string> activeSources,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            UPDATE incidentcompass.memory_items
+            SET is_active = false,
+                superseded_at_utc = @timestamp,
+                updated_at_utc = @timestamp
+            WHERE tenant_id = @tenant_id
+              AND seed_managed = true
+              AND is_active = true
+              AND NOT (source = ANY(@active_sources));
+            """, connection);
+        command.AddParameter("tenant_id", tenantId);
+        PostgresMemorySeedParameters.AddTextArray(command, "active_sources", activeSources);
+        command.AddParameter("timestamp", timestamp);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> CurrentSeedMatchesAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         MemorySeedItem item,
-        DateTimeOffset createdAtUtc,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
-            INSERT INTO incidentcompass.memory_items (
-                id, tenant_id, kind, source, title, content, content_hash,
-                version, tags, created_at_utc)
-            VALUES (
-                @id, @tenant_id, @kind, @source, @title, @content, @content_hash,
-                @version, @tags, @created_at_utc)
-            ON CONFLICT DO NOTHING
-            RETURNING id;
+            SELECT EXISTS (
+                SELECT 1
+                FROM incidentcompass.memory_items
+                WHERE tenant_id = @tenant_id
+                  AND source = @source
+                  AND seed_managed = true
+                  AND is_active = true
+                  AND kind = @kind
+                  AND title = @title
+                  AND content_hash = @content_hash
+                  AND tags = @tags
+                  AND service_name IS NOT DISTINCT FROM @service_name
+                  AND component IS NOT DISTINCT FROM @component
+                  AND release_name IS NOT DISTINCT FROM @release_name);
             """, connection, transaction);
-        AddItemParameters(command, item, createdAtUtc);
-        var insertedId = await command.ExecuteScalarAsync(cancellationToken);
-        if (insertedId is Guid id)
-        {
-            return id;
-        }
-
-        return await FindItemIdAsync(connection, transaction, item, cancellationToken);
+        PostgresMemorySeedParameters.AddItem(command, item, DateTimeOffset.UnixEpoch);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
-    private static async Task<Guid> FindItemIdAsync(
+    private static async Task LockSourceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MemorySeedItem item,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT pg_advisory_xact_lock(hashtextextended(@identity, 0));",
+            connection,
+            transaction);
+        command.AddParameter("identity", item.TenantId + ":" + item.Source);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<Guid?> FindSeedItemIdAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         MemorySeedItem item,
@@ -90,83 +129,59 @@ internal static class PostgresMemorySeedWriter
             FROM incidentcompass.memory_items
             WHERE tenant_id = @tenant_id
               AND source = @source
-              AND content_hash = @content_hash
-              AND version = @version;
+              AND seed_managed = true
+            ORDER BY is_active DESC, updated_at_utc DESC, id
+            LIMIT 1
+            FOR UPDATE;
             """, connection, transaction);
-        AddItemIdentityParameters(command, item);
-        return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
+        command.AddParameter("tenant_id", item.TenantId);
+        command.AddParameter("source", item.Source);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is Guid id ? id : null;
     }
 
-    private static async Task InsertChunkAsync(
+    private static async Task<Guid> InsertItemAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         MemorySeedItem item,
-        Guid itemId,
-        MemorySeedChunk chunk,
-        DateTimeOffset createdAtUtc,
+        DateTimeOffset timestamp,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
-            INSERT INTO incidentcompass.memory_chunks (
-                id, memory_item_id, tenant_id, chunk_position, text, text_hash,
-                embedding_provider, embedding_model, embedding_dimensions,
-                embedding_values, embedding_vector, created_at_utc)
+            INSERT INTO incidentcompass.memory_items (
+                id, tenant_id, kind, source, title, content, content_hash, version, tags,
+                service_name, component, release_name, is_active, seed_managed,
+                created_at_utc, updated_at_utc, superseded_at_utc)
             VALUES (
-                @id, @memory_item_id, @tenant_id, @chunk_position, @text, @text_hash,
-                @embedding_provider, @embedding_model, @embedding_dimensions,
-                @embedding_values, @embedding_vector, @created_at_utc)
-            ON CONFLICT DO NOTHING;
+                @id, @tenant_id, @kind, @source, @title, @content, @content_hash, @version, @tags,
+                @service_name, @component, @release_name, true, true,
+                @timestamp, @timestamp, NULL)
+            RETURNING id;
             """, connection, transaction);
-        command.AddParameter("id", chunk.Id);
-        command.AddParameter("memory_item_id", itemId);
-        command.AddParameter("tenant_id", item.TenantId);
-        command.AddParameter("chunk_position", chunk.Position);
-        command.AddParameter("text", chunk.Text);
-        command.AddParameter("text_hash", chunk.TextHash);
-        command.AddParameter("embedding_provider", chunk.EmbeddingProvider);
-        command.AddParameter("embedding_model", chunk.EmbeddingModel);
-        command.AddParameter("embedding_dimensions", chunk.EmbeddingDimensions);
-        AddRealArrayParameter(command, "embedding_values", chunk.EmbeddingValues);
-        AddVectorParameter(command, "embedding_vector", chunk.EmbeddingValues);
-        command.AddParameter("created_at_utc", createdAtUtc);
+        PostgresMemorySeedParameters.AddItem(command, item, timestamp);
+        return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private static async Task UpdateItemAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid itemId,
+        MemorySeedItem item,
+        DateTimeOffset timestamp,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            UPDATE incidentcompass.memory_items
+            SET kind = @kind, title = @title, content = @content,
+                version = CASE WHEN content_hash = @content_hash THEN version ELSE version + 1 END,
+                content_hash = @content_hash, tags = @tags,
+                service_name = @service_name, component = @component, release_name = @release_name,
+                is_active = true, seed_managed = true, updated_at_utc = @timestamp, superseded_at_utc = NULL
+            WHERE id = @item_id;
+            """, connection, transaction);
+        PostgresMemorySeedParameters.AddItem(command, item, timestamp);
+        command.AddParameter("item_id", itemId);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static void AddItemParameters(
-        NpgsqlCommand command,
-        MemorySeedItem item,
-        DateTimeOffset createdAtUtc)
-    {
-        command.AddParameter("id", item.Id);
-        command.AddParameter("kind", item.Kind);
-        command.AddParameter("title", item.Title);
-        command.AddParameter("content", item.Content);
-        AddTextArrayParameter(command, "tags", item.Tags);
-        command.AddParameter("created_at_utc", createdAtUtc);
-        AddItemIdentityParameters(command, item);
-    }
-
-    private static void AddItemIdentityParameters(NpgsqlCommand command, MemorySeedItem item)
-    {
-        command.AddParameter("tenant_id", item.TenantId);
-        command.AddParameter("source", item.Source);
-        command.AddParameter("content_hash", item.ContentHash);
-        command.AddParameter("version", item.Version);
-    }
-
-
-    private static void AddRealArrayParameter(NpgsqlCommand command, string name, IReadOnlyList<float> value)
-    {
-        command.Parameters.Add(name, NpgsqlDbType.Array | NpgsqlDbType.Real).Value = value.ToArray();
-    }
-
-    private static void AddTextArrayParameter(NpgsqlCommand command, string name, IReadOnlyList<string> value)
-    {
-        command.Parameters.Add(name, NpgsqlDbType.Array | NpgsqlDbType.Text).Value = value.ToArray();
-    }
-
-    private static void AddVectorParameter(NpgsqlCommand command, string name, IReadOnlyList<float> value)
-    {
-        command.Parameters.AddWithValue(name, PostgresVectorParameter.From(value));
-    }
 }

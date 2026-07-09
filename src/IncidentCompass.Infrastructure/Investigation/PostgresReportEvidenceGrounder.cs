@@ -95,6 +95,9 @@ internal sealed class PostgresReportEvidenceGrounder
             {
                 "runbook" => "Runbook",
                 "known_incident" => "KnownIncident",
+                "operational_note" => "OperationalNote",
+                "release_note" => "ReleaseNote",
+                "postmortem" => "Postmortem",
                 _ => "RetrievedItem"
             },
             _ => artifactKind

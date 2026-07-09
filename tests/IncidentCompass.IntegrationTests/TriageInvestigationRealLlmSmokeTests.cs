@@ -405,7 +405,10 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             content,
             ComputeSha256Hex(content),
             Version: 1,
-            ["checkout", "timeout"]);
+            ["checkout", "timeout"],
+            ServiceName: "checkout",
+            Component: null,
+            ReleaseName: null);
         var chunk = new MemorySeedChunk(
             Guid.NewGuid(),
             Position: 0,

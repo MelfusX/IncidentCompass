@@ -194,7 +194,10 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
             content,
             Hash(content),
             Version: 1,
-            ["checkout", "timeout"]);
+            ["checkout", "timeout"],
+            ServiceName: "checkout",
+            Component: null,
+            ReleaseName: null);
         var chunk = new MemorySeedChunk(
             Guid.NewGuid(),
             Position: 0,

@@ -29,11 +29,16 @@ internal sealed class MemorySeedHostedService(
         var memoryRepository = scope.ServiceProvider.GetRequiredService<IMemoryRepository>();
         var configuration = await configurationRepository.GetCurrentAsync(cancellationToken);
         var route = ResolveEmbeddingRoute(configuration);
-        var rootDirectory = ResolveRootDirectory();
-        foreach (var file in MemorySeedFileLoader.Load(rootDirectory))
+        var files = MemorySeedFileLoader.Load(ResolveRootDirectory());
+        foreach (var file in files)
         {
             await SeedFileAsync(file, route, embeddingClient, memoryRepository, cancellationToken);
         }
+
+        await memoryRepository.DeactivateMissingSeedsAsync(
+            options.Value.TenantId,
+            files.Select(static file => file.Source).ToArray(),
+            cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
@@ -85,7 +90,7 @@ internal sealed class MemorySeedHostedService(
     private MemorySeedItem CreateItem(MemorySeedFile file, string contentHash)
     {
         return new MemorySeedItem(
-            MemorySeedFileLoader.DeterministicId(options.Value.TenantId + ":" + file.Source + ":" + contentHash + ":1"),
+            MemorySeedFileLoader.DeterministicId(options.Value.TenantId + ":" + file.Source + ":seed-v2"),
             options.Value.TenantId,
             file.Kind,
             file.Source,
@@ -93,7 +98,10 @@ internal sealed class MemorySeedHostedService(
             file.Content,
             contentHash,
             Version: 1,
-            file.Tags);
+            file.Tags,
+            file.ServiceName,
+            file.Component,
+            file.ReleaseName);
     }
 
     private string ResolveRootDirectory()

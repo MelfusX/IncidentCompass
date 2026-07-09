@@ -66,6 +66,18 @@ Compose waits for PostgreSQL health before starting the hosts, checks API readin
 /health, and uses a process-level Worker health check before running the Tester. API and Worker still
 use restart-on-failure because config warmup intentionally fails fast if durable storage is unavailable.
 
+## File-Backed Memory Sync
+
+Memory files under `samples/runbooks`, `samples/incidents`, `samples/operational-notes`,
+`samples/documents`, `samples/release-notes` and `samples/postmortems` are the source of truth. Optional
+frontmatter supports `kind`, `service`, `component`, `release` and `tags`. The body below the
+frontmatter is the content embedded and cited by reports.
+
+API and Worker may start together and sync the same corpus safely. A changed file updates one stable
+source record and re-embeds its body. A removed file is deactivated, so its old chunks stay available
+for audit history but no longer participate in `memory_search`. Git history remains the provenance and
+review path; there is no memory write API.
+
 ## Model Configuration
 
 Default Docker Compose values point at a host-side OpenAI-compatible server:

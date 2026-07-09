@@ -63,6 +63,99 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         Assert.Equal(2, counts.Sources);
     }
 
+    [DockerAvailableFact]
+    public async Task StartAsync_EditedFileUpdatesSameItemAndReembeds()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        var embeddingClient = new CountingEmbeddingClient();
+        using (var first = CreateHost(connectionString, sourceDirectory, embeddingClient))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        await File.WriteAllTextAsync(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            """
+            ---
+            kind: Runbook
+            service: checkout-api
+            component: payments
+            release: 0.2
+            tags: [checkout, timeout]
+            ---
+
+            # Checkout Timeout Runbook
+
+            Updated guidance uses the circuit-breaker dashboard before retrying payments.
+            """,
+            TestContext.Current.CancellationToken);
+
+        using (var second = CreateHost(connectionString, sourceDirectory, embeddingClient))
+        {
+            await second.StartAsync(TestContext.Current.CancellationToken);
+            await second.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var counts = await ReadMemoryCountsAsync(connectionString);
+        var state = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        Assert.Equal(3, embeddingClient.CallCount);
+        Assert.Equal(2, counts.Items);
+        Assert.Equal(2, counts.Chunks);
+        Assert.Equal(2, state.Version);
+        Assert.Contains("Updated guidance", state.Content, StringComparison.Ordinal);
+        Assert.Equal("0.2", state.ReleaseName);
+    }
+
+    [DockerAvailableFact]
+    public async Task StartAsync_RemovedFileIsDeactivatedAndStopsContributingChunks()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        var embeddingClient = new CountingEmbeddingClient();
+        using (var first = CreateHost(connectionString, sourceDirectory, embeddingClient))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        File.Delete(Path.Combine(sourceDirectory, "incidents", "provider-unavailable.md"));
+        using (var second = CreateHost(connectionString, sourceDirectory, embeddingClient))
+        {
+            await second.StartAsync(TestContext.Current.CancellationToken);
+            await second.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var counts = await ReadMemoryCountsAsync(connectionString);
+        var removed = await ReadSeedStateAsync(connectionString, "incidents/provider-unavailable.md");
+        Assert.Equal(2, embeddingClient.CallCount);
+        Assert.Equal(1, counts.Items);
+        Assert.Equal(1, counts.Chunks);
+        Assert.False(removed.IsActive);
+    }
+
+    [DockerAvailableFact]
+    public async Task StartAsync_FrontmatterMetadataIsPersisted()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using var host = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient());
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        var state = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        Assert.Equal("runbook", state.Kind);
+        Assert.Equal("checkout-api", state.ServiceName);
+        Assert.Equal("payments", state.Component);
+        Assert.Equal("0.1", state.ReleaseName);
+        Assert.Contains("checkout", state.Tags);
+    }
+
     private async Task<string> CreateSchemaAsync()
     {
         var connectionString = await postgres.GetConnectionStringAsync();
@@ -105,6 +198,14 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         await File.WriteAllTextAsync(
             Path.Combine(directory, "runbooks", "checkout-timeout.md"),
             """
+            ---
+            kind: Runbook
+            service: checkout-api
+            component: payments
+            release: 0.1
+            tags: [checkout, timeout]
+            ---
+
             # Checkout Timeout Runbook
 
             Checkout timeout alerts usually indicate upstream payment latency.
@@ -113,6 +214,14 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         await File.WriteAllTextAsync(
             Path.Combine(directory, "incidents", "provider-unavailable.md"),
             """
+            ---
+            kind: KnownIncident
+            service: provider-client
+            component: upstream
+            release: 0.1
+            tags: [provider, outage]
+            ---
+
             # Provider Unavailable Incident
 
             ProviderUnavailableException bursts usually point to dependency outage.
@@ -135,13 +244,43 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         await using var command = new NpgsqlCommand("""
             SELECT
-                (SELECT count(*) FROM incidentcompass.memory_items WHERE tenant_id = 'local'),
-                (SELECT count(*) FROM incidentcompass.memory_chunks WHERE tenant_id = 'local'),
-                (SELECT count(DISTINCT source) FROM incidentcompass.memory_items WHERE tenant_id = 'local');
+                (SELECT count(*) FROM incidentcompass.memory_items WHERE tenant_id = 'local' AND is_active = true),
+                (SELECT count(*)
+                   FROM incidentcompass.memory_chunks chunk
+                   JOIN incidentcompass.memory_items item ON item.id = chunk.memory_item_id
+                  WHERE chunk.tenant_id = 'local' AND item.is_active = true),
+                (SELECT count(DISTINCT source)
+                   FROM incidentcompass.memory_items
+                  WHERE tenant_id = 'local' AND is_active = true);
             """, connection);
         await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
         return new MemoryCounts(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
+    }
+
+    private static async Task<SeedState> ReadSeedStateAsync(string connectionString, string source)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT kind, content, version, service_name, component, release_name, tags, is_active
+            FROM incidentcompass.memory_items
+            WHERE tenant_id = 'local' AND source = @source AND seed_managed = true
+            ORDER BY updated_at_utc DESC
+            LIMIT 1;
+            """, connection);
+        command.Parameters.AddWithValue("source", source);
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+        return new SeedState(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetInt32(2),
+            reader.IsDBNull(3) ? null : reader.GetString(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4),
+            reader.IsDBNull(5) ? null : reader.GetString(5),
+            reader.GetFieldValue<string[]>(6),
+            reader.GetBoolean(7));
     }
 
     private static string FindRepositoryRoot()
@@ -176,4 +315,14 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
     }
 
     private sealed record MemoryCounts(long Items, long Chunks, long Sources);
+
+    private sealed record SeedState(
+        string Kind,
+        string Content,
+        int Version,
+        string? ServiceName,
+        string? Component,
+        string? ReleaseName,
+        IReadOnlyList<string> Tags,
+        bool IsActive);
 }

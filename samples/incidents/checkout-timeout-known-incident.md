@@ -1,3 +1,11 @@
+---
+kind: KnownIncident
+service: checkout-api
+component: payments
+release: 0.1
+tags: [checkout, timeout, known-incident]
+---
+
 # Known Incident: Checkout Inventory Timeout
 
 Known incident pattern for checkout failures caused by inventory latency.

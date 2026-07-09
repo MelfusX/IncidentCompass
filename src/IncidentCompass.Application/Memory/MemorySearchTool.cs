@@ -134,6 +134,10 @@ internal sealed class MemorySearchTool(
             ["chunkPosition"] = match.ChunkPosition,
             ["quote"] = CreateQuote(match.Text),
             ["score"] = Math.Round(match.Score, 6),
+            ["retrievalConfidence"] = MemoryRetrievalConfidence.Band(match.Score),
+            ["serviceName"] = match.ServiceName,
+            ["component"] = match.Component,
+            ["release"] = match.ReleaseName,
             ["embeddingProvider"] = embedding.Provider,
             ["embeddingModel"] = embedding.Model,
             ["embeddingDimensions"] = embedding.Vector.Count
@@ -156,7 +160,11 @@ internal sealed class MemorySearchTool(
                 ["kind"] = match.Kind,
                 ["source"] = match.Source,
                 ["quote"] = CreateQuote(match.Text),
-                ["score"] = Math.Round(match.Score, 6)
+                ["score"] = Math.Round(match.Score, 6),
+                ["retrievalConfidence"] = MemoryRetrievalConfidence.Band(match.Score),
+                ["serviceName"] = match.ServiceName,
+                ["component"] = match.Component,
+                ["release"] = match.ReleaseName
             });
         }
 
@@ -168,6 +176,7 @@ internal sealed class MemorySearchTool(
             ["noMatchReason"] = matches.Count > 0 ? null : "no matches"
         });
     }
+
 
     private static string CreateQuote(string text)
     {
