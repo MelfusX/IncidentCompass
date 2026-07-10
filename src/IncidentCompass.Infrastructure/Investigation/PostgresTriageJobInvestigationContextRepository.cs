@@ -10,7 +10,15 @@ namespace IncidentCompass.Infrastructure.Investigation;
 internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDataSourceProvider dataSourceProvider)
     : ITriageJobInvestigationContextRepository
 {
-    public async Task<TriageJobInvestigationContext> GetAsync(
+    public Task<TriageJobInvestigationContext> GetAsync(
+        Guid jobId,
+        int attempt,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read triage investigation context",
+            () => GetCoreAsync(jobId, attempt, cancellationToken));
+
+    private async Task<TriageJobInvestigationContext> GetCoreAsync(
         Guid jobId,
         int attempt,
         CancellationToken cancellationToken)

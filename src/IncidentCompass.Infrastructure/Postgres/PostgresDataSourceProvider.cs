@@ -23,7 +23,12 @@ internal sealed class PostgresDataSourceProvider : IDisposable
             LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
-    public async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken)
+    public Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "open PostgreSQL connection",
+            () => OpenConnectionCoreAsync(cancellationToken));
+
+    private async Task<NpgsqlConnection> OpenConnectionCoreAsync(CancellationToken cancellationToken)
     {
         return await dataSource.Value.OpenConnectionAsync(cancellationToken);
     }

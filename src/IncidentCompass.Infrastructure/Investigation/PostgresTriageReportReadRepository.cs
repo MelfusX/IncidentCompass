@@ -10,7 +10,12 @@ namespace IncidentCompass.Infrastructure.Investigation;
 internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvider dataSourceProvider)
     : ITriageReportReadRepository
 {
-    public async Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken)
+    public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read triage report",
+            () => FindByIdCoreAsync(reportId, cancellationToken));
+
+    private async Task<TriageReportDetailsResponse?> FindByIdCoreAsync(Guid reportId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         var report = await LoadReportAsync(connection, reportId, cancellationToken);

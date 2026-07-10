@@ -12,9 +12,14 @@ internal sealed class PostgresTriageToolResultCommitter(
     ITriageToolResultCommitFaultInjector faultInjector,
     TimeProvider timeProvider) : ITriageToolResultCommitter
 {
-    public async Task<TriageArtifact> CommitSucceededAsync(
+    public Task<TriageArtifact> CommitSucceededAsync(
         TriageToolResultCommitRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "commit triage tool result",
+            () => CommitSucceededTransactionAsync(request, cancellationToken));
+
+    private async Task<TriageArtifact> CommitSucceededTransactionAsync(TriageToolResultCommitRequest request, CancellationToken cancellationToken)
     {
         var createdAtUtc = timeProvider.GetUtcNow();
         var artifact = new TriageArtifact(

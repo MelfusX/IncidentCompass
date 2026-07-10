@@ -9,9 +9,14 @@ internal sealed class PostgresTriageLedgerWriter(
     PostgresDataSourceProvider dataSourceProvider,
     TimeProvider timeProvider) : ITriageLedgerWriter
 {
-    public async Task<TriageLedgerEntry> AppendAsync(
+    public Task<TriageLedgerEntry> AppendAsync(
         TriageLedgerAppendRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "append triage ledger entry",
+            () => AppendTransactionAsync(request, cancellationToken));
+
+    private async Task<TriageLedgerEntry> AppendTransactionAsync(TriageLedgerAppendRequest request, CancellationToken cancellationToken)
     {
         var createdAtUtc = timeProvider.GetUtcNow();
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);

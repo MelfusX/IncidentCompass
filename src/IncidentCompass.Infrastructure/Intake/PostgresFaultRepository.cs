@@ -21,15 +21,17 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         CancellationToken cancellationToken)
     {
-        return FindByGroupKeyAsync(
-            tenantId,
-            serviceName,
-            environment,
-            fingerprint,
-            fingerprintVersion,
-            "('Queued', 'Analyzing')",
-            orderByCreatedDesc: false,
-            cancellationToken);
+        return PostgresOperation.ExecuteAsync(
+            "find open fault",
+            () => FindByGroupKeyAsync(
+                tenantId,
+                serviceName,
+                environment,
+                fingerprint,
+                fingerprintVersion,
+                "('Queued', 'Analyzing')",
+                orderByCreatedDesc: false,
+                cancellationToken));
     }
 
     public Task<Fault?> FindMostRecentClosedFaultAsync(
@@ -40,15 +42,17 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         CancellationToken cancellationToken)
     {
-        return FindByGroupKeyAsync(
-            tenantId,
-            serviceName,
-            environment,
-            fingerprint,
-            fingerprintVersion,
-            "('Completed', 'Failed', 'InsufficientEvidence')",
-            orderByCreatedDesc: true,
-            cancellationToken);
+        return PostgresOperation.ExecuteAsync(
+            "find closed fault",
+            () => FindByGroupKeyAsync(
+                tenantId,
+                serviceName,
+                environment,
+                fingerprint,
+                fingerprintVersion,
+                "('Completed', 'Failed', 'InsufficientEvidence')",
+                orderByCreatedDesc: true,
+                cancellationToken));
     }
 
     public async Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken)
@@ -97,8 +101,12 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         return FindByIdAsync(id, lockForUpdate: true, cancellationToken);
     }
 
-    public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
-        FindByIdAsync(id, lockForUpdate: false, cancellationToken);
+    public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return PostgresOperation.ExecuteAsync(
+            "find fault",
+            () => FindByIdAsync(id, lockForUpdate: false, cancellationToken));
+    }
 
     private async Task<Fault?> FindByIdAsync(
         Guid id,

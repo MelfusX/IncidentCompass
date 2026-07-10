@@ -15,7 +15,16 @@ internal sealed class PostgresTriageReportRepository(
 {
     private readonly PostgresReportEvidenceGrounder evidenceGrounder = new();
 
-    public async Task<Guid> PublishAsync(
+    public Task<Guid> PublishAsync(
+        TriageJob job,
+        string workerId,
+        TriageReport report,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "publish triage report",
+            () => PublishTransactionAsync(job, workerId, report, cancellationToken));
+
+    private async Task<Guid> PublishTransactionAsync(
         TriageJob job,
         string workerId,
         TriageReport report,

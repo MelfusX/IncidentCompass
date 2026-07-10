@@ -10,6 +10,8 @@
   candidate fault closed concurrently.
 - Increased the Development worker lease above the shipped investigation wall-clock budget and
   added a regression check for that cross-configuration invariant.
+- Normalized active PostgreSQL adapter failures into an Application-level persistence exception
+  without exposing provider messages or intercepting cancellation and invariant failures.
 
 ## 0.1.0 - 2026-07-04
 

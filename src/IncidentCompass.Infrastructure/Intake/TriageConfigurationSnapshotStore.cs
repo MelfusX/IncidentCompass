@@ -12,7 +12,16 @@ internal sealed class TriageConfigurationSnapshotStore(
     TimeProvider timeProvider,
     ILogger<TriageConfigurationSnapshotStore> logger)
 {
-    public async Task PersistAsync(
+    public Task PersistAsync(
+        string configHash,
+        JsonNode configNode,
+        JsonObject instructionsNode,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "persist triage configuration snapshot",
+            () => PersistCoreAsync(configHash, configNode, instructionsNode, cancellationToken));
+
+    private async Task PersistCoreAsync(
         string configHash,
         JsonNode configNode,
         JsonObject instructionsNode,
@@ -43,9 +52,14 @@ internal sealed class TriageConfigurationSnapshotStore(
         }
     }
 
-    public async Task<TriageConfigurationSnapshotDocument?> GetAsync(
+    public Task<TriageConfigurationSnapshotDocument?> GetAsync(
         string configHash,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read triage configuration snapshot",
+            () => GetCoreAsync(configHash, cancellationToken));
+
+    private async Task<TriageConfigurationSnapshotDocument?> GetCoreAsync(string configHash, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
