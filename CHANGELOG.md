@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.1 - 2026-07-10
+
 - Added `IC_API_PORT` and `IC_POSTGRES_PORT` overrides for Compose host mappings while keeping
   internal service ports stable.
 - Limited retry investigation context to job-level artifacts and artifacts from the current attempt.
