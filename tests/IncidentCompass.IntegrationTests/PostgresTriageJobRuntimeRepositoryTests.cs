@@ -199,6 +199,46 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
         Assert.Equal("Analyzing", faultStatus);
     }
 
+    [DockerAvailableFact]
+    public async Task InvestigationContext_CurrentAttemptExcludesPriorAttemptArtifacts()
+    {
+        using var scope = await CreateScopeAsync();
+        var seed = await SeedJobAsync(scope.ConnectionString, "context-attempt", "Pending");
+        var jobLevelId = Guid.NewGuid();
+        var priorAttemptId = Guid.NewGuid();
+        var currentAttemptId = Guid.NewGuid();
+        await ExecuteAsync(
+            scope.ConnectionString,
+            """
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES
+                (@job_level_id, @job_id, NULL, 'TriggerSignal', NULL, '{}'::jsonb, 'job-level', now()),
+                (@prior_attempt_id, @job_id, 1, 'WorkerOutput', NULL, '{}'::jsonb, 'prior-attempt', now()),
+                (@current_attempt_id, @job_id, 2, 'RetrievedItem', NULL, '{}'::jsonb, 'current-attempt', now());
+            """,
+            ("job_level_id", jobLevelId),
+            ("prior_attempt_id", priorAttemptId),
+            ("current_attempt_id", currentAttemptId),
+            ("job_id", seed.JobId));
+        var repository = scope.Services.GetRequiredService<ITriageJobInvestigationContextRepository>();
+
+        var context = await repository.GetAsync(
+            seed.JobId,
+            attempt: 2,
+            TestContext.Current.CancellationToken);
+
+        Assert.Contains(
+            context.JobArtifacts,
+            artifact => artifact.Id == jobLevelId && artifact.Attempt is null);
+        Assert.Contains(
+            context.JobArtifacts,
+            artifact => artifact.Id == currentAttemptId && artifact.Attempt == 2);
+        Assert.DoesNotContain(
+            context.JobArtifacts,
+            artifact => artifact.Id == priorAttemptId);
+    }
+
     private async Task<RepositoryScope> CreateScopeAsync()
     {
         var connectionString = await postgres.GetConnectionStringAsync();

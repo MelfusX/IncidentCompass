@@ -41,7 +41,12 @@ internal sealed class PostgresTriageJobRepository(PostgresDataSourceProvider dat
             UpdatedAtUtc: now);
     }
 
-    public async Task<TriageJob?> FindByFaultIdAsync(Guid faultId, CancellationToken cancellationToken)
+    public Task<TriageJob?> FindByFaultIdAsync(Guid faultId, CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "find triage job by fault",
+            () => FindByFaultIdCoreAsync(faultId, cancellationToken));
+
+    private async Task<TriageJob?> FindByFaultIdCoreAsync(Guid faultId, CancellationToken cancellationToken)
     {
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand("""

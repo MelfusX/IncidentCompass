@@ -21,15 +21,17 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         CancellationToken cancellationToken)
     {
-        return FindByGroupKeyAsync(
-            tenantId,
-            serviceName,
-            environment,
-            fingerprint,
-            fingerprintVersion,
-            "('Queued', 'Analyzing')",
-            orderByCreatedDesc: false,
-            cancellationToken);
+        return PostgresOperation.ExecuteAsync(
+            "find open fault",
+            () => FindByGroupKeyAsync(
+                tenantId,
+                serviceName,
+                environment,
+                fingerprint,
+                fingerprintVersion,
+                "('Queued', 'Analyzing')",
+                orderByCreatedDesc: false,
+                cancellationToken));
     }
 
     public Task<Fault?> FindMostRecentClosedFaultAsync(
@@ -40,15 +42,17 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         CancellationToken cancellationToken)
     {
-        return FindByGroupKeyAsync(
-            tenantId,
-            serviceName,
-            environment,
-            fingerprint,
-            fingerprintVersion,
-            "('Completed', 'Failed', 'InsufficientEvidence')",
-            orderByCreatedDesc: true,
-            cancellationToken);
+        return PostgresOperation.ExecuteAsync(
+            "find closed fault",
+            () => FindByGroupKeyAsync(
+                tenantId,
+                serviceName,
+                environment,
+                fingerprint,
+                fingerprintVersion,
+                "('Completed', 'Failed', 'InsufficientEvidence')",
+                orderByCreatedDesc: true,
+                cancellationToken));
     }
 
     public async Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken)
@@ -87,14 +91,35 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         return inserted ? fault : null;
     }
 
-    public async Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
+    public Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken)
     {
+        if (!transactionContext.HasCurrent)
+        {
+            throw new InvalidOperationException("A fault row can only be locked inside an intake unit of work.");
+        }
+
+        return FindByIdAsync(id, lockForUpdate: true, cancellationToken);
+    }
+
+    public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return PostgresOperation.ExecuteAsync(
+            "find fault",
+            () => FindByIdAsync(id, lockForUpdate: false, cancellationToken));
+    }
+
+    private async Task<Fault?> FindByIdAsync(
+        Guid id,
+        bool lockForUpdate,
+        CancellationToken cancellationToken)
+    {
+        var lockingClause = lockForUpdate ? "FOR UPDATE" : string.Empty;
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand($"""
             SELECT {SelectColumns}
             FROM incidentcompass.faults
             WHERE id = @id
-            LIMIT 1;
+            {lockingClause};
             """, lease.Connection, lease.Transaction);
 
         command.AddParameter("id", id);

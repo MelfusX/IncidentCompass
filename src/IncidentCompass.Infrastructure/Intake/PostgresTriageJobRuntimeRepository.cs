@@ -9,7 +9,12 @@ internal sealed class PostgresTriageJobRuntimeRepository(
     PostgresDataSourceProvider dataSourceProvider,
     TimeProvider timeProvider) : ITriageJobRuntimeRepository
 {
-    public async Task<TriageJob?> ClaimNextAsync(
+    public Task<TriageJob?> ClaimNextAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "claim triage job",
+            () => ClaimNextTransactionAsync(workerId, leaseDuration, cancellationToken));
+
+    private async Task<TriageJob?> ClaimNextTransactionAsync(
         string workerId,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken)
@@ -38,7 +43,12 @@ internal sealed class PostgresTriageJobRuntimeRepository(
         }
     }
 
-    public async Task RecordAttemptFailureAsync(
+    public Task RecordAttemptFailureAsync(TriageJob job, string workerId, TriageJobAttemptFailure failure, CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "record triage attempt failure",
+            () => RecordAttemptFailureTransactionAsync(job, workerId, failure, cancellationToken));
+
+    private async Task RecordAttemptFailureTransactionAsync(
         TriageJob job,
         string workerId,
         TriageJobAttemptFailure failure,

@@ -8,9 +8,14 @@ namespace IncidentCompass.Infrastructure.Governance;
 
 internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider dataSourceProvider) : ITriageLedgerReader
 {
-    public async Task<TriageBudgetLedgerUsage> ReadBudgetUsageAsync(
+    public Task<TriageBudgetLedgerUsage> ReadBudgetUsageAsync(
         TriageJob job,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read triage budget usage",
+            () => ReadBudgetUsageCoreAsync(job, cancellationToken));
+
+    private async Task<TriageBudgetLedgerUsage> ReadBudgetUsageCoreAsync(TriageJob job, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
@@ -31,7 +36,17 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
         return new TriageBudgetLedgerUsage(Convert.ToInt32(reader.GetInt64(0)), Convert.ToInt32(reader.GetInt64(1)));
     }
 
-    public async Task<int> CountPolicyDecisionsAsync(
+    public Task<int> CountPolicyDecisionsAsync(
+        TriageJob job,
+        string toolName,
+        string scope,
+        TriageLedgerDecision decision,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "count triage policy decisions",
+            () => CountPolicyDecisionsCoreAsync(job, toolName, scope, decision, cancellationToken));
+
+    private async Task<int> CountPolicyDecisionsCoreAsync(
         TriageJob job,
         string toolName,
         string scope,
@@ -55,7 +70,16 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    public async Task<bool> HasSuccessfulToolResultAsync(
+    public Task<bool> HasSuccessfulToolResultAsync(
+        TriageJob job,
+        string toolName,
+        string scope,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read successful tool result",
+            () => HasSuccessfulToolResultCoreAsync(job, toolName, scope, cancellationToken));
+
+    private async Task<bool> HasSuccessfulToolResultCoreAsync(
         TriageJob job,
         string toolName,
         string scope,
@@ -80,9 +104,14 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
     }
 
 
-    public async Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
+    public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
         Guid faultId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read fault ledger",
+            () => ReadByFaultIdCoreAsync(faultId, cancellationToken));
+
+    private async Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdCoreAsync(Guid faultId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(

@@ -9,9 +9,14 @@ internal sealed class PostgresMemoryRepository(
     PostgresDataSourceProvider dataSourceProvider,
     TimeProvider timeProvider) : IMemoryRepository
 {
-    public async Task<IReadOnlyList<MemorySearchMatch>> SearchAsync(
+    public Task<IReadOnlyList<MemorySearchMatch>> SearchAsync(
         MemorySearchRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "search memory",
+            () => SearchCoreAsync(request, cancellationToken));
+
+    private async Task<IReadOnlyList<MemorySearchMatch>> SearchCoreAsync(MemorySearchRequest request, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
@@ -70,10 +75,12 @@ internal sealed class PostgresMemoryRepository(
         MemorySeedItem item,
         CancellationToken cancellationToken)
     {
-        return PostgresMemorySeedWriter.SeedItemExistsAsync(
-            dataSourceProvider,
-            item,
-            cancellationToken);
+        return PostgresOperation.ExecuteAsync(
+            "check memory seed item",
+            () => PostgresMemorySeedWriter.SeedItemExistsAsync(
+                dataSourceProvider,
+                item,
+                cancellationToken));
     }
 
     public Task UpsertSeedAsync(
@@ -81,12 +88,14 @@ internal sealed class PostgresMemoryRepository(
         IReadOnlyList<MemorySeedChunk> chunks,
         CancellationToken cancellationToken)
     {
-        return PostgresMemorySeedWriter.UpsertSeedAsync(
-            dataSourceProvider,
-            timeProvider.GetUtcNow(),
-            item,
-            chunks,
-            cancellationToken);
+        return PostgresOperation.ExecuteAsync(
+            "upsert memory seed",
+            () => PostgresMemorySeedWriter.UpsertSeedAsync(
+                dataSourceProvider,
+                timeProvider.GetUtcNow(),
+                item,
+                chunks,
+                cancellationToken));
     }
 
 

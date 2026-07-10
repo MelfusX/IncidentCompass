@@ -157,6 +157,9 @@ public sealed class MemoryOnlyCompositionTests
 
         public Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken) => Task.FromResult<Fault?>(fault);
 
+        public Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken) =>
+            Task.FromResult<Fault?>(null);
+
         public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
     }
 

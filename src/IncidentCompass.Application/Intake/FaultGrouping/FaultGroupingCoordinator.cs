@@ -11,9 +11,31 @@ public sealed class FaultGroupingCoordinator(
     ITriageJobRepository triageJobRepository,
     IIntakeUnitOfWork intakeUnitOfWork,
     GroundedFactsAssembler groundedFactsAssembler,
+    OpenFaultNeighborSetRefresher neighborSetRefresher,
     TimeProvider timeProvider)
 {
+    private const int MaxResolutionAttempts = 3;
+
     public async Task<FaultGroupingOutcome> ResolveAsync(
+        Signal draftSignal,
+        TriageConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await ResolveCoreAsync(draftSignal, configuration, cancellationToken);
+            }
+            catch (FaultGroupingStateChangedException) when (attempt < MaxResolutionAttempts)
+            {
+                // The intake transaction was rolled back. Re-read grouping state after the
+                // concurrent fault terminalization commits.
+            }
+        }
+    }
+
+    private async Task<FaultGroupingOutcome> ResolveCoreAsync(
         Signal draftSignal,
         TriageConfiguration configuration,
         CancellationToken cancellationToken)
@@ -60,13 +82,23 @@ public sealed class FaultGroupingCoordinator(
         return await intakeUnitOfWork.ExecuteAsync(
             async currentCancellationToken =>
             {
-                var finalSignal = draftSignal with { FaultId = openFault.Id };
+                var currentFault = await LockOpenFaultAsync(openFault.Id, currentCancellationToken);
+                var finalSignal = draftSignal with { FaultId = currentFault.Id };
                 await signalRepository.InsertAsync(finalSignal, currentCancellationToken);
-                await RefreshOpenFaultNeighborSetAsync(openFault, finalSignal, configuration, currentCancellationToken);
-                return new FaultGroupingOutcome(openFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
+                await neighborSetRefresher.RefreshAsync(currentFault, finalSignal, configuration, currentCancellationToken);
+                return new FaultGroupingOutcome(currentFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
             },
             cancellationToken);
     }
+
+    private async Task<Fault> LockOpenFaultAsync(Guid faultId, CancellationToken cancellationToken)
+    {
+        var currentFault = await faultRepository.FindByIdForUpdateAsync(faultId, cancellationToken);
+        return currentFault is { Status: FaultStatus.Queued or FaultStatus.Analyzing }
+            ? currentFault
+            : throw new FaultGroupingStateChangedException(faultId);
+    }
+
     private async Task<FaultGroupingOutcome> CreateNewFaultAsync(
         Signal draftSignal,
         Guid? recurrenceOfFaultId,
@@ -123,9 +155,9 @@ public sealed class FaultGroupingCoordinator(
         var job = await triageJobRepository.InsertPendingAsync(fault.Id, configuration.ConfigHash, cancellationToken);
 
         var neighborCount = draftSignal.CanGroup
-            ? await CountNeighborsAsync(draftSignal, configuration.FaultGrouping, cancellationToken)
+            ? await FaultGroupingMetrics.CountNeighborsAsync(signalRepository, draftSignal, configuration.FaultGrouping, cancellationToken)
             : 0;
-        var isMassIssue = DetermineIsMassIssue(draftSignal, neighborCount, configuration.FaultGrouping);
+        var isMassIssue = FaultGroupingMetrics.DetermineIsMassIssue(draftSignal, neighborCount, configuration.FaultGrouping);
 
         var finalSignal = signalWithoutFault with { FaultId = fault.Id };
         await groundedFactsAssembler.AssembleAsync(job, finalSignal, fault, neighborCount, isMassIssue, configuration.FaultGrouping, cancellationToken);
@@ -141,58 +173,13 @@ public sealed class FaultGroupingCoordinator(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
             draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken)
             ?? throw new InvariantViolationException("Lost the fault-creation race but no open fault was found afterward.");
+        winningFault = await LockOpenFaultAsync(winningFault.Id, cancellationToken);
         await signalRepository.AttachToFaultAsync(draftSignal.Id, winningFault.Id, cancellationToken);
-        await RefreshOpenFaultNeighborSetAsync(
+        await neighborSetRefresher.RefreshAsync(
             winningFault,
             draftSignal with { FaultId = winningFault.Id },
             configuration,
             cancellationToken);
         return winningFault;
-    }
-
-    private async Task RefreshOpenFaultNeighborSetAsync(
-        Fault openFault,
-        Signal finalSignal,
-        TriageConfiguration configuration,
-        CancellationToken cancellationToken)
-    {
-        var job = await triageJobRepository.FindByFaultIdAsync(openFault.Id, cancellationToken);
-        if (job is null || job.Status is TriageJobStatus.Succeeded or TriageJobStatus.Failed or TriageJobStatus.DeadLettered)
-        {
-            return;
-        }
-
-        var neighborCount = finalSignal.CanGroup
-            ? await CountNeighborsAsync(finalSignal, configuration.FaultGrouping, cancellationToken)
-            : 0;
-        var isMassIssue = DetermineIsMassIssue(finalSignal, neighborCount, configuration.FaultGrouping);
-        await groundedFactsAssembler.ReplaceNeighborSetAsync(
-            job,
-            openFault,
-            finalSignal,
-            neighborCount,
-            isMassIssue,
-            configuration.FaultGrouping,
-            cancellationToken);
-    }
-
-    private async Task<int> CountNeighborsAsync(Signal draftSignal, FaultGroupingSettings settings, CancellationToken cancellationToken)
-    {
-        var windowStart = draftSignal.ObservedAtUtc.AddMinutes(-settings.LookbackMinutes);
-        return await signalRepository.CountDistinctNeighborsAsync(
-            draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
-            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value,
-            windowStart, draftSignal.ObservedAtUtc, cancellationToken);
-    }
-
-    private static bool? DetermineIsMassIssue(Signal draftSignal, int neighborCount, FaultGroupingSettings settings)
-    {
-        if (!draftSignal.CanGroup)
-        {
-            return null;
-        }
-
-        return neighborCount >= settings.MassIssue.MinNeighborCount &&
-            draftSignal.FingerprintStrength >= settings.MassIssue.GetMinimumFingerprintStrength();
     }
 }

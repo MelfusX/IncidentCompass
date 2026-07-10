@@ -30,5 +30,9 @@ public interface IFaultRepository
     // race that only strong/groupable faults can hit; weak faults always succeed.
     Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken);
 
+    // Requires an active intake unit of work. Serializes signal attachment with fault
+    // terminalization so callers can re-resolve when the candidate is no longer open.
+    Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken);
+
     Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
 }

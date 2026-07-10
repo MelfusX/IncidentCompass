@@ -7,7 +7,14 @@ internal sealed class PostgresIntakeUnitOfWork(
     PostgresDataSourceProvider dataSourceProvider,
     PostgresIntakeTransactionContext transactionContext) : IIntakeUnitOfWork
 {
-    public async Task<TResult> ExecuteAsync<TResult>(
+    public Task<TResult> ExecuteAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "execute intake transaction",
+            () => ExecuteCoreAsync(operation, cancellationToken));
+
+    private async Task<TResult> ExecuteCoreAsync<TResult>(
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken)
     {

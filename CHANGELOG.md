@@ -2,7 +2,18 @@
 
 ## Unreleased
 
-Nothing yet.
+## 0.1.1 - 2026-07-10
+
+- Added `IC_API_PORT` and `IC_POSTGRES_PORT` overrides for Compose host mappings while keeping
+  internal service ports stable.
+- Limited retry investigation context to job-level artifacts and artifacts from the current attempt.
+- Redacted normalized typed string fields before fingerprinting, persistence and model prompts.
+- Serialized signal attachment with fault terminalization and re-resolved grouping when the
+  candidate fault closed concurrently.
+- Increased the Development worker lease above the shipped investigation wall-clock budget and
+  added a regression check for that cross-configuration invariant.
+- Normalized active PostgreSQL adapter failures into an Application-level persistence exception
+  without exposing provider messages or intercepting cancellation and invariant failures.
 
 ## 0.1.0 - 2026-07-04
 
