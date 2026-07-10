@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using IncidentCompass.Worker;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +12,23 @@ public sealed class WorkerOptionsTests
         var options = new WorkerOptions();
 
         Assert.Equal(900, options.LeaseSeconds);
+    }
+
+    [Fact]
+    public void DevelopmentLease_ExceedsShippedInvestigationWallClockBudget()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var workerSettings = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(repositoryRoot, "src", "IncidentCompass.Worker", "appsettings.Development.json")))!;
+        var triageSettings = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(repositoryRoot, "config", "incidentcompass.config.json")))!;
+
+        var leaseSeconds = workerSettings["IncidentCompass"]!["Worker"]!["LeaseSeconds"]!.GetValue<int>();
+        var wallClockSeconds = triageSettings["Orchestrator"]!["Budget"]!["MaxWallClockSeconds"]!.GetValue<int>();
+
+        Assert.True(
+            leaseSeconds > wallClockSeconds,
+            $"Development lease ({leaseSeconds}s) must exceed the shipped investigation budget ({wallClockSeconds}s).");
     }
 
     [Fact]
@@ -31,6 +49,21 @@ public sealed class WorkerOptionsTests
         Assert.True(result.Failed);
         Assert.Contains(result.Failures, failure => failure.Contains("PollIntervalSeconds", StringComparison.Ordinal));
         Assert.Contains(result.Failures, failure => failure.Contains("LeaseSeconds", StringComparison.Ordinal));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the IncidentCompass repository root.");
     }
 
     private static IValidateOptions<WorkerOptions> CreateValidator()

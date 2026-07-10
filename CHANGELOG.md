@@ -8,6 +8,8 @@
 - Redacted normalized typed string fields before fingerprinting, persistence and model prompts.
 - Serialized signal attachment with fault terminalization and re-resolved grouping when the
   candidate fault closed concurrently.
+- Increased the Development worker lease above the shipped investigation wall-clock budget and
+  added a regression check for that cross-configuration invariant.
 
 ## 0.1.0 - 2026-07-04
 
