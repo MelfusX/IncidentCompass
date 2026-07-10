@@ -87,14 +87,31 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         return inserted ? fault : null;
     }
 
-    public async Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
+    public Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken)
     {
+        if (!transactionContext.HasCurrent)
+        {
+            throw new InvalidOperationException("A fault row can only be locked inside an intake unit of work.");
+        }
+
+        return FindByIdAsync(id, lockForUpdate: true, cancellationToken);
+    }
+
+    public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
+        FindByIdAsync(id, lockForUpdate: false, cancellationToken);
+
+    private async Task<Fault?> FindByIdAsync(
+        Guid id,
+        bool lockForUpdate,
+        CancellationToken cancellationToken)
+    {
+        var lockingClause = lockForUpdate ? "FOR UPDATE" : string.Empty;
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand($"""
             SELECT {SelectColumns}
             FROM incidentcompass.faults
             WHERE id = @id
-            LIMIT 1;
+            {lockingClause};
             """, lease.Connection, lease.Transaction);
 
         command.AddParameter("id", id);

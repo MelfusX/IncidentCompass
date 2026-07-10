@@ -72,6 +72,25 @@ public sealed class FaultGroupingCoordinatorTests
     }
 
     [Fact]
+    public async Task ResolveAsync_OpenFaultTerminalizedBeforeAttachment_ReevaluatesAsSuppressed()
+    {
+        var (coordinator, signals, faults, jobs, _) = CreateHarness();
+        var configuration = CreateConfiguration(silenceWindowMinutes: 30);
+
+        var firstOutcome = await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+        faults.CloseOnNextLock(firstOutcome.Fault.Id, DateTimeOffset.UtcNow);
+
+        var secondOutcome = await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+
+        Assert.Equal(firstOutcome.Fault.Id, secondOutcome.Fault.Id);
+        Assert.True(secondOutcome.IsSuppressed);
+        Assert.False(secondOutcome.IsNewJob);
+        Assert.Equal(1, jobs.InsertedCount);
+        var suppressedSignal = Assert.Single(signals.Inserted, signal => signal.IsSuppressed);
+        Assert.Equal(firstOutcome.Fault.Id, suppressedSignal.SuppressedByFaultId);
+    }
+
+    [Fact]
     public async Task ResolveAsync_WeakSignalMatchingClosedFaultWithinSilenceWindow_CreatesUnsuppressedNewFault()
     {
         var (coordinator, signals, faults, jobs, _) = CreateHarness();
@@ -211,7 +230,9 @@ public sealed class FaultGroupingCoordinatorTests
         var jobs = new FakeTriageJobRepository();
         var artifacts = new FakeTriageArtifactRepository();
         var assembler = new GroundedFactsAssembler(artifacts, new AlwaysNullPriorReportSummaryProvider(), TimeProvider.System);
-        var coordinator = new FaultGroupingCoordinator(signals, faults, jobs, new PassThroughIntakeUnitOfWork(), assembler, TimeProvider.System);
+        var neighborSetRefresher = new OpenFaultNeighborSetRefresher(signals, jobs, assembler);
+        var coordinator = new FaultGroupingCoordinator(
+            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), assembler, neighborSetRefresher, TimeProvider.System);
         return (coordinator, signals, faults, jobs, artifacts);
     }
 
@@ -336,6 +357,8 @@ public sealed class FaultGroupingCoordinatorTests
         private readonly List<Fault> _faults = [];
         private int _suppressFindOpenFaultCount;
         private bool _forceNextInsertToLoseRace;
+        private Guid? _closeOnNextLockFaultId;
+        private DateTimeOffset _closeOnNextLockCompletedAtUtc;
 
         public Task<Fault?> FindOpenFaultAsync(
             string tenantId, string serviceName, string environment, string fingerprint, int fingerprintVersion,
@@ -388,8 +411,25 @@ public sealed class FaultGroupingCoordinatorTests
             return Task.FromResult<Fault?>(fault);
         }
 
+        public Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken)
+        {
+            if (_closeOnNextLockFaultId == id)
+            {
+                CloseFault(id, _closeOnNextLockCompletedAtUtc);
+                _closeOnNextLockFaultId = null;
+            }
+
+            return FindByIdAsync(id, cancellationToken);
+        }
+
         public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(_faults.FirstOrDefault(f => f.Id == id));
+
+        public void CloseOnNextLock(Guid faultId, DateTimeOffset completedAtUtc)
+        {
+            _closeOnNextLockFaultId = faultId;
+            _closeOnNextLockCompletedAtUtc = completedAtUtc;
+        }
 
         public void CloseFault(Guid faultId, DateTimeOffset completedAtUtc)
         {

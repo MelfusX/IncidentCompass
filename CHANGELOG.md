@@ -6,6 +6,8 @@
   internal service ports stable.
 - Limited retry investigation context to job-level artifacts and artifacts from the current attempt.
 - Redacted normalized typed string fields before fingerprinting, persistence and model prompts.
+- Serialized signal attachment with fault terminalization and re-resolved grouping when the
+  candidate fault closed concurrently.
 
 ## 0.1.0 - 2026-07-04
 
