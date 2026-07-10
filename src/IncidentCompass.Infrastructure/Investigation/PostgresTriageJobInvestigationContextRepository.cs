@@ -12,12 +12,13 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
 {
     public async Task<TriageJobInvestigationContext> GetAsync(
         Guid jobId,
+        int attempt,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         var fault = await LoadFaultAsync(connection, jobId, cancellationToken);
         var signal = await LoadTriggerSignalAsync(connection, fault.TriggerSignalId, cancellationToken);
-        var artifacts = await LoadArtifactsAsync(connection, jobId, cancellationToken);
+        var artifacts = await LoadArtifactsAsync(connection, jobId, attempt, cancellationToken);
 
         return new TriageJobInvestigationContext(fault, signal, artifacts);
     }
@@ -125,15 +126,18 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
     private static async Task<IReadOnlyCollection<TriageArtifact>> LoadArtifactsAsync(
         NpgsqlConnection connection,
         Guid jobId,
+        int attempt,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
             SELECT id, job_id, attempt, kind, domain_ref, redacted_payload::text, content_hash, created_at_utc
             FROM incidentcompass.triage_artifacts
             WHERE job_id = @job_id
+              AND (attempt IS NULL OR attempt = @attempt)
             ORDER BY created_at_utc, id;
             """, connection);
         command.AddParameter("job_id", jobId);
+        command.AddParameter("attempt", attempt);
 
         var artifacts = new List<TriageArtifact>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

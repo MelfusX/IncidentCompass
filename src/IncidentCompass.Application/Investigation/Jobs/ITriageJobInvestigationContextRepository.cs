@@ -4,5 +4,6 @@ public interface ITriageJobInvestigationContextRepository
 {
     Task<TriageJobInvestigationContext> GetAsync(
         Guid jobId,
+        int attempt,
         CancellationToken cancellationToken);
 }

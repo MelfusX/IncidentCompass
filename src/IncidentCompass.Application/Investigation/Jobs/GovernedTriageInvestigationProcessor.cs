@@ -37,7 +37,7 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
         CancellationToken cancellationToken)
     {
         var attemptStartedAtUtc = timeProvider.GetUtcNow();
-        var context = await contextRepository.GetAsync(job.Id, cancellationToken);
+        var context = await contextRepository.GetAsync(job.Id, job.Attempt, cancellationToken);
         var messages = new List<AiChatMessage>
         {
             new(AiMessageRole.System, configuration.Orchestrator.Instructions),
