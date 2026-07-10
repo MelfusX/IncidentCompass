@@ -61,6 +61,57 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     }
 
     [DockerAvailableFact]
+    public async Task IngestSignal_TypedFieldsAreRedactedBeforePersistence()
+    {
+        using var scope = await CreateScopeAsync();
+        const string rawSecret = "abcdef1234567890";
+        var secretText = "Bearer " + rawSecret;
+        var response = await scope.Client.PostAsJsonAsync(
+            "/api/v1/incidents",
+            new
+            {
+                sourceKind = "tester",
+                serviceName = "service " + secretText,
+                environment = "environment " + secretText,
+                severity = "severity " + secretText,
+                observedAtUtc = DateTimeOffset.UtcNow,
+                correlation = new
+                {
+                    traceId = "trace " + secretText,
+                    spanId = "span " + secretText,
+                    externalId = "external " + secretText
+                },
+                attributes = new
+                {
+                    errorType = "type " + secretText,
+                    errorMessage = "message " + secretText,
+                    operationName = "operation " + secretText,
+                    httpMethod = "method " + secretText,
+                    httpRoute = "route " + secretText
+                }
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var ingested = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(ingested);
+
+        var persisted = await ScalarAsync<string>(
+            scope.ConnectionString,
+            """
+            SELECT concat_ws('|', external_id, trace_id, span_id, service_name, environment,
+                                    operation_name, severity, error_type, error_message,
+                                    http_method, http_route)
+            FROM incidentcompass.signals
+            WHERE id = @signal_id;
+            """,
+            ("signal_id", ingested.SignalId));
+
+        Assert.DoesNotContain(rawSecret, persisted, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED]", persisted, StringComparison.Ordinal);
+    }
+
+    [DockerAvailableFact]
     public async Task TriageConfigurationRepository_GetByHashAsync_RehydratesPersistedSnapshot()
     {
         using var scope = await CreateScopeAsync();

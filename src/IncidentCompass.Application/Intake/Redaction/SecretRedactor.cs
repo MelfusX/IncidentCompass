@@ -27,12 +27,25 @@ internal static partial class SecretRedactor
     public static NormalizedSignal Redact(NormalizedSignal signal) =>
         signal with
         {
+            ExternalId = RedactText(signal.ExternalId),
+            TraceId = RedactText(signal.TraceId),
+            SpanId = RedactText(signal.SpanId),
+            ParentSpanId = RedactText(signal.ParentSpanId),
+            ServiceName = RedactRequiredText(signal.ServiceName),
+            Environment = RedactRequiredText(signal.Environment),
+            OperationName = RedactText(signal.OperationName),
+            Severity = RedactText(signal.Severity),
+            ErrorType = RedactText(signal.ErrorType),
             ErrorMessage = RedactText(signal.ErrorMessage),
             Description = SignalTextTruncator.TruncateDescription(RedactText(signal.Description)),
-            Summary = SignalTextTruncator.TruncateSummary(RedactText(signal.Summary) ?? string.Empty),
+            Summary = SignalTextTruncator.TruncateSummary(RedactRequiredText(signal.Summary)),
+            HttpMethod = RedactText(signal.HttpMethod),
+            HttpRoute = RedactText(signal.HttpRoute),
             Attributes = RedactJsonNode(signal.Attributes),
             Body = RedactJsonNode(signal.Body),
         };
+
+    private static string RedactRequiredText(string text) => RedactText(text) ?? string.Empty;
 
     public static string? RedactText(string? text)
     {
