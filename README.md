@@ -114,6 +114,7 @@ tests/
 Recommended deterministic demo path:
 
 ~~~powershell
+# Optional collision overrides: IC_API_PORT=5298 and IC_POSTGRES_PORT=55432
 powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 ~~~
 

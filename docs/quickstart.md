@@ -33,6 +33,17 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -NoBuild
 powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -RealLlm
 ~~~
 
+Compose host mappings default to API `5198` and PostgreSQL `5432`. Override collisions in the
+ignored `.env` file without changing container-to-container URLs:
+
+~~~dotenv
+IC_API_PORT=5298
+IC_POSTGRES_PORT=55432
+~~~
+
+`scripts/demo.ps1` resolves the effective API mapping from Compose, so its health check and the
+Tester output follow `IC_API_PORT`.
+
 Stop demo services with:
 
 ~~~powershell

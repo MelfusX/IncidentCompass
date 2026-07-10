@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-incidentcompass}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-incidentcompass_dev_password}
     ports:
-      - "5432:5432"
+      - "${IC_POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -32,7 +32,7 @@ services:
       IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
       IncidentCompass__Memory__Seed__SourceDirectory: /app/samples
     ports:
-      - "5198:8080"
+      - "${IC_API_PORT:-5198}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,7 +76,7 @@ services:
       dockerfile: src/IncidentCompass.Tester/Dockerfile
     environment:
       INCIDENTCOMPASS_TESTER_BASE_URL: http://api:8080
-      INCIDENTCOMPASS_TESTER_PUBLIC_BASE_URL: http://localhost:5198
+      INCIDENTCOMPASS_TESTER_PUBLIC_BASE_URL: http://localhost:${IC_API_PORT:-5198}
     depends_on:
       api:
         condition: service_healthy

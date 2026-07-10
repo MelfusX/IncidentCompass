@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-Nothing yet.
+- Added `IC_API_PORT` and `IC_POSTGRES_PORT` overrides for Compose host mappings while keeping
+  internal service ports stable.
 
 ## 0.1.0 - 2026-07-04
 

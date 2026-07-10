@@ -40,7 +40,17 @@ try {
 
     Invoke-DemoCompose @("up", "-d", "--force-recreate", "postgres", "api", "worker")
 
-    $healthUrl = "http://localhost:5198/api/v1/health"
+    $apiPortBinding = & docker @composeArgs port api 8080
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker compose port api 8080 failed with exit code $LASTEXITCODE."
+    }
+
+    $apiPortMatch = [regex]::Match(($apiPortBinding | Select-Object -First 1), ':(?<port>[0-9]+)$')
+    if (-not $apiPortMatch.Success) {
+        throw "Could not resolve the API host port from '$apiPortBinding'."
+    }
+
+    $healthUrl = "http://localhost:$($apiPortMatch.Groups['port'].Value)/api/v1/health"
     $deadline = (Get-Date).AddMinutes(3)
     $healthy = $false
     while ((Get-Date) -lt $deadline) {

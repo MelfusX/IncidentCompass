@@ -51,6 +51,10 @@ docker compose --profile demo down --volumes
   API only over HTTP. The project has no references to Application, Domain or Infrastructure; it
   depends only on the .NET runtime libraries used by HttpClient and JSON serialization.
 
+Host mappings use `IC_API_PORT` and `IC_POSTGRES_PORT`, defaulting to `5198` and `5432`. Internal
+Compose URLs stay on `api:8080` and `postgres:5432`, so changing host ports does not change service
+configuration. Put overrides in the ignored `.env` file.
+
 Compose waits for PostgreSQL health before starting the hosts, checks API readiness with GET
 /health, and uses a process-level Worker health check before running the Tester. API and Worker
 still use restart-on-failure because config warmup intentionally fails fast if durable storage is
