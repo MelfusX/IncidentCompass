@@ -4,6 +4,7 @@ using System.Text.Json;
 using Google.Protobuf;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,6 +100,53 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
             "SELECT redacted_payload->>'groupingRuleId' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
             ("job_id", selectedFirst.JobId!.Value)));
     }
+    [DockerAvailableFact]
+    public async Task IngestSignal_ServiceScopedSuppressionPolicyPersistsEffectiveFacts()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var envelope = TesterEnvelope("suppression-extended", "prod", "TimeoutException", "Scoped suppression probe timed out", "/suppression-probe");
+
+        var first = await PostIngestAsync(scope.Client, envelope);
+        await ExecuteAsync(
+            scope.ConnectionString,
+            "UPDATE incidentcompass.faults SET created_at_utc = now() - interval '3 hours', completed_at_utc = now() - interval '2 minutes', status = 'Completed' WHERE id = @id;",
+            ("id", first.FaultId));
+
+        var second = await PostIngestAsync(scope.Client, envelope);
+
+        Assert.True(second.IsSuppressed);
+        Assert.False(second.IsNewJob);
+        Assert.Equal(first.FaultId, second.FaultId);
+        Assert.Equal(
+            "service-extended",
+            await ScalarAsync<string>(scope.ConnectionString, "SELECT suppression_rule_id FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", second.SignalId)));
+        Assert.Equal(
+            60,
+            await ScalarAsync<int>(scope.ConnectionString, "SELECT effective_suppression_window_minutes FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", second.SignalId)));
+        Assert.Equal(
+            "service-extended",
+            await ScalarAsync<string>(scope.ConnectionString, "SELECT redacted_payload->>'suppressionRuleId' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';", ("job_id", first.JobId!.Value)));
+    }
+
+    [DockerAvailableFact]
+    public async Task IngestSignal_TriggerContextRehydratesScopedSuppressionPolicy()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var ingested = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("suppression-extended", "prod", "TimeoutException", "Context policy probe timed out", "/suppression-context"));
+        using var services = scope.Factory.Services.CreateScope();
+        var repository = services.ServiceProvider.GetRequiredService<ITriageJobInvestigationContextRepository>();
+
+        var context = await repository.GetAsync(
+            ingested.JobId!.Value,
+            attempt: 1,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("service-extended", context.TriggerSignal.SuppressionRuleId);
+        Assert.Equal(60, context.TriggerSignal.EffectiveSuppressionWindowMinutes);
+    }
+
     public async Task OtlpTraceExport_ErrorSpanFlowsThroughTheOtelNormalizer()
     {
         using var scope = await CreateScopeAsync();

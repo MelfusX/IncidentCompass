@@ -29,6 +29,7 @@ internal static class FaultGroupingSettingsLoadValidator
         }
 
         ValidateFingerprintRules(settings.Rules);
+        ValidateSuppressionRules(settings.SuppressionPolicies);
 
         if (settings.MassIssue.MinNeighborCount <= 0)
         {
@@ -83,6 +84,29 @@ internal static class FaultGroupingSettingsLoadValidator
         }
     }
 
+
+    private static void ValidateSuppressionRules(IReadOnlyCollection<SuppressionRuleSettings> rules)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < rules.Count; index++)
+        {
+            var rule = rules.ElementAt(index);
+            var prefix = $"FaultGrouping.SuppressionRules[{index}]";
+            RequireNonBlank(prefix + ".Id", rule.Id);
+            if (!ids.Add(rule.Id))
+            {
+                throw Invalid(prefix + ".Id", rule.Id, "a unique rule id");
+            }
+
+            if (rule.SilenceWindowMinutes <= 0)
+            {
+                throw Invalid(prefix + ".SilenceWindowMinutes", rule.SilenceWindowMinutes.ToString(), "a positive integer");
+            }
+
+            ValidateSelector(prefix + ".ServiceName", rule.ServiceName);
+            ValidateSelector(prefix + ".Severity", rule.Severity);
+        }
+    }
     private static void ValidateSelector(string settingName, string? value)
     {
         if (value is not null)

@@ -42,6 +42,12 @@ public sealed class FaultGroupingCoordinator(
     {
         var settings = configuration.FaultGrouping;
         var now = timeProvider.GetUtcNow();
+        var suppressionPolicy = SuppressionPolicyResolver.Resolve(settings, draftSignal);
+        draftSignal = draftSignal with
+        {
+            SuppressionRuleId = suppressionPolicy.Id,
+            EffectiveSuppressionWindowMinutes = suppressionPolicy.SilenceWindowMinutes
+        };
         if (draftSignal.FingerprintStrength == FingerprintStrength.Weak)
         {
             return await CreateNewFaultAsync(draftSignal, recurrenceOfFaultId: null, configuration, now, cancellationToken);
@@ -60,7 +66,7 @@ public sealed class FaultGroupingCoordinator(
             draftSignal.GroupingRuleId, draftSignal.GroupingRuleVersion, cancellationToken);
         if (closedFault is not null &&
             closedFault.CompletedAtUtc is not null &&
-            closedFault.CompletedAtUtc.Value >= now.AddMinutes(-settings.SilenceWindowMinutes))
+            closedFault.CompletedAtUtc.Value >= now.AddMinutes(-draftSignal.EffectiveSuppressionWindowMinutes!.Value))
         {
             var finalSignal = draftSignal with
             {

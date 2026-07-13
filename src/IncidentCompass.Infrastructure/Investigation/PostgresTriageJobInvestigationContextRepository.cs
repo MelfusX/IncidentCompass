@@ -87,7 +87,8 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
                    parent_span_id, service_name, environment, operation_name, severity,
                    error_type, error_message, summary, description, http_method,
                    http_route, http_status_code, duration_ms, attributes::text, body::text,
-                   observed_at_utc, received_at_utc, delivery_key
+                   observed_at_utc, received_at_utc, delivery_key,
+                   suppression_rule_id, effective_suppression_window_minutes
             FROM incidentcompass.signals
             WHERE id = @signal_id;
             """, connection);
@@ -136,7 +137,9 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             reader.IsDBNull(33) ? null : reader.GetString(33))
         {
             GroupingRuleId = reader.GetString(7),
-            GroupingRuleVersion = reader.GetInt32(8)
+            GroupingRuleVersion = reader.GetInt32(8),
+            SuppressionRuleId = reader.IsDBNull(34) ? null : reader.GetString(34),
+            EffectiveSuppressionWindowMinutes = reader.IsDBNull(35) ? null : reader.GetInt32(35)
         };
     }
     private static async Task<IReadOnlyCollection<TriageArtifact>> LoadArtifactsAsync(

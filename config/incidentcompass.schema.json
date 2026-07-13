@@ -202,7 +202,19 @@
         "OperationName": { "$ref": "#/$defs/nonBlankString" },
         "Source": { "enum": ["otel", "user", "tester", "manual"] }
       }
-    },    "faultGrouping": {
+    },
+    "suppressionRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Id", "SilenceWindowMinutes"],
+      "properties": {
+        "Id": { "$ref": "#/$defs/nonBlankString" },
+        "SilenceWindowMinutes": { "type": "integer", "minimum": 1 },
+        "ServiceName": { "$ref": "#/$defs/nonBlankString" },
+        "Severity": { "$ref": "#/$defs/nonBlankString" }
+      }
+    },
+    "faultGrouping": {
       "type": "object",
       "additionalProperties": false,
       "required": ["LookbackMinutes", "SilenceWindowMinutes", "FingerprintVersion", "MassIssue"],
@@ -213,6 +225,10 @@
         "FingerprintRules": {
           "type": "array",
           "items": { "$ref": "#/$defs/fingerprintRule" }
+        },
+        "SuppressionRules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/suppressionRule" }
         },
         "MassIssue": {
           "type": "object",

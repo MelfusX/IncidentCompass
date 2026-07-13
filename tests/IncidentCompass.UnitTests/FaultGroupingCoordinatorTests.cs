@@ -67,6 +67,61 @@ public sealed class FaultGroupingCoordinatorTests
         Assert.Equal(2, jobs.InsertedCount);
     }
     [Fact]
+    public void SuppressionPolicyResolver_PrefersSeveritySpecificRuleAndUsesDeclarationOrderForTies()
+    {
+        var settings = new FaultGroupingSettings(
+            LookbackMinutes: 15,
+            SilenceWindowMinutes: 30,
+            FingerprintVersion: 1,
+            MassIssue: new MassIssueSettings(5, "strong"),
+            SuppressionRules:
+            [
+                new SuppressionRuleSettings("service-first", 20, ServiceName: "payments-api"),
+                new SuppressionRuleSettings("service-second", 10, ServiceName: "payments-api"),
+                new SuppressionRuleSettings("service-critical", 60, ServiceName: "payments-api", Severity: "critical")
+            ]);
+
+        var criticalPolicy = SuppressionPolicyResolver.Resolve(settings, CreateDraftSignal());
+        var warningPolicy = SuppressionPolicyResolver.Resolve(settings, CreateDraftSignal(severity: "warning"));
+
+        Assert.Equal("service-critical", criticalPolicy.Id);
+        Assert.Equal(60, criticalPolicy.SilenceWindowMinutes);
+        Assert.Equal("service-first", warningPolicy.Id);
+        Assert.Equal(20, warningPolicy.SilenceWindowMinutes);
+    }
+
+    [Fact]
+    public void SuppressionPolicyResolver_UnmatchedSignalUsesGlobalFallback()
+    {
+        var settings = new FaultGroupingSettings(
+            LookbackMinutes: 15,
+            SilenceWindowMinutes: 30,
+            FingerprintVersion: 1,
+            MassIssue: new MassIssueSettings(5, "strong"),
+            SuppressionRules: [new SuppressionRuleSettings("checkout", 60, ServiceName: "checkout")]);
+
+        var policy = SuppressionPolicyResolver.Resolve(settings, CreateDraftSignal(serviceName: "payments-api"));
+
+        Assert.Equal(SuppressionPolicyResolver.DefaultPolicyId, policy.Id);
+        Assert.Equal(30, policy.SilenceWindowMinutes);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ClosedFaultAtExactSuppressionBoundary_IsSuppressed()
+    {
+        var now = new DateTimeOffset(2026, 7, 13, 12, 0, 0, TimeSpan.Zero);
+        var (coordinator, _, faults, jobs, _) = CreateHarness(new FixedTimeProvider(now));
+        var configuration = CreateConfiguration(silenceWindowMinutes: 30);
+
+        var firstOutcome = await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+        faults.CloseFault(firstOutcome.Fault.Id, now.AddMinutes(-30));
+
+        var secondOutcome = await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+
+        Assert.True(secondOutcome.IsSuppressed);
+        Assert.Equal(1, jobs.InsertedCount);
+    }
+    [Fact]
     public async Task ResolveAsync_ClosedFaultWithinSilenceWindow_AttachesSuppressedWithoutNewJob()
     {
         var (coordinator, signals, faults, jobs, _) = CreateHarness();
@@ -85,6 +140,30 @@ public sealed class FaultGroupingCoordinatorTests
         Assert.Equal(firstOutcome.Fault.Id, suppressedSignal.SuppressedByFaultId);
     }
 
+    [Fact]
+    public async Task ResolveAsync_ServiceScopedSuppressionPolicyPersistsEffectivePolicy()
+    {
+        var (coordinator, signals, faults, jobs, _) = CreateHarness();
+        var configuration = CreateConfiguration(silenceWindowMinutes: 1) with
+        {
+            FaultGrouping = CreateConfiguration(silenceWindowMinutes: 1).FaultGrouping with
+            {
+                SuppressionRules = [new SuppressionRuleSettings("payments-extended", 60, ServiceName: "payments-api")]
+            }
+        };
+
+        var firstOutcome = await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+        faults.CloseFault(firstOutcome.Fault.Id, DateTimeOffset.UtcNow.AddMinutes(-10));
+
+        var secondOutcome = await coordinator.ResolveAsync(CreateDraftSignal(), configuration, CancellationToken.None);
+
+        Assert.True(secondOutcome.IsSuppressed);
+        Assert.Equal(1, jobs.InsertedCount);
+        var suppressedSignal = Assert.Single(signals.Inserted, signal => signal.IsSuppressed);
+        Assert.Equal("payments-extended", suppressedSignal.SuppressionRuleId);
+        Assert.Equal(60, suppressedSignal.EffectiveSuppressionWindowMinutes);
+        Assert.Equal("silence_window", suppressedSignal.SuppressionReason);
+    }
     [Fact]
     public async Task ResolveAsync_OpenFaultTerminalizedBeforeAttachment_ReevaluatesAsSuppressed()
     {
@@ -237,16 +316,17 @@ public sealed class FaultGroupingCoordinatorTests
         FakeSignalRepository Signals,
         FakeFaultRepository Faults,
         FakeTriageJobRepository Jobs,
-        FakeTriageArtifactRepository Artifacts) CreateHarness()
+        FakeTriageArtifactRepository Artifacts) CreateHarness(TimeProvider? timeProvider = null)
     {
         var signals = new FakeSignalRepository();
         var faults = new FakeFaultRepository();
         var jobs = new FakeTriageJobRepository();
         var artifacts = new FakeTriageArtifactRepository();
-        var assembler = new GroundedFactsAssembler(artifacts, new AlwaysNullPriorReportSummaryProvider(), TimeProvider.System);
+        var clock = timeProvider ?? TimeProvider.System;
+        var assembler = new GroundedFactsAssembler(artifacts, new AlwaysNullPriorReportSummaryProvider(), clock);
         var neighborSetRefresher = new OpenFaultNeighborSetRefresher(signals, jobs, assembler);
         var coordinator = new FaultGroupingCoordinator(
-            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), assembler, neighborSetRefresher, TimeProvider.System);
+            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), assembler, neighborSetRefresher, clock);
         return (coordinator, signals, faults, jobs, artifacts);
     }
 
@@ -269,7 +349,8 @@ public sealed class FaultGroupingCoordinatorTests
         DateTimeOffset? observedAtUtc = null,
         string? externalId = null,
         string groupingRuleId = "default",
-        int groupingRuleVersion = 1) => new(
+        int groupingRuleVersion = 1,
+        string severity = "critical") => new(
         Id: Guid.NewGuid(),
         TenantId: "local",
         Source: "tester",
@@ -288,7 +369,7 @@ public sealed class FaultGroupingCoordinatorTests
         ServiceName: serviceName,
         Environment: environment,
         OperationName: "POST /checkout",
-        Severity: "critical",
+        Severity: severity,
         ErrorType: strength == FingerprintStrength.Strong ? "TimeoutException" : null,
         ErrorMessage: "Timeout",
         Summary: "Checkout failed",
@@ -313,6 +394,10 @@ public sealed class FaultGroupingCoordinatorTests
         return document.RootElement.Clone();
     }
 
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
     private sealed class PassThroughIntakeUnitOfWork : IIntakeUnitOfWork
     {
         public Task<TResult> ExecuteAsync<TResult>(

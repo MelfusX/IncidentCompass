@@ -37,6 +37,9 @@
     "FingerprintRules": [
       { "Id": "route-only-checkout", "Version": 2, "ServiceName": "rule-checkout", "Inputs": ["ServiceName", "Environment", "ErrorType", "HttpRoute"] }
     ],
+    "SuppressionRules": [
+      { "Id": "service-extended", "SilenceWindowMinutes": 60, "ServiceName": "suppression-extended" }
+    ],
     "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
   }
 }

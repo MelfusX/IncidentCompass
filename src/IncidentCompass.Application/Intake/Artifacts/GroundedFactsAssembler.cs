@@ -90,6 +90,8 @@ public sealed class GroundedFactsAssembler(
             ["fingerprintStrength"] = triggerSignal.FingerprintStrength.ToString(),
             ["groupingRuleId"] = triggerSignal.GroupingRuleId,
             ["groupingRuleVersion"] = triggerSignal.GroupingRuleVersion,
+            ["suppressionRuleId"] = triggerSignal.SuppressionRuleId,
+            ["effectiveSuppressionWindowMinutes"] = triggerSignal.EffectiveSuppressionWindowMinutes,
         };
 
         return CreateArtifact(job.Id, attempt: null, ArtifactKind.NeighborSet, $"fault:{fault.Id}", payload);

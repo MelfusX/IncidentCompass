@@ -38,4 +38,6 @@ public sealed record Signal(
 {
     public string GroupingRuleId { get; init; } = "default";
     public int GroupingRuleVersion { get; init; } = 1;
+    public string? SuppressionRuleId { get; init; }
+    public int? EffectiveSuppressionWindowMinutes { get; init; }
 }

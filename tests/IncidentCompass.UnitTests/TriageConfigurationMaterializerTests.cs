@@ -138,6 +138,22 @@ public sealed class TriageConfigurationMaterializerTests
 
         Assert.Contains("FaultGrouping.FingerprintRules[0].Inputs", exception.Message, StringComparison.Ordinal);
     }
+    [Fact]
+    public void Materialize_NonPositiveSuppressionRuleWindow_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        var faultGrouping = (JsonObject)node["FaultGrouping"]!;
+        faultGrouping["SuppressionRules"] = new JsonArray
+        {
+            new JsonObject { ["Id"] = "checkout", ["SilenceWindowMinutes"] = 0, ["ServiceName"] = "checkout" }
+        };
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash", node, ResolvedReferences()));
+
+        Assert.Contains("FaultGrouping.SuppressionRules[0].SilenceWindowMinutes", exception.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("LookbackMinutes", "FaultGrouping.LookbackMinutes")]
     [InlineData("SilenceWindowMinutes", "FaultGrouping.SilenceWindowMinutes")]

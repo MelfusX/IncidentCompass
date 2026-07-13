@@ -14,14 +14,14 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.signals (
                 id, tenant_id, source, fault_id, fingerprint, fingerprint_version, grouping_rule_id, grouping_rule_version, fingerprint_strength,
-                external_id, delivery_key, is_suppressed, suppressed_by_fault_id, suppression_reason,
+                external_id, delivery_key, is_suppressed, suppressed_by_fault_id, suppression_reason, suppression_rule_id, effective_suppression_window_minutes,
                 trace_id, span_id, parent_span_id, service_name, environment, operation_name,
                 severity, error_type, error_message, summary, description,
                 http_method, http_route, http_status_code, duration_ms, attributes, body,
                 observed_at_utc, received_at_utc)
             VALUES (
                 @id, @tenant_id, @source, @fault_id, @fingerprint, @fingerprint_version, @grouping_rule_id, @grouping_rule_version, @fingerprint_strength,
-                @external_id, @delivery_key, @is_suppressed, @suppressed_by_fault_id, @suppression_reason,
+                @external_id, @delivery_key, @is_suppressed, @suppressed_by_fault_id, @suppression_reason, @suppression_rule_id, @effective_suppression_window_minutes,
                 @trace_id, @span_id, @parent_span_id, @service_name, @environment, @operation_name,
                 @severity, @error_type, @error_message, @summary, @description,
                 @http_method, @http_route, @http_status_code, @duration_ms, @attributes, @body,
@@ -42,6 +42,8 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         command.AddParameter("is_suppressed", signal.IsSuppressed);
         command.AddParameter("suppressed_by_fault_id", signal.SuppressedByFaultId);
         command.AddParameter("suppression_reason", signal.SuppressionReason);
+        command.AddParameter("suppression_rule_id", signal.SuppressionRuleId);
+        command.AddParameter("effective_suppression_window_minutes", signal.EffectiveSuppressionWindowMinutes);
         command.AddParameter("trace_id", signal.TraceId);
         command.AddParameter("span_id", signal.SpanId);
         command.AddParameter("parent_span_id", signal.ParentSpanId);
