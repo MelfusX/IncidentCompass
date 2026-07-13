@@ -68,7 +68,7 @@ complete the multi-turn trajectory or reach a correct conclusion.
   adapters for tests and deterministic checks.
 - Configured orchestrator and worker roles, typed output schemas, role-scoped tools and ledger-backed
   policy decisions.
-- PostgreSQL/pgvector incident memory with governed `memory_search` and file-backed seed identity.
+- PostgreSQL/pgvector incident memory with governed `memory_search`, file-backed seed identity and snapshotted per-service current-release markers for documentation fit.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging and an HTTP-only Tester that does not reference application assemblies.
 

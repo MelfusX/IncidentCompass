@@ -77,6 +77,14 @@ the stable database identity; a content change updates and re-embeds that item, 
 deactivated from retrieval. This keeps provenance simple and prevents an edited file from leaving a
 second stale live item. Runtime resync is opt-in and bounded; operators may enable it for reviewed file changes without adding a memory write API. The default remains startup-only synchronization.
 
+## Documentation Fit Is Evidence Classification
+
+`CurrentReleases` is a manually maintained per-service marker in the snapshotted triage configuration.
+Retrieved memory is labeled from its service and release metadata before report publication. The backend
+can show current, stale-only, mixed historical, missing and multiple-current-document states, but it
+cannot prove that two documents agree semantically or that a runbook is operationally correct. Multiple
+current matches therefore add an explicit review limitation rather than being silently resolved by the
+model.
 ## Memory Embedding Model Changes Require Re-Embedding
 
 Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. Changing the configured embedding provider or model should be paired with a full memory re-seed or migration.

@@ -166,7 +166,8 @@ public sealed class AgentToolPolicyTests
             TestTriageConfiguration.Create(),
             RoleName: "test",
             ToolName: toolName,
-            TenantId: "tenant-a");
+            TenantId: "tenant-a",
+            FaultServiceName: "test-service");
     }
 
     private sealed class MetadataOnlyTestTool : IAgentTool

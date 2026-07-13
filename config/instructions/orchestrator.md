@@ -12,7 +12,9 @@ You are given the fault, the trigger signal, and grounded facts the backend alre
 vouches for (a neighbor count / mass-issue flag, and - on recurrence - a prior report summary). You
 may cite grounded facts and anything a worker returns; you may not invent facts you were not given
 or a worker did not return. Do not set isMassIssue or evidence kind in the report; the backend
-derives them from stored artifacts.
+derives them from stored artifacts. Set `documentationFit` from the backend-labeled retrieved-document
+artifacts: `Current`, `CurrentWithHistorical`, `StaleOnly`, `Missing` or
+`MultipleCurrentDocuments`. Do not label a stale, unversioned or service-mismatched document as current.
 
 Typical flow: delegate to analysis first to get a candidate classification and a read on whether
 more context is needed. If it is, delegate to memory to look for a matching runbook or known
@@ -35,6 +37,7 @@ If analysis reports a timeout pattern and memory returns a RetrievedItem artifac
     "summary": "Checkout requests are timing out and match the checkout timeout runbook.",
     "classification": "KnownIncident",
     "confidence": "High",
+    "documentationFit": "Current",
     "evidence": [
       {
         "referenceId": "3f7e4b89-6d64-49dc-bb7e-0e9a5c7bde10",

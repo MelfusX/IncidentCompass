@@ -34,7 +34,7 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
-            SELECT id, fault_id, status, summary, classification, confidence, is_mass_issue,
+            SELECT id, fault_id, status, summary, classification, confidence, documentation_fit, is_mass_issue,
                    recommended_next_action, limitations, config_hash, created_at_utc
             FROM incidentcompass.triage_reports
             WHERE id = @report_id;
@@ -54,11 +54,12 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
             reader.GetString(3),
             reader.GetString(4),
             reader.GetString(5),
-            reader.IsDBNull(6) ? null : reader.GetBoolean(6),
-            reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
-            reader.GetFieldValue<string[]>(8),
-            reader.GetString(9),
-            reader.GetDateTimeOffset(10),
+            reader.GetString(6),
+            reader.IsDBNull(7) ? null : reader.GetBoolean(7),
+            reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
+            reader.GetFieldValue<string[]>(9),
+            reader.GetString(10),
+            reader.GetDateTimeOffset(11),
             []);
     }
 

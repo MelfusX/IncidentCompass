@@ -74,7 +74,13 @@ internal sealed class WorkerToolCallExecutor(
         }
 
         var execution = await tool!.ExecuteAsync(
-            new AgentToolExecutionContext(job, configuration, roleName, toolCall.Name, investigationContext.Fault.TenantId),
+            new AgentToolExecutionContext(
+                job,
+                configuration,
+                roleName,
+                toolCall.Name,
+                investigationContext.Fault.TenantId,
+                investigationContext.Fault.ServiceName),
             validation.SanitizedArguments,
             cancellationToken);
         if (execution.Status == ToolExecutionStatus.Succeeded)

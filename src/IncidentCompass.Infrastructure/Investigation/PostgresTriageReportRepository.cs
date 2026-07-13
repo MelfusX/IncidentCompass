@@ -14,6 +14,7 @@ internal sealed class PostgresTriageReportRepository(
     ILogger<PostgresTriageReportRepository> logger) : ITriageReportRepository
 {
     private readonly PostgresReportEvidenceGrounder evidenceGrounder = new();
+    private readonly PostgresDocumentationFitResolver documentationFitResolver = new();
 
     public Task<Guid> PublishAsync(
         TriageJob job,
@@ -37,6 +38,7 @@ internal sealed class PostgresTriageReportRepository(
         try
         {
             var evidence = await evidenceGrounder.GroundAsync(connection, transaction, job, report.Evidence, cancellationToken);
+            report = documentationFitResolver.ValidateAndApply(report, evidence);
             var isMassIssue = await ReadIsMassIssueAsync(connection, transaction, job.Id, cancellationToken);
             var updated = await MarkJobSucceededAsync(connection, transaction, job, workerId, now, cancellationToken);
             if (!updated)
@@ -123,10 +125,10 @@ internal sealed class PostgresTriageReportRepository(
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.triage_reports (
                 id, fault_id, status, summary, classification, confidence, is_mass_issue,
-                recommended_next_action, limitations, config_hash, created_at_utc)
+                recommended_next_action, limitations, documentation_fit, config_hash, created_at_utc)
             VALUES (
                 @id, @fault_id, @status, @summary, @classification, @confidence, @is_mass_issue,
-                @recommended_next_action, @limitations, @config_hash, @created_at_utc)
+                @recommended_next_action, @limitations, @documentation_fit, @config_hash, @created_at_utc)
             ON CONFLICT (fault_id) DO UPDATE
             SET status = EXCLUDED.status,
                 summary = EXCLUDED.summary,
@@ -135,6 +137,7 @@ internal sealed class PostgresTriageReportRepository(
                 is_mass_issue = EXCLUDED.is_mass_issue,
                 recommended_next_action = EXCLUDED.recommended_next_action,
                 limitations = EXCLUDED.limitations,
+                documentation_fit = EXCLUDED.documentation_fit,
                 config_hash = EXCLUDED.config_hash,
                 created_at_utc = EXCLUDED.created_at_utc
             RETURNING id;
@@ -148,6 +151,7 @@ internal sealed class PostgresTriageReportRepository(
         command.AddParameter("is_mass_issue", isMassIssue);
         command.AddParameter("recommended_next_action", report.RecommendedNextAction);
         command.AddParameter("limitations", report.Limitations.ToArray());
+        command.AddParameter("documentation_fit", report.DocumentationFit.ToString());
         command.AddParameter("config_hash", job.ConfigHash);
         command.AddParameter("created_at_utc", now);
         return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;

@@ -8,7 +8,8 @@ public sealed record AgentToolExecutionContext(
     TriageConfiguration Configuration,
     string RoleName,
     string ToolName,
-    string TenantId)
+    string TenantId,
+    string FaultServiceName)
 {
     public Guid ConversationId { get; init; }
 

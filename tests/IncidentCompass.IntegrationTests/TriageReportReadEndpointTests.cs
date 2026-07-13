@@ -143,7 +143,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
 
         private static AiToolCall PublishCall(string referenceId)
         {
-            using var arguments = JsonDocument.Parse("{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Prior report citation.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review cited prior context.\"}}");
+            using var arguments = JsonDocument.Parse("{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Prior report citation.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review cited prior context.\"}}");
             return new AiToolCall("publish-prior", "publish_report", "v1", arguments.RootElement.Clone());
         }
 

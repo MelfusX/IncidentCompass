@@ -515,7 +515,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         private static AiToolCall PublishToolCall(AiModelRequest request)
         {
             var referenceId = FindPromptArtifactId(request, "TriggerSignal");
-            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Synthetic governance run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review synthetic tool output.\"}}");
+            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Synthetic governance run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review synthetic tool output.\"}}");
         }
 
         private static string FindPromptArtifactId(AiModelRequest request, string kind)

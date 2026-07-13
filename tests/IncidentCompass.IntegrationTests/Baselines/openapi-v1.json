@@ -851,6 +851,7 @@
           "summary",
           "classification",
           "confidence",
+          "documentationFit",
           "isMassIssue",
           "recommendedNextAction",
           "limitations",
@@ -878,6 +879,9 @@
             "type": "string"
           },
           "confidence": {
+            "type": "string"
+          },
+          "documentationFit": {
             "type": "string"
           },
           "isMassIssue": {

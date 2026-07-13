@@ -23,6 +23,7 @@ internal static class MockIncidentCompassReportScript
                 ["summary"] = summary,
                 ["classification"] = classification,
                 ["confidence"] = confidence,
+                ["documentationFit"] = "Missing",
                 ["evidence"] = new JsonArray(evidence.Select(static item => item.DeepClone()).ToArray()),
                 ["limitations"] = new JsonArray(limitations.Select(static item => JsonValue.Create(item) as JsonNode).ToArray()),
                 ["recommendedNextAction"] = recommendedNextAction

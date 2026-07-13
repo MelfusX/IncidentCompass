@@ -9,6 +9,7 @@ public sealed record TriageReportDetailsResponse(
     string Summary,
     string Classification,
     string Confidence,
+    string DocumentationFit,
     bool? IsMassIssue,
     string RecommendedNextAction,
     IReadOnlyList<string> Limitations,

@@ -524,7 +524,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         private static AiToolCall PublishToolCall(AiModelRequest request)
         {
             var referenceId = FindPromptArtifactId(request, "TriggerSignal");
-            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Reprompt run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review logs.\"}}");
+            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Reprompt run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review logs.\"}}");
         }
 
         private static string FindPromptArtifactId(AiModelRequest request, string kind)

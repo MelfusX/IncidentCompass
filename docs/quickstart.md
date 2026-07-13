@@ -151,6 +151,10 @@ $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=inc
 dotnet run --project src/IncidentCompass.Api --launch-profile http
 ~~~
 
+To assess documentation freshness, set the reviewed `CurrentReleases` map in the triage config, for example
+`"CurrentReleases": { "checkout-api": "0.2.0" }`. The marker is captured in the triage config snapshot;
+it is not a deployment webhook or source lookup integration.
+
 The default is startup-only synchronization. To apply file edits and removals without restarting, set
 `IncidentCompass__Memory__Seed__RuntimeResyncEnabled=true` and choose a bounded
 `IncidentCompass__Memory__Seed__RuntimeResyncIntervalSeconds` value from 1 through 86400. The metadata-only
