@@ -1,6 +1,10 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using IncidentCompass.Application.Intake.Redaction;
+using IncidentCompass.Infrastructure.ModelGateway.Mock;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
@@ -44,6 +48,78 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         Assert.Equal(0, workerOutputEvidence);
     }
 
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_RedactsCraftedMarkersBeforePersistenceArtifactsAndModelRequests()
+    {
+        const string rawIdentifier = "raw-user-redaction-e2e@example.test";
+        const string configuredAttributeSecret = "configured-customer-account-redaction-e2e";
+        var crafted = "[PSEUDONYM:v1:" + new string('a', 64) + ":" + new string('b', 64) + "]";
+        var requests = new ConcurrentQueue<AiModelRequest>();
+        using var scope = await CreateScopeAsync(services =>
+        {
+            services.RemoveAll<IAiModelClient>();
+            services.AddScoped<IAiModelClient>(_ => new CapturingMockAiModelClient(requests));
+        });
+        var response = await scope.Client.PostAsJsonAsync(
+            "/api/v1/incidents",
+            new
+            {
+                sourceKind = "tester",
+                serviceName = "redaction-e2e-" + Guid.NewGuid().ToString("N"),
+                environment = "prod",
+                observedAtUtc = DateTimeOffset.UtcNow,
+                attributes = new
+                {
+                    errorType = "TimeoutException",
+                    errorMessage = "request by " + rawIdentifier,
+                    httpRoute = "/redaction-e2e",
+                    user = new { id = rawIdentifier },
+                    password = crafted,
+                    customer = new
+                    {
+                        account = new { id = configuredAttributeSecret }
+                    }
+                },
+                payload = new
+                {
+                    user = new { email = rawIdentifier },
+                    password = crafted
+                }
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var ingested = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
+        Assert.NotNull(ingested);
+        Assert.NotNull(ingested.JobId);
+        await RunClaimedJobAsync(scope, ingested.JobId.Value, "worker-redaction-e2e", 1);
+
+        var signalText = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT concat_ws('|', error_message, summary, attributes::text, body::text) FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+        var triggerPayload = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT redacted_payload::text FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'TriggerSignal';", ("job_id", ingested.JobId.Value));
+        var canonicalUserId = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT attributes #>> '{user,id}' FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+        var password = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT attributes->>'password' FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+        var authorization = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT attributes #>> '{customer,account,id}' FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+
+        Assert.Equal("[REDACTED]", password);
+        Assert.Equal("[REDACTED]", authorization);
+        Assert.DoesNotContain(rawIdentifier, signalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(crafted, signalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(configuredAttributeSecret, signalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(rawIdentifier, triggerPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain(crafted, triggerPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain(configuredAttributeSecret, triggerPayload, StringComparison.Ordinal);
+        var modelText = string.Join("\n", requests.SelectMany(request => request.Messages).Select(message => message.Content));
+        Assert.NotEmpty(requests);
+        Assert.DoesNotContain(rawIdentifier, modelText, StringComparison.Ordinal);
+        Assert.DoesNotContain(crafted, modelText, StringComparison.Ordinal);
+        Assert.DoesNotContain(configuredAttributeSecret, modelText, StringComparison.Ordinal);
+        var pseudonymizer = scope.Factory.Services.GetRequiredService<UserIdentifierPseudonymizer>();
+        Assert.True(pseudonymizer.IsCanonicalPseudonym(JsonValue.Create(canonicalUserId), "user.id"));
+    }
     [DockerAvailableFact]
     public async Task ProcessClaimedAsync_UnverifiableQuoteIsDroppedButCitationPersists()
     {
@@ -179,6 +255,7 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
             builder.UseExplicitMockProviders();
+            builder.UseSetting("IncidentCompass:Pseudonymization:Salt", "redaction-e2e-salt");
             if (configureServices is not null)
             {
                 builder.ConfigureTestServices(configureServices);
@@ -323,6 +400,16 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         return (T)(await command.ExecuteScalarAsync())!;
     }
 
+    private sealed class CapturingMockAiModelClient(ConcurrentQueue<AiModelRequest> requests) : IAiModelClient
+    {
+        private readonly MockAiModelClient inner = new();
+
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            requests.Enqueue(request);
+            return inner.CompleteAsync(request, cancellationToken);
+        }
+    }
     private sealed class WorkerOutputThenTriggerEvidenceModelClient : IAiModelClient
     {
         public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)

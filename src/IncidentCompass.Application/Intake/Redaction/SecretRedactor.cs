@@ -30,6 +30,12 @@ internal static partial class SecretRedactor
         Redact(signal, RedactionSettings.Default);
 
     public static NormalizedSignal Redact(NormalizedSignal signal, RedactionSettings settings) =>
+        Redact(signal, settings, canonicalPseudonymVerifier: null);
+
+    public static NormalizedSignal Redact(
+        NormalizedSignal signal,
+        RedactionSettings settings,
+        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier) =>
         signal with
         {
             ExternalId = RedactText(signal.ExternalId, settings),
@@ -46,8 +52,8 @@ internal static partial class SecretRedactor
             Summary = SignalTextTruncator.TruncateSummary(RedactRequiredText(signal.Summary, settings)),
             HttpMethod = RedactText(signal.HttpMethod, settings),
             HttpRoute = RedactText(signal.HttpRoute, settings),
-            Attributes = RedactJsonNode(signal.Attributes, settings),
-            Body = RedactJsonNode(signal.Body, settings),
+            Attributes = RedactJsonNode(signal.Attributes, settings, canonicalPseudonymVerifier),
+            Body = RedactJsonNode(signal.Body, settings, canonicalPseudonymVerifier),
         };
 
     private static string RedactRequiredText(string text, RedactionSettings settings) =>
@@ -80,20 +86,34 @@ internal static partial class SecretRedactor
         RedactJsonNode(node, RedactionSettings.Default);
 
     public static JsonNode RedactJsonNode(JsonNode node, RedactionSettings settings) =>
-        RedactNode(node, settings, string.Empty);
+        RedactJsonNode(node, settings, canonicalPseudonymVerifier: null);
 
-    private static JsonNode RedactNode(JsonNode node, RedactionSettings settings, string path)
+    private static JsonNode RedactJsonNode(
+        JsonNode node,
+        RedactionSettings settings,
+        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier) =>
+        RedactNode(node, settings, string.Empty, canonicalPseudonymVerifier);
+
+    private static JsonNode RedactNode(
+        JsonNode node,
+        RedactionSettings settings,
+        string path,
+        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier)
     {
         return node switch
         {
-            JsonObject jsonObject => RedactObject(jsonObject, settings, path),
-            JsonArray jsonArray => RedactArray(jsonArray, settings, path),
+            JsonObject jsonObject => RedactObject(jsonObject, settings, path, canonicalPseudonymVerifier),
+            JsonArray jsonArray => RedactArray(jsonArray, settings, path, canonicalPseudonymVerifier),
             JsonValue jsonValue => RedactValue(jsonValue, settings),
             _ => node.DeepClone(),
         };
     }
 
-    private static JsonObject RedactObject(JsonObject jsonObject, RedactionSettings settings, string path)
+    private static JsonObject RedactObject(
+        JsonObject jsonObject,
+        RedactionSettings settings,
+        string path,
+        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier)
     {
         var result = new JsonObject();
         foreach (var property in jsonObject)
@@ -101,7 +121,7 @@ internal static partial class SecretRedactor
             var propertyPath = string.IsNullOrEmpty(path) ? property.Key : path + "." + property.Key;
             if (IsSensitiveProperty(property.Key, propertyPath, settings))
             {
-                result[property.Key] = IsPseudonym(property.Value)
+                result[property.Key] = canonicalPseudonymVerifier?.Invoke(property.Value, propertyPath) == true
                     ? property.Value!.DeepClone()
                     : "[REDACTED]";
                 continue;
@@ -109,18 +129,22 @@ internal static partial class SecretRedactor
 
             result[property.Key] = property.Value is null
                 ? null
-                : RedactNode(property.Value, settings, propertyPath);
+                : RedactNode(property.Value, settings, propertyPath, canonicalPseudonymVerifier);
         }
 
         return result;
     }
 
-    private static JsonArray RedactArray(JsonArray jsonArray, RedactionSettings settings, string path)
+    private static JsonArray RedactArray(
+        JsonArray jsonArray,
+        RedactionSettings settings,
+        string path,
+        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier)
     {
         var result = new JsonArray();
         foreach (var element in jsonArray)
         {
-            result.Add(element is null ? null : RedactNode(element, settings, path));
+            result.Add(element is null ? null : RedactNode(element, settings, path, canonicalPseudonymVerifier));
         }
 
         return result;
@@ -142,12 +166,6 @@ internal static partial class SecretRedactor
         settings.AttributeKeys.Any(candidate =>
             string.Equals(candidate, key, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(candidate, path, StringComparison.OrdinalIgnoreCase));
-
-    private static bool IsPseudonym(JsonNode? value) =>
-        value is JsonValue jsonValue &&
-        jsonValue.GetValueKind() == System.Text.Json.JsonValueKind.String &&
-        jsonValue.GetValue<string>().StartsWith(UserIdentifierPseudonymizer.Prefix, StringComparison.Ordinal);
-
     [GeneratedRegex(@"Bearer\s+[A-Za-z0-9\-_\.=]{10,}", RegexOptions.IgnoreCase)]
     private static partial Regex BearerTokenPattern();
 

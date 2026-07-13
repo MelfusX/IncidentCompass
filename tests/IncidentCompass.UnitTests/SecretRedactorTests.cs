@@ -169,8 +169,9 @@ public sealed class SecretRedactorTests
             UserIdentifierAttributes: ["user.id"]);
         var signal = CreateSignal(JsonNode.Parse("""{"user":{"id":"operator-42"}}""")!);
 
-        var first = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions { Salt = "salt-one" }))
-            .Protect(signal, settings);
+        var pseudonymizer = new UserIdentifierPseudonymizer(
+            Options.Create(new PseudonymizationOptions { Salt = "salt-one" }));
+        var first = pseudonymizer.Protect(signal, settings);
         var repeated = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions { Salt = "salt-one" }))
             .Protect(signal, settings);
         var rotated = new UserIdentifierPseudonymizer(Options.Create(new PseudonymizationOptions { Salt = "salt-two" }))
@@ -181,7 +182,7 @@ public sealed class SecretRedactorTests
         Assert.Equal(firstValue, repeated.Attributes["user"]!["id"]!.GetValue<string>());
         Assert.NotEqual(firstValue, rotated.Attributes["user"]!["id"]!.GetValue<string>());
 
-        var redacted = SecretRedactor.Redact(first, settings);
+        var redacted = SecretRedactor.Redact(first, settings, pseudonymizer.IsCanonicalPseudonym);
         Assert.Equal(firstValue, redacted.Attributes["user"]!["id"]!.GetValue<string>());
         Assert.DoesNotContain("operator-42", redacted.Attributes.ToJsonString(), StringComparison.Ordinal);
     }
@@ -198,6 +199,53 @@ public sealed class SecretRedactorTests
         Assert.Equal("[REDACTED]", protectedSignal.Attributes["user"]!["id"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void Redact_CraftedPseudonymLikeSensitiveValuesAreRedacted()
+    {
+        var settings = new RedactionSettings(
+            AttributeKeys: ["password", "user.id"],
+            Patterns: [],
+            UserIdentifierAttributes: ["user.id"]);
+        var signal = CreateSignal(JsonNode.Parse("""
+            {"password":"[PSEUDONYM:v1:attacker-secret]","user":{"id":"[PSEUDONYM:v1:forged]"}}
+            """)!);
+
+        var redacted = SecretRedactor.Redact(signal, settings);
+
+        Assert.Equal("[REDACTED]", redacted.Attributes["password"]!.GetValue<string>());
+        Assert.Equal("[REDACTED]", redacted.Attributes["user"]!["id"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Redact_CanonicalPseudonymCannotBeReplayedAtAnotherSensitivePath()
+    {
+        var settings = new RedactionSettings(
+            AttributeKeys: ["password", "user.id"],
+            Patterns: [],
+            UserIdentifierAttributes: ["user.id"]);
+        var pseudonymizer = new UserIdentifierPseudonymizer(
+            Options.Create(new PseudonymizationOptions { Salt = "salt-one" }));
+        var protectedSignal = pseudonymizer.Protect(
+            CreateSignal(JsonNode.Parse("""{"user":{"id":"operator-42"}}""")!),
+            settings);
+        var canonicalValue = protectedSignal.Attributes["user"]!["id"]!.GetValue<string>();
+        protectedSignal = protectedSignal with
+        {
+            Attributes = new JsonObject
+            {
+                ["password"] = canonicalValue,
+                ["user"] = new JsonObject { ["id"] = canonicalValue }
+            }
+        };
+
+        var redacted = SecretRedactor.Redact(
+            protectedSignal,
+            settings,
+            pseudonymizer.IsCanonicalPseudonym);
+
+        Assert.Equal("[REDACTED]", redacted.Attributes["password"]!.GetValue<string>());
+        Assert.Equal(canonicalValue, redacted.Attributes["user"]!["id"]!.GetValue<string>());
+    }
     private static NormalizedSignal CreateSignal(JsonNode attributes) => new(
         Source: "tester",
         ExternalId: null,
