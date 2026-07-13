@@ -138,6 +138,8 @@ public sealed class MemoryOnlyCompositionTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             DateTimeOffset windowStartUtc,
             DateTimeOffset windowEndUtc,
             CancellationToken cancellationToken) => Task.FromResult(0);
@@ -151,6 +153,8 @@ public sealed class MemoryOnlyCompositionTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
 
         public Task<Fault?> FindMostRecentClosedFaultAsync(
@@ -159,6 +163,8 @@ public sealed class MemoryOnlyCompositionTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
 
         public Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken) => Task.FromResult<Fault?>(fault);

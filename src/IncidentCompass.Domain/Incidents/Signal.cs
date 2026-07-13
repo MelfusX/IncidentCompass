@@ -34,4 +34,8 @@ public sealed record Signal(
     JsonElement Body,
     DateTimeOffset ObservedAtUtc,
     DateTimeOffset ReceivedAtUtc,
-    string? DeliveryKey);
+    string? DeliveryKey)
+{
+    public string GroupingRuleId { get; init; } = "default";
+    public int GroupingRuleVersion { get; init; } = 1;
+}

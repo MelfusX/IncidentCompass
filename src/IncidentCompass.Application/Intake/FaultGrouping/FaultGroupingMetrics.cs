@@ -18,6 +18,8 @@ internal static class FaultGroupingMetrics
             signal.Environment,
             signal.Fingerprint!,
             signal.FingerprintVersion!.Value,
+            signal.GroupingRuleId,
+            signal.GroupingRuleVersion,
             windowStart,
             signal.ObservedAtUtc,
             cancellationToken);

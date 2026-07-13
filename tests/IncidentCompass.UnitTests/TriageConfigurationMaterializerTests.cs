@@ -119,6 +119,25 @@ public sealed class TriageConfigurationMaterializerTests
     }
 
 
+    [Fact]
+    public void Materialize_FingerprintRuleWithUnknownInput_FailsLoadValidation()
+    {
+        var node = ValidConfigNode();
+        var faultGrouping = (JsonObject)node["FaultGrouping"]!;
+        faultGrouping["FingerprintRules"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["Id"] = "checkout-v2",
+                ["Version"] = 2,
+                ["Inputs"] = new JsonArray("UnsupportedInput")
+            }
+        };
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() => CreateMaterializer().Materialize("hash", node, ResolvedReferences()));
+
+        Assert.Contains("FaultGrouping.FingerprintRules[0].Inputs", exception.Message, StringComparison.Ordinal);
+    }
     [Theory]
     [InlineData("LookbackMinutes", "FaultGrouping.LookbackMinutes")]
     [InlineData("SilenceWindowMinutes", "FaultGrouping.SilenceWindowMinutes")]

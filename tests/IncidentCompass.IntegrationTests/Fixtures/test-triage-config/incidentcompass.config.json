@@ -34,6 +34,9 @@
     "LookbackMinutes": 15,
     "SilenceWindowMinutes": 1,
     "FingerprintVersion": 1,
+    "FingerprintRules": [
+      { "Id": "route-only-checkout", "Version": 2, "ServiceName": "rule-checkout", "Inputs": ["ServiceName", "Environment", "ErrorType", "HttpRoute"] }
+    ],
     "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
   }
 }

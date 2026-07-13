@@ -88,6 +88,8 @@ public sealed class GroundedFactsAssembler(
             ["minNeighborCountThreshold"] = settings.MassIssue.MinNeighborCount,
             ["minFingerprintStrengthThreshold"] = settings.MassIssue.MinFingerprintStrength,
             ["fingerprintStrength"] = triggerSignal.FingerprintStrength.ToString(),
+            ["groupingRuleId"] = triggerSignal.GroupingRuleId,
+            ["groupingRuleVersion"] = triggerSignal.GroupingRuleVersion,
         };
 
         return CreateArtifact(job.Id, attempt: null, ArtifactKind.NeighborSet, $"fault:{fault.Id}", payload);

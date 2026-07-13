@@ -48,14 +48,16 @@ public sealed class FaultGroupingCoordinator(
         }
         var openFault = await faultRepository.FindOpenFaultAsync(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
-            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken);
+            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value,
+            draftSignal.GroupingRuleId, draftSignal.GroupingRuleVersion, cancellationToken);
         if (openFault is not null)
         {
             return await AttachToOpenFaultAsync(draftSignal, openFault, configuration, cancellationToken);
         }
         var closedFault = await faultRepository.FindMostRecentClosedFaultAsync(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
-            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken);
+            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value,
+            draftSignal.GroupingRuleId, draftSignal.GroupingRuleVersion, cancellationToken);
         if (closedFault is not null &&
             closedFault.CompletedAtUtc is not null &&
             closedFault.CompletedAtUtc.Value >= now.AddMinutes(-settings.SilenceWindowMinutes))
@@ -141,7 +143,11 @@ public sealed class FaultGroupingCoordinator(
             CorrelationId: draftSignal.ExternalId,
             CreatedAtUtc: now,
             CompletedAtUtc: null,
-            RecurrenceOf: recurrenceOfFaultId);
+            RecurrenceOf: recurrenceOfFaultId)
+        {
+            GroupingRuleId = draftSignal.GroupingRuleId,
+            GroupingRuleVersion = draftSignal.GroupingRuleVersion
+        };
 
         var insertedFault = await faultRepository.TryInsertAsync(candidateFault, cancellationToken);
         if (insertedFault is null)
@@ -171,7 +177,8 @@ public sealed class FaultGroupingCoordinator(
     {
         var winningFault = await faultRepository.FindOpenFaultAsync(
             draftSignal.TenantId, draftSignal.ServiceName, draftSignal.Environment,
-            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value, cancellationToken)
+            draftSignal.Fingerprint!, draftSignal.FingerprintVersion!.Value,
+            draftSignal.GroupingRuleId, draftSignal.GroupingRuleVersion, cancellationToken)
             ?? throw new InvariantViolationException("Lost the fault-creation race but no open fault was found afterward.");
         winningFault = await LockOpenFaultAsync(winningFault.Id, cancellationToken);
         await signalRepository.AttachToFaultAsync(draftSignal.Id, winningFault.Id, cancellationToken);

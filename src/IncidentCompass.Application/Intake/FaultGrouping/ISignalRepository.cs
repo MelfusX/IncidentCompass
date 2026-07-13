@@ -30,6 +30,8 @@ public interface ISignalRepository
         string environment,
         string fingerprint,
         int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion,
         DateTimeOffset windowStartUtc,
         DateTimeOffset windowEndUtc,
         CancellationToken cancellationToken);

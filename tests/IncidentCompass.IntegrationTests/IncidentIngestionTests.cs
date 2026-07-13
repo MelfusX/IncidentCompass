@@ -68,6 +68,37 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     }
 
     [DockerAvailableFact]
+    public async Task IngestSignal_ServiceScopedFingerprintRulePersistsAndSeparatesGenerations()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var selectedFirst = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("rule-checkout", "prod", "TimeoutException", "node-a timed out", "/checkout"));
+        var selectedSecond = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("rule-checkout", "prod", "TimeoutException", "node-b timed out", "/checkout"));
+        var defaultFirst = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("default-checkout", "prod", "TimeoutException", "node-a timed out", "/checkout"));
+        var defaultSecond = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("default-checkout", "prod", "TimeoutException", "node-b timed out", "/checkout"));
+
+        Assert.Equal(selectedFirst.FaultId, selectedSecond.FaultId);
+        Assert.NotEqual(defaultFirst.FaultId, defaultSecond.FaultId);
+        Assert.Equal("route-only-checkout", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT grouping_rule_id FROM incidentcompass.signals WHERE id = @signal_id;",
+            ("signal_id", selectedFirst.SignalId)));
+        Assert.Equal(2, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT grouping_rule_version FROM incidentcompass.faults WHERE id = @fault_id;",
+            ("fault_id", selectedFirst.FaultId)));
+        Assert.Equal("route-only-checkout", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'groupingRuleId' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
+            ("job_id", selectedFirst.JobId!.Value)));
+    }
     public async Task OtlpTraceExport_ErrorSpanFlowsThroughTheOtelNormalizer()
     {
         using var scope = await CreateScopeAsync();

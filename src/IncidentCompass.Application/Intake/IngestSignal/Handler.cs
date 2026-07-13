@@ -29,11 +29,10 @@ public sealed class IngestSignalCommandHandler(
             pseudonymized,
             configuration.Redaction,
             pseudonymizer.IsCanonicalPseudonym);
-        var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping.FingerprintVersion);
+        var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping);
         var draftSignal = BuildSignal(
             redacted,
             fingerprint,
-            configuration.FaultGrouping.FingerprintVersion,
             configuration.Ingestion.DefaultTenant,
             receivedAtUtc);
 
@@ -104,7 +103,6 @@ public sealed class IngestSignalCommandHandler(
     private static Signal BuildSignal(
         NormalizedSignal redacted,
         FingerprintResult fingerprint,
-        int fingerprintVersion,
         string tenantId,
         DateTimeOffset receivedAtUtc)
     {
@@ -114,7 +112,7 @@ public sealed class IngestSignalCommandHandler(
             Source: redacted.Source,
             FaultId: null,
             Fingerprint: fingerprint.Value,
-            FingerprintVersion: fingerprintVersion,
+            FingerprintVersion: fingerprint.EffectiveRule.Version,
             FingerprintStrength: fingerprint.Strength,
             CanGroup: fingerprint.Strength == FingerprintStrength.Strong,
             ExternalId: redacted.ExternalId,
@@ -140,6 +138,10 @@ public sealed class IngestSignalCommandHandler(
             Body: CanonicalJsonSerializer.ToElement(redacted.Body),
             ObservedAtUtc: redacted.ObservedAtUtc,
             ReceivedAtUtc: receivedAtUtc,
-            DeliveryKey: CreateDeliveryKey(redacted));
+            DeliveryKey: CreateDeliveryKey(redacted))
+        {
+            GroupingRuleId = fingerprint.EffectiveRule.Id,
+            GroupingRuleVersion = fingerprint.EffectiveRule.Version
+        };
     }
 }

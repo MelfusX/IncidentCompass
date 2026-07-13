@@ -53,6 +53,20 @@ public sealed class FaultGroupingCoordinatorTests
     }
 
     [Fact]
+    public async Task ResolveAsync_DifferentEffectiveRuleIdentity_DoesNotAttachToOpenFault()
+    {
+        var (coordinator, _, _, jobs, _) = CreateHarness();
+        var configuration = CreateConfiguration();
+
+        var first = await coordinator.ResolveAsync(
+            CreateDraftSignal(groupingRuleId: "checkout-route", groupingRuleVersion: 2), configuration, CancellationToken.None);
+        var second = await coordinator.ResolveAsync(
+            CreateDraftSignal(groupingRuleId: "payments-route", groupingRuleVersion: 2), configuration, CancellationToken.None);
+
+        Assert.NotEqual(first.Fault.Id, second.Fault.Id);
+        Assert.Equal(2, jobs.InsertedCount);
+    }
+    [Fact]
     public async Task ResolveAsync_ClosedFaultWithinSilenceWindow_AttachesSuppressedWithoutNewJob()
     {
         var (coordinator, signals, faults, jobs, _) = CreateHarness();
@@ -253,7 +267,9 @@ public sealed class FaultGroupingCoordinatorTests
         string serviceName = "payments-api",
         string environment = "prod",
         DateTimeOffset? observedAtUtc = null,
-        string? externalId = null) => new(
+        string? externalId = null,
+        string groupingRuleId = "default",
+        int groupingRuleVersion = 1) => new(
         Id: Guid.NewGuid(),
         TenantId: "local",
         Source: "tester",
@@ -285,7 +301,11 @@ public sealed class FaultGroupingCoordinatorTests
         Body: EmptyJson(),
         ObservedAtUtc: observedAtUtc ?? DateTimeOffset.UtcNow,
         ReceivedAtUtc: DateTimeOffset.UtcNow,
-        DeliveryKey: null);
+        DeliveryKey: null)
+        {
+            GroupingRuleId = groupingRuleId,
+            GroupingRuleVersion = groupingRuleVersion
+        };
 
     private static JsonElement EmptyJson()
     {
@@ -327,6 +347,8 @@ public sealed class FaultGroupingCoordinatorTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             DateTimeOffset windowStartUtc,
             DateTimeOffset windowEndUtc,
             CancellationToken cancellationToken)
@@ -335,6 +357,7 @@ public sealed class FaultGroupingCoordinatorTests
                 .Where(s =>
                     s.TenantId == tenantId && s.ServiceName == serviceName && s.Environment == environment &&
                     s.Fingerprint == fingerprint && s.FingerprintVersion == fingerprintVersion &&
+                    s.GroupingRuleId == groupingRuleId && s.GroupingRuleVersion == groupingRuleVersion &&
                     s.ObservedAtUtc >= windowStartUtc && s.ObservedAtUtc <= windowEndUtc)
                 .Select(NeighborIdentity)
                 .Distinct(StringComparer.Ordinal)
@@ -368,6 +391,7 @@ public sealed class FaultGroupingCoordinatorTests
 
         public Task<Fault?> FindOpenFaultAsync(
             string tenantId, string serviceName, string environment, string fingerprint, int fingerprintVersion,
+            string groupingRuleId, int groupingRuleVersion,
             CancellationToken cancellationToken)
         {
             if (_suppressFindOpenFaultCount > 0)
@@ -379,17 +403,20 @@ public sealed class FaultGroupingCoordinatorTests
             var match = _faults.FirstOrDefault(f =>
                 f.TenantId == tenantId && f.ServiceName == serviceName && f.Environment == environment &&
                 f.Fingerprint == fingerprint && f.FingerprintVersion == fingerprintVersion &&
+                f.GroupingRuleId == groupingRuleId && f.GroupingRuleVersion == groupingRuleVersion &&
                 f.Status is FaultStatus.Queued or FaultStatus.Analyzing);
             return Task.FromResult(match);
         }
 
         public Task<Fault?> FindMostRecentClosedFaultAsync(
             string tenantId, string serviceName, string environment, string fingerprint, int fingerprintVersion,
+            string groupingRuleId, int groupingRuleVersion,
             CancellationToken cancellationToken)
         {
             var match = _faults
                 .Where(f => f.TenantId == tenantId && f.ServiceName == serviceName && f.Environment == environment &&
                     f.Fingerprint == fingerprint && f.FingerprintVersion == fingerprintVersion &&
+                    f.GroupingRuleId == groupingRuleId && f.GroupingRuleVersion == groupingRuleVersion &&
                     f.Status is FaultStatus.Completed or FaultStatus.Failed or FaultStatus.InsufficientEvidence)
                 .OrderByDescending(f => f.CreatedAtUtc)
                 .FirstOrDefault();
@@ -407,6 +434,7 @@ public sealed class FaultGroupingCoordinatorTests
             var conflict = fault.CanGroup && _faults.Any(f =>
                 f.TenantId == fault.TenantId && f.ServiceName == fault.ServiceName && f.Environment == fault.Environment &&
                 f.Fingerprint == fault.Fingerprint && f.FingerprintVersion == fault.FingerprintVersion &&
+                f.GroupingRuleId == fault.GroupingRuleId && f.GroupingRuleVersion == fault.GroupingRuleVersion &&
                 f.CanGroup && f.Status is FaultStatus.Queued or FaultStatus.Analyzing);
             if (conflict)
             {

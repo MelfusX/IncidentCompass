@@ -11,6 +11,8 @@ public interface IFaultRepository
         string environment,
         string fingerprint,
         int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion,
         CancellationToken cancellationToken);
 
     // Matches status IN (Completed, Failed, InsufficientEvidence), ordered by CreatedAtUtc
@@ -22,6 +24,8 @@ public interface IFaultRepository
         string environment,
         string fingerprint,
         int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion,
         CancellationToken cancellationToken);
 
     // Attempts the insert; returns the inserted Fault (with any DB-assigned/defaulted values

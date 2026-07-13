@@ -13,14 +13,14 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.signals (
-                id, tenant_id, source, fault_id, fingerprint, fingerprint_version, fingerprint_strength,
+                id, tenant_id, source, fault_id, fingerprint, fingerprint_version, grouping_rule_id, grouping_rule_version, fingerprint_strength,
                 external_id, delivery_key, is_suppressed, suppressed_by_fault_id, suppression_reason,
                 trace_id, span_id, parent_span_id, service_name, environment, operation_name,
                 severity, error_type, error_message, summary, description,
                 http_method, http_route, http_status_code, duration_ms, attributes, body,
                 observed_at_utc, received_at_utc)
             VALUES (
-                @id, @tenant_id, @source, @fault_id, @fingerprint, @fingerprint_version, @fingerprint_strength,
+                @id, @tenant_id, @source, @fault_id, @fingerprint, @fingerprint_version, @grouping_rule_id, @grouping_rule_version, @fingerprint_strength,
                 @external_id, @delivery_key, @is_suppressed, @suppressed_by_fault_id, @suppression_reason,
                 @trace_id, @span_id, @parent_span_id, @service_name, @environment, @operation_name,
                 @severity, @error_type, @error_message, @summary, @description,
@@ -34,6 +34,8 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         command.AddParameter("fault_id", signal.FaultId);
         command.AddParameter("fingerprint", signal.Fingerprint);
         command.AddParameter("fingerprint_version", signal.FingerprintVersion);
+        command.AddParameter("grouping_rule_id", signal.GroupingRuleId);
+        command.AddParameter("grouping_rule_version", signal.GroupingRuleVersion);
         command.AddParameter("fingerprint_strength", signal.FingerprintStrength.ToLowerDbString());
         command.AddParameter("external_id", signal.ExternalId);
         command.AddParameter("delivery_key", signal.DeliveryKey);
@@ -131,6 +133,8 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         string environment,
         string fingerprint,
         int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion,
         DateTimeOffset windowStartUtc,
         DateTimeOffset windowEndUtc,
         CancellationToken cancellationToken)
@@ -144,6 +148,8 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
               AND environment = @environment
               AND fingerprint = @fingerprint
               AND fingerprint_version = @fingerprint_version
+              AND grouping_rule_id = @grouping_rule_id
+              AND grouping_rule_version = @grouping_rule_version
               AND observed_at_utc BETWEEN @window_start_utc AND @window_end_utc;
             """, lease.Connection, lease.Transaction);
 
@@ -152,6 +158,8 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         command.AddParameter("environment", environment);
         command.AddParameter("fingerprint", fingerprint);
         command.AddParameter("fingerprint_version", fingerprintVersion);
+        command.AddParameter("grouping_rule_id", groupingRuleId);
+        command.AddParameter("grouping_rule_version", groupingRuleVersion);
         command.AddParameter("window_start_utc", windowStartUtc);
         command.AddParameter("window_end_utc", windowEndUtc);
 

@@ -40,7 +40,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             SELECT f.id, f.trigger_signal_id, f.tenant_id, f.status, f.fingerprint,
                    f.fingerprint_version, f.fingerprint_strength, f.can_group, f.service_name,
                    f.environment, f.severity, f.correlation_id, f.created_at_utc,
-                   f.completed_at_utc, f.recurrence_of
+                   f.completed_at_utc, f.recurrence_of, f.grouping_rule_id, f.grouping_rule_version
             FROM incidentcompass.faults f
             JOIN incidentcompass.triage_jobs j ON j.fault_id = f.id
             WHERE j.id = @job_id;
@@ -65,10 +65,14 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             reader.GetString(8),
             reader.GetString(9),
             reader.IsDBNull(10) ? null : reader.GetString(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(15) ? null : reader.GetString(15),
             reader.GetDateTimeOffset(12),
             reader.IsDBNull(13) ? null : reader.GetDateTimeOffset(13),
-            reader.IsDBNull(14) ? null : reader.GetGuid(14));
+            reader.IsDBNull(14) ? null : reader.GetGuid(14))
+        {
+            GroupingRuleId = reader.GetString(15),
+            GroupingRuleVersion = reader.GetInt32(16)
+        };
     }
 
     private static async Task<Signal> LoadTriggerSignalAsync(
@@ -78,7 +82,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
     {
         await using var command = new NpgsqlCommand("""
             SELECT id, tenant_id, source, fault_id, fingerprint, fingerprint_version,
-                   fingerprint_strength, can_group, external_id, is_suppressed,
+                   fingerprint_strength, grouping_rule_id, grouping_rule_version, can_group, external_id, is_suppressed,
                    suppressed_by_fault_id, suppression_reason, trace_id, span_id,
                    parent_span_id, service_name, environment, operation_name, severity,
                    error_type, error_message, summary, description, http_method,
@@ -95,8 +99,8 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             throw new InvalidOperationException($"Trigger signal '{signalId}' was not found.");
         }
 
-        using var attributes = JsonDocument.Parse(reader.GetString(27));
-        using var body = JsonDocument.Parse(reader.GetString(28));
+        using var attributes = JsonDocument.Parse(reader.GetString(29));
+        using var body = JsonDocument.Parse(reader.GetString(30));
         return new Signal(
             reader.GetGuid(0),
             reader.GetString(1),
@@ -105,33 +109,36 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             reader.IsDBNull(4) ? null : reader.GetString(4),
             reader.IsDBNull(5) ? null : reader.GetInt32(5),
             Enum.Parse<FingerprintStrength>(reader.GetString(6), ignoreCase: true),
-            reader.GetBoolean(7),
-            reader.IsDBNull(8) ? null : reader.GetString(8),
             reader.GetBoolean(9),
-            reader.IsDBNull(10) ? null : reader.GetGuid(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11),
-            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.GetBoolean(11),
+            reader.IsDBNull(12) ? null : reader.GetGuid(12),
             reader.IsDBNull(13) ? null : reader.GetString(13),
             reader.IsDBNull(14) ? null : reader.GetString(14),
-            reader.GetString(15),
-            reader.GetString(16),
-            reader.IsDBNull(17) ? null : reader.GetString(17),
-            reader.IsDBNull(18) ? null : reader.GetString(18),
+            reader.IsDBNull(15) ? null : reader.GetString(15),
+            reader.IsDBNull(16) ? null : reader.GetString(16),
+            reader.GetString(17),
+            reader.GetString(18),
             reader.IsDBNull(19) ? null : reader.GetString(19),
             reader.IsDBNull(20) ? null : reader.GetString(20),
-            reader.GetString(21),
+            reader.IsDBNull(21) ? null : reader.GetString(21),
             reader.IsDBNull(22) ? null : reader.GetString(22),
-            reader.IsDBNull(23) ? null : reader.GetString(23),
+            reader.GetString(23),
             reader.IsDBNull(24) ? null : reader.GetString(24),
-            reader.IsDBNull(25) ? null : reader.GetInt32(25),
-            reader.IsDBNull(26) ? null : reader.GetInt32(26),
+            reader.IsDBNull(25) ? null : reader.GetString(25),
+            reader.IsDBNull(26) ? null : reader.GetString(26),
+            reader.IsDBNull(27) ? null : reader.GetInt32(27),
+            reader.IsDBNull(28) ? null : reader.GetInt32(28),
             attributes.RootElement.Clone(),
             body.RootElement.Clone(),
-            reader.GetDateTimeOffset(29),
-            reader.GetDateTimeOffset(30),
-            reader.IsDBNull(31) ? null : reader.GetString(31));
+            reader.GetDateTimeOffset(31),
+            reader.GetDateTimeOffset(32),
+            reader.IsDBNull(33) ? null : reader.GetString(33))
+        {
+            GroupingRuleId = reader.GetString(7),
+            GroupingRuleVersion = reader.GetInt32(8)
+        };
     }
-
     private static async Task<IReadOnlyCollection<TriageArtifact>> LoadArtifactsAsync(
         NpgsqlConnection connection,
         Guid jobId,

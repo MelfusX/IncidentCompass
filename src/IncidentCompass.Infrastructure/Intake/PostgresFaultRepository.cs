@@ -7,18 +7,14 @@ namespace IncidentCompass.Infrastructure.Intake;
 
 internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSourceProvider, PostgresIntakeTransactionContext transactionContext) : IFaultRepository
 {
-    private const string SelectColumns = """
-        id, trigger_signal_id, tenant_id, status, fingerprint, fingerprint_version, fingerprint_strength,
-        can_group, service_name, environment, severity, correlation_id, created_at_utc, completed_at_utc,
-        recurrence_of
-        """;
-
     public Task<Fault?> FindOpenFaultAsync(
         string tenantId,
         string serviceName,
         string environment,
         string fingerprint,
         int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion,
         CancellationToken cancellationToken)
     {
         return PostgresOperation.ExecuteAsync(
@@ -31,6 +27,8 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
                 fingerprintVersion,
                 "('Queued', 'Analyzing')",
                 orderByCreatedDesc: false,
+                groupingRuleId,
+                groupingRuleVersion,
                 cancellationToken));
     }
 
@@ -40,6 +38,8 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         string environment,
         string fingerprint,
         int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion,
         CancellationToken cancellationToken)
     {
         return PostgresOperation.ExecuteAsync(
@@ -52,6 +52,8 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
                 fingerprintVersion,
                 "('Completed', 'Failed', 'InsufficientEvidence')",
                 orderByCreatedDesc: true,
+                groupingRuleId,
+                groupingRuleVersion,
                 cancellationToken));
     }
 
@@ -61,11 +63,11 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.faults (
                 id, trigger_signal_id, tenant_id, status, fingerprint, fingerprint_version, fingerprint_strength,
-                service_name, environment, severity, correlation_id, created_at_utc, completed_at_utc, recurrence_of)
+                service_name, environment, severity, correlation_id, created_at_utc, completed_at_utc, recurrence_of, grouping_rule_id, grouping_rule_version)
             VALUES (
                 @id, @trigger_signal_id, @tenant_id, @status, @fingerprint, @fingerprint_version, @fingerprint_strength,
-                @service_name, @environment, @severity, @correlation_id, @created_at_utc, @completed_at_utc, @recurrence_of)
-            ON CONFLICT (tenant_id, service_name, environment, fingerprint, fingerprint_version)
+                @service_name, @environment, @severity, @correlation_id, @created_at_utc, @completed_at_utc, @recurrence_of, @grouping_rule_id, @grouping_rule_version)
+            ON CONFLICT (tenant_id, service_name, environment, fingerprint, fingerprint_version, grouping_rule_id, grouping_rule_version)
                 WHERE status IN ('Queued', 'Analyzing') AND can_group
                 DO NOTHING
             RETURNING id;
@@ -85,6 +87,8 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         command.AddParameter("created_at_utc", fault.CreatedAtUtc);
         command.AddParameter("completed_at_utc", fault.CompletedAtUtc);
         command.AddParameter("recurrence_of", fault.RecurrenceOf);
+        command.AddParameter("grouping_rule_id", fault.GroupingRuleId);
+        command.AddParameter("grouping_rule_version", fault.GroupingRuleVersion);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var inserted = await reader.ReadAsync(cancellationToken);
@@ -116,7 +120,7 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         var lockingClause = lockForUpdate ? "FOR UPDATE" : string.Empty;
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand($"""
-            SELECT {SelectColumns}
+            SELECT {PostgresFaultRowMapper.SelectColumns}
             FROM incidentcompass.faults
             WHERE id = @id
             {lockingClause};
@@ -125,7 +129,7 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         command.AddParameter("id", id);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? MapFault(reader) : null;
+        return await reader.ReadAsync(cancellationToken) ? PostgresFaultRowMapper.Map(reader) : null;
     }
 
     private async Task<Fault?> FindByGroupKeyAsync(
@@ -136,27 +140,31 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         int fingerprintVersion,
         string statuses,
         bool orderByCreatedDesc,
+        string groupingRuleId,
+        int groupingRuleVersion,
         CancellationToken cancellationToken)
     {
         var orderBy = orderByCreatedDesc ? "ORDER BY created_at_utc DESC" : string.Empty;
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand($"""
-            SELECT {SelectColumns}
+            SELECT {PostgresFaultRowMapper.SelectColumns}
             FROM incidentcompass.faults
             WHERE tenant_id = @tenant_id
               AND service_name = @service_name
               AND environment = @environment
               AND fingerprint = @fingerprint
               AND fingerprint_version = @fingerprint_version
+              AND grouping_rule_id = @grouping_rule_id
+              AND grouping_rule_version = @grouping_rule_version
               AND status IN {statuses}
             {orderBy}
             LIMIT 1;
             """, lease.Connection, lease.Transaction);
 
-        AddGroupKeyParameters(command, tenantId, serviceName, environment, fingerprint, fingerprintVersion);
+        AddGroupKeyParameters(command, tenantId, serviceName, environment, fingerprint, fingerprintVersion, groupingRuleId, groupingRuleVersion);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken) ? MapFault(reader) : null;
+        return await reader.ReadAsync(cancellationToken) ? PostgresFaultRowMapper.Map(reader) : null;
     }
 
     private static void AddGroupKeyParameters(
@@ -165,32 +173,17 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
         string serviceName,
         string environment,
         string fingerprint,
-        int fingerprintVersion)
+        int fingerprintVersion,
+        string groupingRuleId,
+        int groupingRuleVersion)
     {
         command.AddParameter("tenant_id", tenantId);
         command.AddParameter("service_name", serviceName);
         command.AddParameter("environment", environment);
         command.AddParameter("fingerprint", fingerprint);
         command.AddParameter("fingerprint_version", fingerprintVersion);
+        command.AddParameter("grouping_rule_id", groupingRuleId);
+        command.AddParameter("grouping_rule_version", groupingRuleVersion);
     }
 
-    private static Fault MapFault(NpgsqlDataReader reader)
-    {
-        return new Fault(
-            Id: reader.GetGuid(0),
-            TriggerSignalId: reader.GetGuid(1),
-            TenantId: reader.GetString(2),
-            Status: Enum.Parse<FaultStatus>(reader.GetString(3)),
-            Fingerprint: reader.GetString(4),
-            FingerprintVersion: reader.GetInt32(5),
-            FingerprintStrength: Enum.Parse<FingerprintStrength>(reader.GetString(6), ignoreCase: true),
-            CanGroup: reader.GetBoolean(7),
-            ServiceName: reader.GetString(8),
-            Environment: reader.GetString(9),
-            Severity: reader.IsDBNull(10) ? null : reader.GetString(10),
-            CorrelationId: reader.IsDBNull(11) ? null : reader.GetString(11),
-            CreatedAtUtc: reader.GetDateTimeOffset(12),
-            CompletedAtUtc: reader.IsDBNull(13) ? null : reader.GetDateTimeOffset(13),
-            RecurrenceOf: reader.IsDBNull(14) ? null : reader.GetGuid(14));
-    }
 }

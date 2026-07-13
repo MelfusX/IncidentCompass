@@ -183,7 +183,26 @@
         }
       }
     },
-    "faultGrouping": {
+    "fingerprintRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["Id", "Version", "Inputs"],
+      "properties": {
+        "Id": { "$ref": "#/$defs/nonBlankString" },
+        "Version": { "type": "integer", "minimum": 1 },
+        "Inputs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["ServiceName", "Environment", "ErrorType", "ErrorMessage", "RouteOrOperation", "OperationName", "HttpRoute", "Severity", "Source"]
+          }
+        },
+        "ServiceName": { "$ref": "#/$defs/nonBlankString" },
+        "OperationName": { "$ref": "#/$defs/nonBlankString" },
+        "Source": { "enum": ["otel", "user", "tester", "manual"] }
+      }
+    },    "faultGrouping": {
       "type": "object",
       "additionalProperties": false,
       "required": ["LookbackMinutes", "SilenceWindowMinutes", "FingerprintVersion", "MassIssue"],
@@ -191,6 +210,10 @@
         "LookbackMinutes": { "type": "integer", "minimum": 1 },
         "SilenceWindowMinutes": { "type": "integer", "minimum": 1 },
         "FingerprintVersion": { "type": "integer", "minimum": 1 },
+        "FingerprintRules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/fingerprintRule" }
+        },
         "MassIssue": {
           "type": "object",
           "additionalProperties": false,
