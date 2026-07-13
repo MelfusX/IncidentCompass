@@ -55,6 +55,18 @@ IC_POSTGRES_PORT=55432
 `scripts/demo.ps1` resolves the effective API mapping from Compose, so its health check and the
 Tester output follow `IC_API_PORT`.
 
+## OTLP Collector Demo
+
+The demo profile also runs a pinned stock OpenTelemetry Collector. The Tester emits an error span through
+the official .NET OpenTelemetry SDK to the Collector's internal OTLP/HTTP endpoint; the Collector forwards
+it with its stock `otlphttp` exporter to IncidentCompass `/v1/traces`. The API maps the standard resource,
+span and exception fields into the existing `otel` normalizer, which creates the Signal/Fault/Job path.
+No custom Collector processor synthesizes IncidentCompass fields, and Collector-to-API URLs remain internal.
+
+The shipped `Ingestion.Otel` settings default to `ErrorsOnly: true`. Service and severity allow-lists are
+empty by default, meaning they do not filter. Metrics, profiles, compressed payloads and protobuf JSON are
+not accepted by this release.
+
 
 Stop demo services with:
 

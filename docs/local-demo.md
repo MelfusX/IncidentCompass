@@ -55,7 +55,10 @@ docker compose --profile demo down --volumes
 - worker: builds from src/IncidentCompass.Worker/Dockerfile, runs as the non-root incidentcompass
   user, copies the same config/ and samples/, enables sample memory seeding, and uses the same
   explicit config and sample-source paths inside the image.
-- tester: builds from src/IncidentCompass.Tester/Dockerfile under the demo profile, uses the official
+- otel-collector: runs the pinned stock OpenTelemetry Collector Contrib image under the demo profile,
+  receives OTLP/HTTP on the internal `otel-collector:4318` address and forwards uncompressed traces and
+  logs through its stock `otlphttp` exporter to the API's native OTLP routes. It does not transform or
+  synthesize IncidentCompass fields.- tester: builds from src/IncidentCompass.Tester/Dockerfile under the demo profile, uses the official
   OpenTelemetry SDK to export an OTLP/HTTP protobuf error span to the API, and runs its remaining
   scenarios through the product HTTP API.
 
@@ -92,7 +95,7 @@ Set these in `.env` before starting the stack when your provider uses different 
 
 ## Demo Scenarios
 
-The Tester first exports a real error span through the OpenTelemetry SDK to `/v1/traces`, then runs four scenarios from docs and samples-backed local data:
+The Tester first exports a real error span through the OpenTelemetry SDK to the Collector, which forwards it to `/v1/traces`, then runs four scenarios from docs and samples-backed local data:
 
 1. Known timeout error with a matching seeded runbook.
 2. Unknown null-reference error with no matching memory.

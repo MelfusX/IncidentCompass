@@ -18,7 +18,6 @@ x-incidentcompass-ai-env: &incidentcompass-ai-env
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: incidentcompass-postgres
     # Defaults are local-only demo values. Override from an ignored .env file
     # or shell variables; do not copy them into deployed runtime configuration.
     environment:
@@ -86,6 +85,16 @@ services:
       start_period: 10s
     restart: on-failure
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    profiles: ["demo"]
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./infra/otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: on-failure
   tester:
     profiles: ["demo"]
     build:
@@ -94,11 +103,14 @@ services:
     environment:
       INCIDENTCOMPASS_TESTER_BASE_URL: http://api:8080
       INCIDENTCOMPASS_TESTER_PUBLIC_BASE_URL: http://localhost:${IC_API_PORT:-5198}
+      INCIDENTCOMPASS_TESTER_OTLP_TRACES_ENDPOINT: http://otel-collector:4318/v1/traces
     depends_on:
       api:
         condition: service_healthy
       worker:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
     restart: "no"
 
 volumes:

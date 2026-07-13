@@ -9,8 +9,31 @@ namespace IncidentCompass.Tester;
 internal static class OtlpDemoEmitter
 {
     private const string SourceName = "IncidentCompass.Tester.OtlpDemo";
+    private const int MaxExportAttempts = 3;
 
-    public static OtlpEmission EmitFailure(Uri apiBaseUrl, string runId)
+    public static async Task<OtlpEmission> EmitFailureAsync(
+        Uri tracesEndpoint,
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastFailure = null;
+        for (var attempt = 1; attempt <= MaxExportAttempts; attempt++)
+        {
+            try
+            {
+                return EmitFailure(tracesEndpoint, runId);
+            }
+            catch (Exception exception) when (attempt < MaxExportAttempts)
+            {
+                lastFailure = exception;
+                await Task.Delay(TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException("The OTLP exporter did not confirm the demo trace export.", lastFailure);
+    }
+
+    private static OtlpEmission EmitFailure(Uri tracesEndpoint, string runId)
     {
         var serviceName = "otel-tester-" + runId;
         using var activitySource = new ActivitySource(SourceName, "1.0.0");
@@ -19,7 +42,7 @@ internal static class OtlpDemoEmitter
             .AddSource(SourceName)
             .AddOtlpExporter(options =>
             {
-                options.Endpoint = new Uri(apiBaseUrl, "v1/traces");
+                options.Endpoint = tracesEndpoint;
                 options.Protocol = OtlpExportProtocol.HttpProtobuf;
             })
             .Build();
