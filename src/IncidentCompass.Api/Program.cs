@@ -28,6 +28,7 @@ app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.MapHealthChecks("/health");
 app.MapApiV1();
+app.MapOtlpEndpoints();
 
 app.Run();
 

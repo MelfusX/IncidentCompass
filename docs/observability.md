@@ -43,9 +43,17 @@ Additional sensitive actions should use durable audit records when implemented:
 - governed standalone tool execution once a caller is wired into IC-BL-010;
 - cost rollups once IC-BL-014 consumes `ModelCall` rows and pricing records.
 
+## OTLP Ingress
+
+OTLP ingress is separate from IncidentCompass runtime telemetry. The API accepts OTLP/HTTP protobuf
+trace and log exports at `/v1/traces` and `/v1/logs`, maps only the signal fields needed for deterministic
+intake, and preserves trace, span, parent span, service, operation and error metadata. This makes
+IncidentCompass a consumer of an observability pipeline, not an observability backend. It does not expose
+an OTLP runtime exporter, a metrics receiver or a profile receiver in this release.
+
 ## Later Options
 
-- OpenTelemetry traces;
+- runtime OpenTelemetry traces;
 - metrics endpoint;
 - Prometheus/Grafana example;
 - Azure Application Insights adapter.

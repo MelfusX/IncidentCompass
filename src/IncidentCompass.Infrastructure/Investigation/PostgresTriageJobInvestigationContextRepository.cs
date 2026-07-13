@@ -83,7 +83,7 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
                    parent_span_id, service_name, environment, operation_name, severity,
                    error_type, error_message, summary, description, http_method,
                    http_route, http_status_code, duration_ms, attributes::text, body::text,
-                   observed_at_utc, received_at_utc
+                   observed_at_utc, received_at_utc, delivery_key
             FROM incidentcompass.signals
             WHERE id = @signal_id;
             """, connection);
@@ -128,7 +128,8 @@ internal sealed class PostgresTriageJobInvestigationContextRepository(PostgresDa
             attributes.RootElement.Clone(),
             body.RootElement.Clone(),
             reader.GetDateTimeOffset(29),
-            reader.GetDateTimeOffset(30));
+            reader.GetDateTimeOffset(30),
+            reader.IsDBNull(31) ? null : reader.GetString(31));
     }
 
     private static async Task<IReadOnlyCollection<TriageArtifact>> LoadArtifactsAsync(

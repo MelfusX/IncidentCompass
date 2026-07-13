@@ -39,6 +39,10 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+!src/IncidentCompass.Api/Endpoints/Otlp/Protos/opentelemetry/proto/logs/
+!src/IncidentCompass.Api/Endpoints/Otlp/Protos/opentelemetry/proto/logs/**
+!src/IncidentCompass.Api/Endpoints/Otlp/Protos/opentelemetry/proto/collector/logs/
+!src/IncidentCompass.Api/Endpoints/Otlp/Protos/opentelemetry/proto/collector/logs/**
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

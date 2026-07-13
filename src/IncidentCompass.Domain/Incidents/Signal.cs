@@ -33,4 +33,5 @@ public sealed record Signal(
     JsonElement Attributes,
     JsonElement Body,
     DateTimeOffset ObservedAtUtc,
-    DateTimeOffset ReceivedAtUtc);
+    DateTimeOffset ReceivedAtUtc,
+    string? DeliveryKey);

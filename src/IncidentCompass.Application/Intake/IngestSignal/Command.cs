@@ -13,6 +13,7 @@ public sealed record IngestSignalCommand(
     DateTimeOffset? ObservedAtUtc,
     string? TraceId,
     string? SpanId,
+    string? ParentSpanId,
     string? ExternalId,
     JsonNode? Attributes,
     JsonNode? Payload) : IRequest<IngestSignalResponse>;

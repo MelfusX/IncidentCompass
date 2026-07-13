@@ -12,6 +12,12 @@ public interface ISignalRepository
     // faults.trigger_signal_id.
     Task InsertAsync(Signal signal, CancellationToken cancellationToken);
 
+    Task<ExistingSignalDelivery?> FindDeliveryAsync(
+        string tenantId,
+        string source,
+        string deliveryKey,
+        CancellationToken cancellationToken);
+
     Task AttachToFaultAsync(Guid signalId, Guid faultId, CancellationToken cancellationToken);
 
     // Counts signals matching the grouping key with observed_at_utc in [windowStartUtc,

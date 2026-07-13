@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Google.Protobuf;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
@@ -10,6 +11,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
+using OpenTelemetry.Proto.Collector.Logs.V1;
+using OpenTelemetry.Proto.Collector.Trace.V1;
+using OpenTelemetry.Proto.Logs.V1;
+using OpenTelemetry.Proto.Common.V1;
+using OpenTelemetry.Proto.Resource.V1;
+using OpenTelemetry.Proto.Trace.V1;
 
 namespace IncidentCompass.IntegrationTests;
 
@@ -60,6 +67,151 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         Assert.True(snapshotExists);
     }
 
+    [DockerAvailableFact]
+    public async Task OtlpTraceExport_ErrorSpanFlowsThroughTheOtelNormalizer()
+    {
+        using var scope = await CreateScopeAsync();
+        var export = new ExportTraceServiceRequest
+        {
+            ResourceSpans =
+            {
+                new ResourceSpans
+                {
+                    Resource = new Resource
+                    {
+                        Attributes =
+                        {
+                            Attribute("service.name", "otel-checkout"),
+                            Attribute("deployment.environment.name", "staging")
+                        }
+                    },
+                    ScopeSpans =
+                    {
+                        new ScopeSpans
+                        {
+                            Spans =
+                            {
+                                new Span
+                                {
+                                    Name = "POST /checkout",
+                                    TraceId = ByteString.CopyFrom(Enumerable.Range(1, 16).Select(value => (byte)value).ToArray()),
+                                    SpanId = ByteString.CopyFrom(Enumerable.Range(17, 8).Select(value => (byte)value).ToArray()),
+                                    ParentSpanId = ByteString.CopyFrom(Enumerable.Range(25, 8).Select(value => (byte)value).ToArray()),
+                                    StartTimeUnixNano = 1_700_000_000_000_000_000,
+                                    EndTimeUnixNano = 1_700_000_000_250_000_000,
+                                    Status = new Status { Code = Status.Types.StatusCode.Error, Message = "upstream timeout" },
+                                    Attributes =
+                                    {
+                                        Attribute("exception.type", "TimeoutException"),
+                                        Attribute("exception.message", "Checkout timed out"),
+                                        Attribute("http.request.method", "POST"),
+                                        Attribute("http.route", "/checkout"),
+                                        Attribute("http.response.status_code", 504L)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        using var content = new ByteArrayContent(export.ToByteArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+
+        var response = await scope.Client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/x-protobuf", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(1L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal("0102030405060708090a0b0c0d0e0f10", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT trace_id FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal("191a1b1c1d1e1f20", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT parent_span_id FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal("TimeoutException", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT error_type FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal(1L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_jobs AS job JOIN incidentcompass.faults AS fault ON fault.id = job.fault_id WHERE fault.service_name = 'otel-checkout';"));
+    }
+
+    [DockerAvailableFact]
+    public async Task OtlpLogExport_DistinctUnidentifiedZeroTimestampRecordsAreNotDeduplicated()
+    {
+        using var scope = await CreateScopeAsync();
+        var export = new ExportLogsServiceRequest
+        {
+            ResourceLogs =
+            {
+                new ResourceLogs
+                {
+                    Resource = new Resource
+                    {
+                        Attributes =
+                        {
+                            Attribute("service.name", "otlp-log-delivery-key"),
+                            Attribute("deployment.environment.name", "test")
+                        }
+                    },
+                    ScopeLogs =
+                    {
+                        new ScopeLogs
+                        {
+                            LogRecords =
+                            {
+                                ErrorLog("zero timestamp record"),
+                                ErrorLog("zero timestamp record")
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        var payload = export.ToByteArray();
+
+        using (var firstContent = new ByteArrayContent(payload))
+        {
+            firstContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+            var firstResponse = await scope.Client.PostAsync("/v1/logs", firstContent, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        }
+
+        using (var secondContent = new ByteArrayContent(payload))
+        {
+            secondContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+            var secondResponse = await scope.Client.PostAsync("/v1/logs", secondContent, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        }
+
+        Assert.Equal(2L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.signals WHERE service_name = @service_name;",
+            ("service_name", "otlp-log-delivery-key")));
+        Assert.Equal(2L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(DISTINCT delivery_key) FROM incidentcompass.signals WHERE service_name = @service_name;",
+            ("service_name", "otlp-log-delivery-key")));
+    }
+
+    private static LogRecord ErrorLog(string body) => new()
+    {
+        SeverityText = "ERROR",
+        Body = new AnyValue { StringValue = body },
+        Attributes =
+        {
+            Attribute("exception.type", "TimeoutException"),
+            Attribute("exception.message", body)
+        }
+    };
+    private static KeyValue Attribute(string key, string value) =>
+        new() { Key = key, Value = new AnyValue { StringValue = value } };
+
+    private static KeyValue Attribute(string key, long value) =>
+        new() { Key = key, Value = new AnyValue { IntValue = value } };
     [DockerAvailableFact]
     public async Task IngestSignal_TypedFieldsAreRedactedBeforePersistence()
     {
@@ -216,6 +368,15 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         var first = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("duplicate-external-id") });
         var duplicate = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("duplicate-external-id") });
         Assert.Equal(first.FaultId, duplicate.FaultId);
+        Assert.Equal(first.SignalId, duplicate.SignalId);
+        Assert.False(duplicate.IsNewFault);
+        Assert.False(duplicate.IsNewJob);
+
+        var acceptedDeliveryCount = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.signals WHERE delivery_key = @delivery_key;",
+            ("delivery_key", "external:duplicate-external-id"));
+        Assert.Equal(1, acceptedDeliveryCount);
 
         await ExecuteAsync(
             scope.ConnectionString,

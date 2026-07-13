@@ -16,7 +16,7 @@ config validation, configurable redaction and file-backed memory synchronization
 
 ## One Investigation
 
-1. The API accepts an OTel-shaped, user or tester signal, redacts sensitive fields, groups it into a
+1. The API accepts native OTLP trace/log protobuf exports or an OTel-shaped, user or tester signal, redacts sensitive fields, groups it into a
    fault and creates a durable triage job.
 2. The Worker claims the job and reloads the exact versioned configuration captured at intake.
 3. The orchestrator may delegate to analysis and memory workers. Each role receives only its configured

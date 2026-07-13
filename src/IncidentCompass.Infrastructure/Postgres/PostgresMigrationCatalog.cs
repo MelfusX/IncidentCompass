@@ -14,6 +14,7 @@ internal static class PostgresMigrationCatalog
             "009-triage-reports-minimal.sql",
             "010-memory.sql"
         ]),
-        new(2, "v0.2-memory-file-sync", ["011-memory-file-sync.sql"])
+        new(2, "v0.2-memory-file-sync", ["011-memory-file-sync.sql"]),
+        new(3, "v0.2-signal-delivery-idempotency", ["012-signal-delivery-idempotency.sql"])
     ];
 }

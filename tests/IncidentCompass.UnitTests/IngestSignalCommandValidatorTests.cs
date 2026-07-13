@@ -32,6 +32,7 @@ public sealed class IngestSignalCommandValidatorTests
                 ObservedAtUtc: null,
                 TraceId: null,
                 SpanId: null,
+                ParentSpanId: null,
                 ExternalId: null,
                 Attributes: null,
                 Payload: null),

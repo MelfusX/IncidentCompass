@@ -284,7 +284,8 @@ public sealed class FaultGroupingCoordinatorTests
         Attributes: EmptyJson(),
         Body: EmptyJson(),
         ObservedAtUtc: observedAtUtc ?? DateTimeOffset.UtcNow,
-        ReceivedAtUtc: DateTimeOffset.UtcNow);
+        ReceivedAtUtc: DateTimeOffset.UtcNow,
+        DeliveryKey: null);
 
     private static JsonElement EmptyJson()
     {
@@ -308,6 +309,11 @@ public sealed class FaultGroupingCoordinatorTests
             return Task.CompletedTask;
         }
 
+        public Task<ExistingSignalDelivery?> FindDeliveryAsync(
+            string tenantId,
+            string source,
+            string deliveryKey,
+            CancellationToken cancellationToken) => Task.FromResult<ExistingSignalDelivery?>(null);
         public Task AttachToFaultAsync(Guid signalId, Guid faultId, CancellationToken cancellationToken)
         {
             var index = Inserted.FindIndex(s => s.Id == signalId);

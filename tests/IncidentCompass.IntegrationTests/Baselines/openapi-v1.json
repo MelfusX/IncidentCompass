@@ -10,6 +10,30 @@
     }
   ],
   "paths": {
+    "/v1/traces": {
+      "post": {
+        "tags": [
+          "OtlpEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/logs": {
+      "post": {
+        "tags": [
+          "OtlpEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -516,6 +540,7 @@
         "required": [
           "traceId",
           "spanId",
+          "parentSpanId",
           "externalId"
         ],
         "type": "object",
@@ -527,6 +552,12 @@
             ]
           },
           "spanId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parentSpanId": {
             "type": [
               "null",
               "string"
@@ -872,6 +903,9 @@
     }
   },
   "tags": [
+    {
+      "name": "OtlpEndpoints"
+    },
     {
       "name": "v1"
     }

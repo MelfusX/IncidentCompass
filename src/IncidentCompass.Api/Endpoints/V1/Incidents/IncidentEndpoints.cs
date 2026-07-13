@@ -24,6 +24,7 @@ internal static class IncidentEndpoints
                     request.ObservedAtUtc,
                     request.Correlation?.TraceId,
                     request.Correlation?.SpanId,
+                    request.Correlation?.ParentSpanId,
                     request.Correlation?.ExternalId,
                     request.Attributes,
                     request.Payload);

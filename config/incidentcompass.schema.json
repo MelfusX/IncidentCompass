@@ -157,6 +157,24 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": { "enum": ["otel", "user", "tester", "manual"] }
+        },
+        "Otel": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ErrorsOnly", "ServiceAllowList", "SeverityAllowList"],
+          "properties": {
+            "ErrorsOnly": { "type": "boolean" },
+            "ServiceAllowList": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/nonBlankString" }
+            },
+            "SeverityAllowList": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/nonBlankString" }
+            }
+          }
         }
       }
     },

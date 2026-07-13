@@ -125,6 +125,11 @@ public sealed class MemoryOnlyCompositionTests
     {
         public Task InsertAsync(Signal signal, CancellationToken cancellationToken) => Task.CompletedTask;
 
+        public Task<ExistingSignalDelivery?> FindDeliveryAsync(
+            string tenantId,
+            string source,
+            string deliveryKey,
+            CancellationToken cancellationToken) => Task.FromResult<ExistingSignalDelivery?>(null);
         public Task AttachToFaultAsync(Guid signalId, Guid faultId, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<int> CountDistinctNeighborsAsync(

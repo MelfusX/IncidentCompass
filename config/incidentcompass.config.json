@@ -24,7 +24,7 @@
   "Rules": [
     { "Type": "rate_cap", "Tool": "*", "Scope": "attempt", "Max": 50 }
   ],
-  "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"] },
+  "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"], "Otel": { "ErrorsOnly": true, "ServiceAllowList": [], "SeverityAllowList": [] } },
   "Redaction": {
     "AttributeKeys": ["http.request.header.authorization", "db.connection_string", "customer.account.id"],
     "Patterns": [

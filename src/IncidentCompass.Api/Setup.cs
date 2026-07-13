@@ -12,6 +12,7 @@ public static class Setup
         IWebHostEnvironment environment)
     {
         services.AddHttpContextAccessor();
+        services.AddScoped<OtlpPayloadReader>();
         services.AddApiUserContext(configuration, environment);
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();

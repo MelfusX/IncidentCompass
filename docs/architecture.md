@@ -32,6 +32,19 @@ flowchart LR
 
 `POST /api/v1/incidents` accepts a small incident envelope. API mapping stays transport-only and dispatches `IngestSignalCommand`. Application validation checks configured source allow-list and payload size limits, normalizers produce a handler-ready signal shape, redaction removes obvious secrets while preserving null optional text fields, fingerprinting classifies signals as `Strong` only when both service name and structured `errorType` are present, and fault grouping either attaches to an open strong fault, suppresses a recent closed strong fault during the silence window, or opens a new fault and pending triage job.
 
+## OTLP Ingestion
+
+The API also exposes standard OTLP/HTTP protobuf endpoints at `POST /v1/traces` and `POST /v1/logs`.
+The transport adapter is deliberately confined to `IncidentCompass.Api`: it decodes the pinned upstream
+OTLP protobuf schema, maps resource, span or log attributes into `IngestSignalCommand`, then dispatches
+the existing `otel` normalizer. OTLP/protobuf concepts do not enter Domain or Application contracts.
+
+Only `application/x-protobuf` and `application/protobuf` requests are currently accepted. Metrics,
+profiles, protobuf JSON and compressed OTLP payloads are not supported by this release. The `Ingestion.Otel`
+configuration controls error-only, service and severity trigger filters; an empty allow-list means no filter.
+Ignored telemetry returns a valid empty OTLP response and does not create a signal or triage job. A delivery
+key derived from `externalId`, or from trace plus span when no external ID exists, is unique per tenant and
+source, so exporter retries return the accepted signal rather than adding a neighbor or job.
 The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `PriorReport`) plus attempt-level `WorkerOutput`, `RetrievedItem` and `ToolResult` artifacts. Phase 2 adds `infra/postgres/init/008-triage-ledger.sql` for append-only DB-ordered triage events. Phase 5 evolves `infra/postgres/init/009-triage-reports-minimal.sql` into grounded `triage_reports` plus `triage_evidence` persistence. The Worker claim loop leases pending/retryable jobs, rehydrates each job's triage configuration from `triage_config_snapshots` by `config_hash`, runs a governed orchestrator with only `delegate(role, task)` and `publish_report(report_json)`, validates `delegate.role` against the config-derived role set, executes workers sequentially, enforces per-attempt budget and bounded reprompt policy, evaluates worker-tool rules over the ledger, and closes the job/fault only when backend-grounded report publication commits.
 
 

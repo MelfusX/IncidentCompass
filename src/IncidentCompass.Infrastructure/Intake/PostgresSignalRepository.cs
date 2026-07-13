@@ -14,14 +14,14 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.signals (
                 id, tenant_id, source, fault_id, fingerprint, fingerprint_version, fingerprint_strength,
-                external_id, is_suppressed, suppressed_by_fault_id, suppression_reason,
+                external_id, delivery_key, is_suppressed, suppressed_by_fault_id, suppression_reason,
                 trace_id, span_id, parent_span_id, service_name, environment, operation_name,
                 severity, error_type, error_message, summary, description,
                 http_method, http_route, http_status_code, duration_ms, attributes, body,
                 observed_at_utc, received_at_utc)
             VALUES (
                 @id, @tenant_id, @source, @fault_id, @fingerprint, @fingerprint_version, @fingerprint_strength,
-                @external_id, @is_suppressed, @suppressed_by_fault_id, @suppression_reason,
+                @external_id, @delivery_key, @is_suppressed, @suppressed_by_fault_id, @suppression_reason,
                 @trace_id, @span_id, @parent_span_id, @service_name, @environment, @operation_name,
                 @severity, @error_type, @error_message, @summary, @description,
                 @http_method, @http_route, @http_status_code, @duration_ms, @attributes, @body,
@@ -36,6 +36,7 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         command.AddParameter("fingerprint_version", signal.FingerprintVersion);
         command.AddParameter("fingerprint_strength", signal.FingerprintStrength.ToLowerDbString());
         command.AddParameter("external_id", signal.ExternalId);
+        command.AddParameter("delivery_key", signal.DeliveryKey);
         command.AddParameter("is_suppressed", signal.IsSuppressed);
         command.AddParameter("suppressed_by_fault_id", signal.SuppressedByFaultId);
         command.AddParameter("suppression_reason", signal.SuppressionReason);
@@ -59,9 +60,58 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
         command.AddParameter("observed_at_utc", signal.ObservedAtUtc);
         command.AddParameter("received_at_utc", signal.ReceivedAtUtc);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (PostgresException exception) when (
+            exception.SqlState == PostgresErrorCodes.UniqueViolation &&
+            exception.ConstraintName == "ux_signals_delivery_key")
+        {
+            throw new DuplicateSignalDeliveryException();
+        }
     }
 
+    public async Task<ExistingSignalDelivery?> FindDeliveryAsync(
+        string tenantId,
+        string source,
+        string deliveryKey,
+        CancellationToken cancellationToken)
+    {
+        await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT signal.id, signal.fault_id, signal.is_suppressed, job.id, job.config_hash
+            FROM incidentcompass.signals AS signal
+            LEFT JOIN LATERAL (
+                SELECT id, config_hash
+                FROM incidentcompass.triage_jobs
+                WHERE fault_id = signal.fault_id
+                ORDER BY created_at_utc DESC, id DESC
+                LIMIT 1
+            ) AS job ON true
+            WHERE signal.tenant_id = @tenant_id
+              AND signal.source = @source
+              AND signal.delivery_key = @delivery_key
+            LIMIT 1;
+            """, lease.Connection, lease.Transaction);
+
+        command.AddParameter("tenant_id", tenantId);
+        command.AddParameter("source", source);
+        command.AddParameter("delivery_key", deliveryKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ExistingSignalDelivery(
+            reader.GetGuid(0),
+            reader.GetGuid(1),
+            reader.GetBoolean(2),
+            reader.IsDBNull(3) ? null : reader.GetGuid(3),
+            reader.IsDBNull(4) ? null : reader.GetString(4));
+    }
     public async Task AttachToFaultAsync(Guid signalId, Guid faultId, CancellationToken cancellationToken)
     {
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
@@ -75,7 +125,6 @@ internal sealed class PostgresSignalRepository(PostgresDataSourceProvider dataSo
 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
-
     public async Task<int> CountDistinctNeighborsAsync(
         string tenantId,
         string serviceName,
