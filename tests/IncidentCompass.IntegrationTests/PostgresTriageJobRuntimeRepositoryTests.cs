@@ -63,6 +63,48 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
         Assert.Equal("worker-b", claimed.LockedBy);
     }
 
+
+    [DockerAvailableFact]
+    public async Task RenewLeaseAsync_ExtendsOnlyTheCurrentUnexpiredOwnerLease()
+    {
+        using var scope = await CreateScopeAsync();
+        var seed = await SeedJobAsync(scope.ConnectionString, "renew-lease", "Pending");
+        var repository = scope.Services.GetRequiredService<ITriageJobRuntimeRepository>();
+        var claimed = await repository.ClaimNextAsync(
+            "worker-renew-a",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(400), TestContext.Current.CancellationToken);
+        Assert.True(await repository.RenewLeaseAsync(
+            claimed,
+            "worker-renew-a",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken));
+
+        await Task.Delay(TimeSpan.FromMilliseconds(700), TestContext.Current.CancellationToken);
+        Assert.Null(await repository.ClaimNextAsync(
+            "worker-renew-b",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken));
+
+        await ExecuteAsync(
+            scope.ConnectionString,
+            """
+            UPDATE incidentcompass.triage_jobs
+            SET attempt = @attempt, locked_by = 'worker-renew-b', locked_until_utc = now() + interval '1 minute'
+            WHERE id = @job_id;
+            """,
+            ("attempt", claimed.Attempt + 1),
+            ("job_id", claimed.Id));
+
+        Assert.False(await repository.RenewLeaseAsync(
+            claimed,
+            "worker-renew-a",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken));
+    }
     [DockerAvailableFact]
     public async Task ClaimNextAsync_RetryPendingHonorsNextAttemptTime()
     {

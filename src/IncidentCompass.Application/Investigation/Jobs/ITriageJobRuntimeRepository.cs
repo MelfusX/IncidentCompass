@@ -9,6 +9,12 @@ public interface ITriageJobRuntimeRepository
         TimeSpan leaseDuration,
         CancellationToken cancellationToken);
 
+    Task<bool> RenewLeaseAsync(
+        TriageJob job,
+        string workerId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken);
+
     Task RecordAttemptFailureAsync(
         TriageJob job,
         string workerId,

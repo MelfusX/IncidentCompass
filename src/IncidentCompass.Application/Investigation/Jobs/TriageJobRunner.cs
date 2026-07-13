@@ -20,6 +20,12 @@ internal sealed class TriageJobRunner(
         return runtimeRepository.ClaimNextAsync(workerId, leaseDuration, cancellationToken);
     }
 
+    public Task<bool> RenewLeaseAsync(
+        TriageJob job,
+        string workerId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken) =>
+        runtimeRepository.RenewLeaseAsync(job, workerId, leaseDuration, cancellationToken);
     public async Task ProcessClaimedAsync(
         TriageJob job,
         string workerId,

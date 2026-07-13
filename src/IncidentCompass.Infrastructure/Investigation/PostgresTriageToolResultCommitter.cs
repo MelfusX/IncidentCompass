@@ -36,6 +36,7 @@ internal sealed class PostgresTriageToolResultCommitter(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
+            await EnsureActiveOwnershipAsync(connection, transaction, request.Job, createdAtUtc, cancellationToken);
             foreach (var additionalArtifact in request.AdditionalArtifacts ?? [])
             {
                 ValidateAdditionalArtifact(request, additionalArtifact);
@@ -55,6 +56,22 @@ internal sealed class PostgresTriageToolResultCommitter(
         }
     }
 
+    private static async Task EnsureActiveOwnershipAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, TriageJob job, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            SELECT 1 FROM incidentcompass.triage_jobs
+            WHERE id = @job_id AND status = 'Processing' AND attempt = @attempt
+              AND locked_by = @worker_id AND locked_until_utc > @now;
+            """, connection, transaction);
+        command.AddParameter("job_id", job.Id);
+        command.AddParameter("attempt", job.Attempt);
+        command.AddParameter("worker_id", job.LockedBy ?? throw new InvalidOperationException("Tool result requires a claimed job owner."));
+        command.AddParameter("now", now);
+        if (await command.ExecuteScalarAsync(cancellationToken) is null)
+        {
+            throw new InvalidOperationException($"Triage job '{job.Id}' is no longer owned by attempt {job.Attempt}.");
+        }
+    }
     private static void ValidateAdditionalArtifact(
         TriageToolResultCommitRequest request,
         TriageArtifact artifact)

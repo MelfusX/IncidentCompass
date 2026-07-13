@@ -77,6 +77,7 @@ internal sealed class PostgresTriageReportRepository(
             WHERE id = @job_id
               AND attempt = @attempt
               AND locked_by = @worker_id
+              AND locked_until_utc > @now
               AND status = 'Processing';
             """, connection, transaction);
         command.AddParameter("now", now);

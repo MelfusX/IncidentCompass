@@ -7,13 +7,13 @@ namespace IncidentCompass.Infrastructure.Intake;
 
 internal sealed class PostgresTriageJobRuntimeRepository(
     PostgresDataSourceProvider dataSourceProvider,
-    TimeProvider timeProvider) : ITriageJobRuntimeRepository
+    TimeProvider timeProvider,
+    PostgresTriageJobLeaseStore leaseStore) : ITriageJobRuntimeRepository
 {
     public Task<TriageJob?> ClaimNextAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken) =>
         PostgresOperation.ExecuteAsync(
             "claim triage job",
             () => ClaimNextTransactionAsync(workerId, leaseDuration, cancellationToken));
-
     private async Task<TriageJob?> ClaimNextTransactionAsync(
         string workerId,
         TimeSpan leaseDuration,
@@ -21,10 +21,8 @@ internal sealed class PostgresTriageJobRuntimeRepository(
     {
         var now = timeProvider.GetUtcNow();
         var lockedUntilUtc = now.Add(leaseDuration);
-
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
         try
         {
             var claimed = await ClaimNextCoreAsync(connection, transaction, workerId, now, lockedUntilUtc, cancellationToken);
@@ -32,7 +30,6 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             {
                 await MarkFaultAnalyzingAsync(connection, transaction, claimed.FaultId, now, cancellationToken);
             }
-
             await transaction.CommitAsync(cancellationToken);
             return claimed;
         }
@@ -42,12 +39,16 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             throw;
         }
     }
-
+    public Task<bool> RenewLeaseAsync(
+        TriageJob job,
+        string workerId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken) =>
+        leaseStore.RenewAsync(job, workerId, leaseDuration, cancellationToken);
     public Task RecordAttemptFailureAsync(TriageJob job, string workerId, TriageJobAttemptFailure failure, CancellationToken cancellationToken) =>
         PostgresOperation.ExecuteAsync(
             "record triage attempt failure",
             () => RecordAttemptFailureTransactionAsync(job, workerId, failure, cancellationToken));
-
     private async Task RecordAttemptFailureTransactionAsync(
         TriageJob job,
         string workerId,
@@ -58,11 +59,9 @@ internal sealed class PostgresTriageJobRuntimeRepository(
         {
             throw new ArgumentException("Attempt failure status must be RetryPending or DeadLettered.", nameof(failure));
         }
-
         var now = timeProvider.GetUtcNow();
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
         try
         {
             var updated = await RecordFailureCoreAsync(connection, transaction, job, workerId, failure, now, cancellationToken);
@@ -70,7 +69,6 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             {
                 await MarkFaultFailedAsync(connection, transaction, job.FaultId, now, cancellationToken);
             }
-
             await transaction.CommitAsync(cancellationToken);
         }
         catch
@@ -79,7 +77,6 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             throw;
         }
     }
-
     private static async Task<TriageJob?> ClaimNextCoreAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -112,17 +109,14 @@ internal sealed class PostgresTriageJobRuntimeRepository(
                       job.locked_until_utc, job.next_attempt_at_utc, job.last_error_code,
                       job.last_error_message, job.config_hash, job.created_at_utc, job.updated_at_utc;
             """, connection, transaction);
-
         command.AddParameter("worker_id", workerId);
         command.AddParameter("locked_until_utc", lockedUntilUtc);
         command.AddParameter("now", now);
-
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
             ? PostgresTriageJobMapper.Map(reader)
             : null;
     }
-
     private static async Task<bool> RecordFailureCoreAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -144,9 +138,9 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             WHERE id = @id
               AND attempt = @attempt
               AND locked_by = @worker_id
+              AND locked_until_utc > @now
               AND status = 'Processing';
             """, connection, transaction);
-
         command.AddParameter("status", failure.Status.ToDbString());
         command.AddParameter("next_attempt_at_utc", failure.NextAttemptAtUtc);
         command.AddParameter("last_error_code", failure.ErrorCode);
@@ -155,10 +149,8 @@ internal sealed class PostgresTriageJobRuntimeRepository(
         command.AddParameter("id", job.Id);
         command.AddParameter("attempt", job.Attempt);
         command.AddParameter("worker_id", workerId);
-
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
-
     private static async Task MarkFaultAnalyzingAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -176,7 +168,6 @@ internal sealed class PostgresTriageJobRuntimeRepository(
         command.AddParameter("now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
-
     private static async Task MarkFaultFailedAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -195,5 +186,4 @@ internal sealed class PostgresTriageJobRuntimeRepository(
         command.AddParameter("now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
-
 }

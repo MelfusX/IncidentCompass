@@ -201,6 +201,11 @@ public sealed class MemoryOnlyCompositionTests
             TimeSpan leaseDuration,
             CancellationToken cancellationToken) => Task.FromResult<TriageJob?>(null);
 
+        public Task<bool> RenewLeaseAsync(
+            TriageJob job,
+            string workerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) => Task.FromResult(true);
         public Task RecordAttemptFailureAsync(
             TriageJob job,
             string workerId,

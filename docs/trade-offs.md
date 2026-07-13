@@ -83,13 +83,17 @@ Phase 4 memory retrieval filters by tenant, embedding provider, embedding model 
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.
-## Fixed Worker Leases
+## Renewable Worker Leases Require Cooperative Calls
 
-The MVP worker claims jobs with a fixed lease and does not renew leases while a job is running.
-The shipped default and Development override are longer than the configured 120-second
-investigation wall-clock budget so bounded attempts do not normally outlive their lease. A
-production deployment should add explicit lease renewal or heartbeat handling before increasing
-concurrency or allowing longer investigation budgets.
+The Worker renews an owned lease at roughly one third of its duration while processing an investigation.
+Renewal and terminal job updates are fenced by job, attempt, worker and an unexpired lease, so a stale
+owner cannot publish a report or overwrite the current owner. When renewal fails, ownership is lost or
+host shutdown begins, the Worker cancels the in-flight investigation and observes the renewal loop before
+releasing its slot. A job left in `Processing` becomes claimable after its current lease expires.
+
+This protects the durable ownership boundary, but it cannot forcibly interrupt a provider or tool that
+ignores its cancellation token. The shipped model and tool paths propagate cancellation; custom adapters
+must do the same to avoid work that can no longer publish a result.
 ## Dormant Components Kept for the Roadmap
 
 Two upstream-derived component groups are intentionally retained but not registered in DI.

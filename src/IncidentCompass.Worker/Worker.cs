@@ -20,34 +20,34 @@ public sealed partial class Worker(
         await TryLogStartupStatusAsync(stoppingToken);
 
         var consecutiveErrors = 0;
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                await jobPump.ObserveCompletedAsync(stoppingToken);
-                await jobPump.FillAvailableSlotsAsync(workerId, options.Value, stoppingToken);
-                consecutiveErrors = 0;
-
-                var delay = WorkerPollDelay.Calculate(
-                    options.Value.PollIntervalSeconds,
-                    consecutiveErrors,
-                    Random.Shared.NextDouble());
-                await jobPump.WaitForNextWakeAsync(delay, stoppingToken);
+                try
+                {
+                    await jobPump.ObserveCompletedAsync(stoppingToken);
+                    await jobPump.FillAvailableSlotsAsync(workerId, options.Value, stoppingToken);
+                    consecutiveErrors = 0;
+                    var delay = WorkerPollDelay.Calculate(options.Value.PollIntervalSeconds, consecutiveErrors, Random.Shared.NextDouble());
+                    await jobPump.WaitForNextWakeAsync(delay, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    consecutiveErrors++;
+                    LogWorkerPollFailed(logger, exception);
+                    var delay = WorkerPollDelay.Calculate(options.Value.PollIntervalSeconds, consecutiveErrors, Random.Shared.NextDouble());
+                    await Task.Delay(delay, stoppingToken);
+                }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                consecutiveErrors++;
-                LogWorkerPollFailed(logger, exception);
-                var delay = WorkerPollDelay.Calculate(
-                    options.Value.PollIntervalSeconds,
-                    consecutiveErrors,
-                    Random.Shared.NextDouble());
-                await Task.Delay(delay, stoppingToken);
-            }
+        }
+        finally
+        {
+            await jobPump.DrainAsync();
         }
     }
 

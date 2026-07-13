@@ -26,7 +26,7 @@ flowchart LR
   - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, memory adapters, dormant pricing/audit adapters and other infrastructure adapters.
-- `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, leases and per-process `MaxConcurrentJobs`.
+- `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, renewable ownership-fenced leases, cancellation on ownership loss and per-process `MaxConcurrentJobs`.
 
 ## Phase 1 Intake Flow
 
