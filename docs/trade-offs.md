@@ -88,6 +88,17 @@ model.
 ## Memory Embedding Model Changes Require Re-Embedding
 
 Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. Changing the configured embedding provider or model should be paired with a full memory re-seed or migration.
+
+## Deterministic Grouping Is Not Incident Correlation
+
+Delivery deduplication, open-fault grouping, suppression and recurrence are deliberately separate.
+A duplicate delivery is ignored after its first accepted signal. A distinct matching delivery can attach
+to one open fault, be stored as suppressed against a recently closed fault, or advance a recurrence state
+once the silence window has elapsed. The state is keyed by the effective fingerprint-rule generation and
+uses a PostgreSQL upsert, so concurrent accepted recurrence deliveries count once each and create at most
+one threshold-crossing escalation intent. This keeps the behavior auditable, but the selected fingerprint
+and suppression policy can still be wrong for the operator's real incident boundary. Cross-fault incident
+correlation remains a later capability rather than an implicit effect of grouping.
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.

@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
 
@@ -27,11 +28,32 @@ public sealed class RecurrenceTracker(IRecurrenceStateRepository recurrenceState
             triggerSignal.FingerprintVersion!.Value,
             triggerSignal.GroupingRuleId,
             triggerSignal.GroupingRuleVersion,
-            fault.CreatedAtUtc,
+            triggerSignal.ObservedAtUtc,
             settings.Recurrence?.EscalateAfterCount ?? 0);
         return RecordAsync(recurrence, cancellationToken);
     }
 
+    public async Task TrackAttachmentAsync(
+        Fault fault,
+        Signal signal,
+        ITriageJobRepository triageJobRepository,
+        GroundedFactsAssembler groundedFactsAssembler,
+        FaultGroupingSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (fault.RecurrenceOf is null)
+        {
+            return;
+        }
+
+        var job = await triageJobRepository.FindByFaultIdAsync(fault.Id, cancellationToken)
+            ?? throw new InvalidOperationException("An open recurrence fault must have a triage job.");
+        var recurrenceState = await TrackAsync(fault, signal, job, settings, cancellationToken);
+        if (recurrenceState is not null)
+        {
+            await groundedFactsAssembler.ReplaceRecurrenceStateAsync(job, recurrenceState, cancellationToken);
+        }
+    }
     private async Task<RecurrenceState?> RecordAsync(
         RecurrenceOccurrence recurrence,
         CancellationToken cancellationToken) =>

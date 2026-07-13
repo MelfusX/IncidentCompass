@@ -16,7 +16,6 @@ public sealed class FaultGroupingCoordinator(
     TimeProvider timeProvider)
 {
     private const int MaxResolutionAttempts = 3;
-
     public async Task<FaultGroupingOutcome> ResolveAsync(
         Signal draftSignal,
         TriageConfiguration configuration,
@@ -35,7 +34,6 @@ public sealed class FaultGroupingCoordinator(
             }
         }
     }
-
     private async Task<FaultGroupingOutcome> ResolveCoreAsync(
         Signal draftSignal,
         TriageConfiguration configuration,
@@ -81,7 +79,6 @@ public sealed class FaultGroupingCoordinator(
         }
         return await CreateNewFaultAsync(draftSignal, closedFault?.Id, configuration, now, cancellationToken);
     }
-
     private async Task<FaultGroupingOutcome> AttachToOpenFaultAsync(
         Signal draftSignal,
         Fault openFault,
@@ -95,6 +92,8 @@ public sealed class FaultGroupingCoordinator(
                 var finalSignal = draftSignal with { FaultId = currentFault.Id };
                 await signalRepository.InsertAsync(finalSignal, currentCancellationToken);
                 await neighborSetRefresher.RefreshAsync(currentFault, finalSignal, configuration, currentCancellationToken);
+                await recurrenceTracker.TrackAttachmentAsync(currentFault, finalSignal, triageJobRepository,
+                    groundedFactsAssembler, configuration.FaultGrouping, currentCancellationToken);
                 return new FaultGroupingOutcome(currentFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
             },
             cancellationToken);
@@ -107,7 +106,6 @@ public sealed class FaultGroupingCoordinator(
             ? currentFault
             : throw new FaultGroupingStateChangedException(faultId);
     }
-
     private async Task<FaultGroupingOutcome> CreateNewFaultAsync(
         Signal draftSignal,
         Guid? recurrenceOfFaultId,
@@ -190,11 +188,9 @@ public sealed class FaultGroupingCoordinator(
             ?? throw new InvariantViolationException("Lost the fault-creation race but no open fault was found afterward.");
         winningFault = await LockOpenFaultAsync(winningFault.Id, cancellationToken);
         await signalRepository.AttachToFaultAsync(draftSignal.Id, winningFault.Id, cancellationToken);
-        await neighborSetRefresher.RefreshAsync(
-            winningFault,
-            draftSignal with { FaultId = winningFault.Id },
-            configuration,
-            cancellationToken);
+        var finalSignal = draftSignal with { FaultId = winningFault.Id };
+        await neighborSetRefresher.RefreshAsync(winningFault, finalSignal, configuration, cancellationToken);
+        await recurrenceTracker.TrackAttachmentAsync(winningFault, finalSignal, triageJobRepository, groundedFactsAssembler, configuration.FaultGrouping, cancellationToken);
         return winningFault;
     }
 }

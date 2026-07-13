@@ -475,6 +475,63 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
                 ("job_id", laterRecurrence.JobId!.Value)));
     }
     [DockerAvailableFact]
+    public async Task IngestSignal_ConcurrentDistinctRecurrences_CountEachAcceptedDeliveryOnce()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var envelope = TesterEnvelope("concurrent-recurrence-svc", "prod", "TimeoutException", "Concurrent recurrence probe timed out", "/concurrent-recurrence");
+
+        var initial = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("initial") });
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, initial.FaultId);
+
+        var recurrences = await Task.WhenAll(
+            PostIngestAsync(scope.Client, envelope with
+            {
+                ObservedAtUtc = new DateTimeOffset(2026, 7, 14, 1, 2, 0, TimeSpan.Zero),
+                Correlation = ExternalId("recurrence-one")
+            }),
+            PostIngestAsync(scope.Client, envelope with
+            {
+                ObservedAtUtc = new DateTimeOffset(2026, 7, 14, 1, 1, 0, TimeSpan.Zero),
+                Correlation = ExternalId("recurrence-two")
+            }));
+
+        var recurrenceFaultId = Assert.Single(recurrences.Select(recurrence => recurrence.FaultId).Distinct());
+        var recurrenceJobId = Assert.Single(recurrences, recurrence => recurrence.JobId is not null).JobId!.Value;
+        Assert.NotEqual(initial.FaultId, recurrenceFaultId);
+        Assert.Equal(2, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT recurrence_count FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+        Assert.True(await ScalarAsync<bool>(
+            scope.ConnectionString,
+            "SELECT last_recurrence_at_utc > first_recurrence_at_utc FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+        Assert.Equal(recurrenceJobId, await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT escalation_intent_job_id FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+        Assert.Equal("2", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'recurrenceCount' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+            ("job_id", recurrenceJobId)));
+        Assert.Equal("true", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'escalationIntentCreated' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+            ("job_id", recurrenceJobId)));
+        Assert.Equal("2026-07-14T01:02:00.0000000+00:00", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'lastRecurrenceAtUtc' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+            ("job_id", recurrenceJobId)));
+
+        var duplicate = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("recurrence-one") });
+
+        Assert.False(duplicate.IsNewJob);
+        Assert.Equal(2, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT recurrence_count FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+    }
+    [DockerAvailableFact]
     public async Task IngestSignal_NonUtcObservedAt_NormalizesBeforePostgresInsert()
     {
         using var scope = await CreateScopeAsync();

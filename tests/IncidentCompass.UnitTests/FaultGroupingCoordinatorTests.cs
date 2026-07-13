@@ -263,6 +263,27 @@ public sealed class FaultGroupingCoordinatorTests
     }
 
     [Fact]
+    public async Task ResolveAsync_OpenRecurrenceAttachment_RefreshesCitableRecurrenceState()
+    {
+        var (coordinator, _, faults, _, artifacts) = CreateHarness();
+        var configuration = CreateConfiguration() with
+        {
+            FaultGrouping = CreateConfiguration().FaultGrouping with { Recurrence = new RecurrenceSettings(2) }
+        };
+
+        var initial = await coordinator.ResolveAsync(CreateDraftSignal(externalId: "initial"), configuration, CancellationToken.None);
+        faults.CloseFault(initial.Fault.Id, DateTimeOffset.UtcNow.AddMinutes(-60));
+        var recurrence = await coordinator.ResolveAsync(CreateDraftSignal(externalId: "recurrence-one"), configuration, CancellationToken.None);
+        artifacts.Replaced.Clear();
+
+        var attached = await coordinator.ResolveAsync(CreateDraftSignal(externalId: "recurrence-two"), configuration, CancellationToken.None);
+
+        Assert.Equal(recurrence.Fault.Id, attached.Fault.Id);
+        var state = Assert.Single(artifacts.Replaced, artifact => artifact.Kind == ArtifactKind.RecurrenceState);
+        Assert.Equal(2, state.RedactedPayload.GetProperty("recurrenceCount").GetInt32());
+        Assert.True(state.RedactedPayload.GetProperty("escalationIntentCreated").GetBoolean());
+    }
+    [Fact]
     public async Task ResolveAsync_LostFaultCreationRace_AttachesToWinnerInsteadOfThrowing()
     {
         var (coordinator, _, faults, jobs, _) = CreateHarness();
@@ -407,16 +428,23 @@ public sealed class FaultGroupingCoordinatorTests
     }
     private sealed class FakeRecurrenceStateRepository : IRecurrenceStateRepository
     {
+        private int count;
+
         public Task<RecurrenceState> RecordAsync(
             RecurrenceOccurrence occurrence,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(new RecurrenceState(
-                1,
+            CancellationToken cancellationToken)
+        {
+            count++;
+            var createsEscalationIntent = occurrence.EscalateAfterCount > 0 && count >= occurrence.EscalateAfterCount;
+            return Task.FromResult(new RecurrenceState(
+                count,
                 occurrence.OccurredAtUtc,
                 occurrence.OccurredAtUtc,
-                occurrence.EscalateAfterCount == 1 ? occurrence.JobId : null,
-                occurrence.EscalateAfterCount == 1 ? occurrence.FaultId : null));
+                createsEscalationIntent ? occurrence.JobId : null,
+                createsEscalationIntent ? occurrence.FaultId : null));
+        }
     }
+
     private sealed class FakeSignalRepository : ISignalRepository
     {
         public List<Signal> Inserted { get; } = [];

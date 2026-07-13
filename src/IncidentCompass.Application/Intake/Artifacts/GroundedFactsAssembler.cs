@@ -100,6 +100,9 @@ public sealed class GroundedFactsAssembler(
         return CreateArtifact(job.Id, attempt: null, ArtifactKind.NeighborSet, $"fault:{fault.Id}", payload);
     }
 
+    public Task ReplaceRecurrenceStateAsync(TriageJob job, RecurrenceState recurrenceState, CancellationToken cancellationToken) =>
+        artifactRepository.ReplaceJobLevelAsync(CreateRecurrenceStateArtifact(job, recurrenceState), cancellationToken);
+
     private async Task InsertRecurrenceStateArtifactAsync(
         TriageJob job,
         RecurrenceState? recurrenceState,
@@ -110,6 +113,12 @@ public sealed class GroundedFactsAssembler(
             return;
         }
 
+        var artifact = CreateRecurrenceStateArtifact(job, recurrenceState);
+        await artifactRepository.InsertAsync(artifact, cancellationToken);
+    }
+
+    private TriageArtifact CreateRecurrenceStateArtifact(TriageJob job, RecurrenceState recurrenceState)
+    {
         var payload = new JsonObject
         {
             ["recurrenceCount"] = recurrenceState.Count,
@@ -119,7 +128,7 @@ public sealed class GroundedFactsAssembler(
             ["escalationIntentJobId"] = recurrenceState.EscalationIntentJobId?.ToString(),
         };
 
-        await InsertArtifactAsync(job.Id, attempt: null, ArtifactKind.RecurrenceState, $"job:{job.Id}", payload, cancellationToken);
+        return CreateArtifact(job.Id, attempt: null, ArtifactKind.RecurrenceState, $"job:{job.Id}", payload);
     }
     private async Task InsertPriorReportArtifactIfRecurrenceAsync(TriageJob job, Fault fault, CancellationToken cancellationToken)
     {

@@ -31,7 +31,12 @@ internal sealed class PostgresRecurrenceStateRepository(
             ON CONFLICT (tenant_id, service_name, environment, fingerprint, fingerprint_version, grouping_rule_id, grouping_rule_version)
             DO UPDATE SET
                 recurrence_count = incidentcompass.recurrence_states.recurrence_count + 1,
-                last_recurrence_at_utc = EXCLUDED.last_recurrence_at_utc,
+                first_recurrence_at_utc = LEAST(
+                    incidentcompass.recurrence_states.first_recurrence_at_utc,
+                    EXCLUDED.first_recurrence_at_utc),
+                last_recurrence_at_utc = GREATEST(
+                    incidentcompass.recurrence_states.last_recurrence_at_utc,
+                    EXCLUDED.last_recurrence_at_utc),
                 escalation_intent_job_id = CASE
                     WHEN incidentcompass.recurrence_states.escalation_intent_job_id IS NULL
                      AND @escalate_after_count > 0

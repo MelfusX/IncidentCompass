@@ -69,6 +69,18 @@ configuration. Put overrides in the ignored `.env` file.
 Compose waits for PostgreSQL health before starting the hosts, checks API readiness with GET
 /health, and uses a process-level Worker health check before running the Tester. API and Worker still
 use restart-on-failure because config warmup intentionally fails fast if durable storage is unavailable.
+## Grouping, Suppression And Recurrence
+
+The grouping configuration separates delivery deduplication from fault lifecycle. Reusing one delivery
+key returns the accepted signal and cannot increase neighbor or recurrence facts. A distinct matching
+signal attaches to an open fault. A matching signal after a closed fault can be suppressed by its selected
+service/severity window, or can open a recurrence fault and one pending job after that window expires.
+
+`FaultGrouping.Recurrence.EscalateAfterCount` controls the durable, per-group-generation recurrence
+counter. Every distinct accepted signal attached to the open recurrence advances that counter in the same
+PostgreSQL transaction; the threshold stores at most one escalation intent linked to the recurrence job.
+The job-level `RecurrenceState` artifact exposes the count, timestamps and intent to a grounded report.
+This is deterministic intake behavior, not automatic external notification or report supersession.
 
 ## File-Backed Memory Sync
 
