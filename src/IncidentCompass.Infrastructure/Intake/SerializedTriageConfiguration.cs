@@ -11,4 +11,5 @@ internal sealed record SerializedTriageConfiguration(
     IReadOnlyCollection<TriageRuleSettings>? Rules,
     IngestionSettings? Ingestion,
     FaultGroupingSettings? FaultGrouping,
-    RedactionSettings? Redaction);
+    RedactionSettings? Redaction,
+    IReadOnlyDictionary<string, string>? CurrentReleases);

@@ -33,7 +33,12 @@
     },
     "Ingestion": { "$ref": "#/$defs/ingestion" },
     "FaultGrouping": { "$ref": "#/$defs/faultGrouping" },
-    "Redaction": { "$ref": "#/$defs/redaction" }
+    "Redaction": { "$ref": "#/$defs/redaction" },
+    "CurrentReleases": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/nonBlankString" },
+      "propertyNames": { "$ref": "#/$defs/nonBlankString" }
+    }
   },
   "$defs": {
     "nonBlankString": {

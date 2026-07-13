@@ -10,4 +10,8 @@ public sealed record TriageConfiguration(
     IReadOnlyCollection<TriageRuleSettings> Rules,
     IngestionSettings Ingestion,
     FaultGroupingSettings FaultGrouping,
-    RedactionSettings Redaction);
+    RedactionSettings Redaction)
+{
+    public IReadOnlyDictionary<string, string> CurrentReleases { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+}

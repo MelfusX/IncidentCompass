@@ -31,6 +31,21 @@ public sealed class TriageConfigSchemaTests
     }
 
     [Fact]
+    public void CurrentReleasesRequiresNonBlankServiceAndRelease()
+    {
+        var configuration = LoadConfiguration();
+        configuration["CurrentReleases"] = new JsonObject
+        {
+            ["checkout"] = "",
+            [""] = "2026.07.13.1"
+        };
+
+        var result = Evaluate(configuration);
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
     public void InvalidBudgetAndRedactionShape_AreRejected()
     {
         var configuration = LoadConfiguration();

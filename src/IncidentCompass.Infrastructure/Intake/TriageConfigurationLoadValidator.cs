@@ -18,6 +18,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
     {
         FaultGroupingSettingsLoadValidator.Validate(configuration.FaultGrouping);
         RedactionSettingsLoadValidator.Validate(configuration.Redaction);
+        ValidateCurrentReleases(configuration.CurrentReleases);
         ValidateAllowedSources(configuration.Ingestion);
         ValidateProviders(configuration.Providers);
         ValidateRoutes(configuration.Providers, configuration.Routes);
@@ -35,6 +36,15 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             {
                 throw Invalid("Ingestion.AllowedSources", source, "only source kinds with registered normalizers");
             }
+        }
+    }
+
+    private static void ValidateCurrentReleases(IReadOnlyDictionary<string, string> currentReleases)
+    {
+        foreach (var (service, release) in currentReleases)
+        {
+            RequireKey(service, "CurrentReleases");
+            RequireNonBlank("CurrentReleases." + service, release);
         }
     }
 

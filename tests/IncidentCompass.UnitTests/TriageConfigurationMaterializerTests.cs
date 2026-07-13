@@ -21,6 +21,23 @@ public sealed class TriageConfigurationMaterializerTests
         var rule = Assert.Single(configuration.Rules);
         Assert.Equal("attempt", rule.Scope);
         Assert.Empty(configuration.Redaction.Patterns);
+        Assert.Empty(configuration.CurrentReleases);
+    }
+
+    [Fact]
+    public void Materialize_CurrentReleasesRequiresNonBlankServiceAndRelease()
+    {
+        var node = ValidConfigNode();
+        node["CurrentReleases"] = new JsonObject
+        {
+            ["checkout"] = "",
+            [""] = "2026.07.13.1"
+        };
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("CurrentReleases", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
