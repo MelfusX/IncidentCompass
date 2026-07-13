@@ -15,4 +15,7 @@ public sealed record TriageReportDetailsResponse(
     IReadOnlyList<string> Limitations,
     string ConfigHash,
     DateTimeOffset CreatedAtUtc,
+    Guid? SupersedesReportId,
+    Guid? SupersededByReportId,
+    bool IsLatestForFault,
     IReadOnlyList<TriageReportEvidenceResponse> Evidence);

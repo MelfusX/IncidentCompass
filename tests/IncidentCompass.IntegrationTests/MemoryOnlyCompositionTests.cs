@@ -271,6 +271,9 @@ public sealed class MemoryOnlyCompositionTests
     {
         public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>
             Task.FromResult<TriageReportDetailsResponse?>(null);
+
+        public Task<TriageReportDetailsResponse?> FindLatestByFaultIdAsync(Guid faultId, CancellationToken cancellationToken) =>
+            Task.FromResult<TriageReportDetailsResponse?>(null);
     }
 
     private sealed class InMemoryPriorReportSummaryProvider : IPriorReportSummaryProvider

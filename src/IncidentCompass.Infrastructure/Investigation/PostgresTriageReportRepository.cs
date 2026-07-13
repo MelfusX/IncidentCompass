@@ -46,7 +46,9 @@ internal sealed class PostgresTriageReportRepository(
                 throw new InvalidOperationException($"Triage job '{job.Id}' could not be completed for attempt {job.Attempt}.");
             }
 
-            var reportId = await UpsertReportAsync(connection, transaction, job, report, isMassIssue, now, cancellationToken);
+            var supersedesReportId = await PostgresReportLifecycleWriter.FindLatestReportForUpdateAsync(
+                connection, transaction, job.FaultId, cancellationToken);
+            var reportId = await InsertReportAsync(connection, transaction, job, report, isMassIssue, supersedesReportId, now, cancellationToken);
             await PostgresTriageEvidenceWriter.ReplaceAsync(connection, transaction, reportId, evidence, now, cancellationToken);
             await MarkFaultTerminalAsync(connection, transaction, job.FaultId, job.Id, report.Status, now, cancellationToken);
             await faultInjector.BeforeReportPublishedLedgerEventAsync(cancellationToken);
@@ -113,36 +115,28 @@ internal sealed class PostgresTriageReportRepository(
         return value is DBNull or null ? null : (bool)value;
     }
 
-    private static async Task<Guid> UpsertReportAsync(
+    private static async Task<Guid> InsertReportAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TriageJob job,
         TriageReport report,
         bool? isMassIssue,
+        Guid? supersedesReportId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
             INSERT INTO incidentcompass.triage_reports (
-                id, fault_id, status, summary, classification, confidence, is_mass_issue,
-                recommended_next_action, limitations, documentation_fit, config_hash, created_at_utc)
+                id, job_id, fault_id, supersedes_report_id, status, summary, classification, confidence,
+                is_mass_issue, recommended_next_action, limitations, documentation_fit, config_hash, created_at_utc)
             VALUES (
-                @id, @fault_id, @status, @summary, @classification, @confidence, @is_mass_issue,
-                @recommended_next_action, @limitations, @documentation_fit, @config_hash, @created_at_utc)
-            ON CONFLICT (fault_id) DO UPDATE
-            SET status = EXCLUDED.status,
-                summary = EXCLUDED.summary,
-                classification = EXCLUDED.classification,
-                confidence = EXCLUDED.confidence,
-                is_mass_issue = EXCLUDED.is_mass_issue,
-                recommended_next_action = EXCLUDED.recommended_next_action,
-                limitations = EXCLUDED.limitations,
-                documentation_fit = EXCLUDED.documentation_fit,
-                config_hash = EXCLUDED.config_hash,
-                created_at_utc = EXCLUDED.created_at_utc
+                @id, @job_id, @fault_id, @supersedes_report_id, @status, @summary, @classification, @confidence,
+                @is_mass_issue, @recommended_next_action, @limitations, @documentation_fit, @config_hash, @created_at_utc)
             RETURNING id;
             """, connection, transaction);
         command.AddParameter("id", Guid.NewGuid());
+        command.AddParameter("job_id", job.Id);
+        command.AddParameter("supersedes_report_id", supersedesReportId);
         command.AddParameter("fault_id", job.FaultId);
         command.AddParameter("status", report.Status.ToDbString());
         command.AddParameter("summary", report.Summary);

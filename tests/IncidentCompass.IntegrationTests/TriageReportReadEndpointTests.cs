@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Reports;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -66,6 +67,70 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Assert.Equal(1, recurrenceEvidence.ArtifactPayload.GetProperty("recurrenceCount").GetInt32());
         Assert.False(recurrenceEvidence.ArtifactPayload.GetProperty("escalationIntentCreated").GetBoolean());
     }
+    [DockerAvailableFact]
+    public async Task GetTriageReportHistory_ExposesImmutableSupersessionAndLatestFaultReport()
+    {
+        using var scope = await CreateScopeAsync();
+        var signal = await PostIngestAsync(scope.Client, "report-history-svc-" + Guid.NewGuid().ToString("N"));
+        await RunClaimedJobAsync(scope, signal.JobId!.Value, "worker-report-history");
+
+        var firstReportId = await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT id FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            ("fault_id", signal.FaultId));
+        var otherFault = await PostIngestAsync(scope.Client, "report-history-other-svc-" + Guid.NewGuid().ToString("N"));
+        var crossFaultException = await Record.ExceptionAsync(() => ExecuteAsync(scope.ConnectionString, """
+            INSERT INTO incidentcompass.triage_reports (
+                id, job_id, fault_id, supersedes_report_id, status, summary, classification, confidence,
+                documentation_fit, limitations, config_hash, created_at_utc)
+            VALUES (
+                @report_id, @job_id, @fault_id, @supersedes_report_id, 'Completed', 'Invalid cross-fault report.',
+                'LikelyRegression', 'High', 'Missing', ARRAY[]::text[], @config_hash, now());
+            """, ("report_id", Guid.NewGuid()), ("job_id", otherFault.JobId!.Value), ("fault_id", otherFault.FaultId),
+            ("supersedes_report_id", firstReportId), ("config_hash", otherFault.ConfigHash!)));
+        Assert.Equal("23503", Assert.IsType<PostgresException>(crossFaultException).SqlState);
+
+        var successorJobId = Guid.NewGuid();
+        await ExecuteAsync(scope.ConnectionString, """
+            INSERT INTO incidentcompass.triage_jobs (
+                id, fault_id, status, attempt, config_hash, created_at_utc, updated_at_utc)
+            SELECT @job_id, fault_id, 'Succeeded', 1, config_hash, now(), now()
+            FROM incidentcompass.triage_reports
+            WHERE id = @first_id;
+            """, ("job_id", successorJobId), ("first_id", firstReportId));
+        var successorReportId = Guid.NewGuid();
+        await ExecuteAsync(scope.ConnectionString, """
+            INSERT INTO incidentcompass.triage_reports (
+                id, job_id, fault_id, supersedes_report_id, status, summary, classification, confidence,
+                documentation_fit, limitations, config_hash, created_at_utc)
+            SELECT @successor_id, @job_id, fault_id, id, 'Completed', 'Re-triaged report.', 'LikelyRegression', 'High',
+                   'Missing', ARRAY[]::text[], config_hash, created_at_utc + interval '1 second'
+            FROM incidentcompass.triage_reports
+            WHERE id = @first_id;
+            """, ("successor_id", successorReportId), ("job_id", successorJobId), ("first_id", firstReportId));
+
+        var first = await GetReportAsync(scope.Client, "/api/v1/triage-reports/" + firstReportId);
+        Assert.Equal(successorReportId, first.SupersededByReportId);
+        Assert.Null(first.SupersedesReportId);
+        Assert.False(first.IsLatestForFault);
+
+        var successor = await GetReportAsync(scope.Client, "/api/v1/triage-reports/" + successorReportId);
+        Assert.Equal(firstReportId, successor.SupersedesReportId);
+        Assert.Null(successor.SupersededByReportId);
+        Assert.True(successor.IsLatestForFault);
+        Assert.Equal("LikelyRegression", successor.Classification);
+
+        using (var readScope = scope.Factory.Services.CreateScope())
+        {
+            var repository = readScope.ServiceProvider.GetRequiredService<ITriageReportReadRepository>();
+            var directLatest = await repository.FindLatestByFaultIdAsync(signal.FaultId, TestContext.Current.CancellationToken);
+            Assert.NotNull(directLatest);
+            Assert.Equal(successorReportId, directLatest.Id);
+        }
+        var latest = await GetReportAsync(scope.Client, "/api/v1/faults/" + signal.FaultId + "/triage-report");
+        Assert.Equal(successorReportId, latest.Id);
+        Assert.True(latest.IsLatestForFault);
+    }
     private async Task<TestScope> CreateScopeAsync(bool citeRecurrenceState = false)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
@@ -126,6 +191,13 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         return body;
     }
 
+    private static async Task<TriageReportDetailsDto> GetReportAsync(HttpClient client, string path)
+    {
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+        var content = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode, $"Expected a successful report response for '{path}', received {(int)response.StatusCode}: {content}");
+        return JsonSerializer.Deserialize<TriageReportDetailsDto>(content, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+    }
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -244,7 +316,13 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Guid? JobId,
         string? ConfigHash);
 
-    private sealed record TriageReportDetailsDto(IReadOnlyList<TriageEvidenceDto> Evidence);
+    private sealed record TriageReportDetailsDto(
+        Guid Id,
+        string Classification,
+        Guid? SupersedesReportId,
+        Guid? SupersededByReportId,
+        bool IsLatestForFault,
+        IReadOnlyList<TriageEvidenceDto> Evidence);
 
     private sealed record TriageEvidenceDto(
         string Kind,

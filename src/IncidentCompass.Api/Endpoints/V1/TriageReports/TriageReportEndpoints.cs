@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Investigation.Reports.Get;
+using IncidentCompass.Application.Investigation.Reports.GetLatest;
 
 namespace IncidentCompass.Api;
 
@@ -20,6 +21,22 @@ internal static class TriageReportEndpoints
             })
             .WithName("GetTriageReportById")
             .WithSummary("Return a triage report with backend-grounded evidence.")
+            .Produces<TriageReportDetailsResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        api.MapGet("/faults/{faultId:guid}/triage-report", async (
+                Guid faultId,
+                IApplicationDispatcher dispatcher,
+                CancellationToken cancellationToken) =>
+            {
+                var result = await dispatcher.DispatchAsync<GetLatestTriageReportQuery, TriageReportDetailsResponse>(
+                    new GetLatestTriageReportQuery(faultId),
+                    cancellationToken);
+
+                return Results.Ok(result);
+            })
+            .WithName("GetLatestTriageReportForFault")
+            .WithSummary("Return the latest triage report for a fault.")
             .Produces<TriageReportDetailsResponse>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
