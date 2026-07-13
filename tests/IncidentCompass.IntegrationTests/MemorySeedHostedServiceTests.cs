@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Infrastructure;
+using IncidentCompass.Infrastructure.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
 
@@ -298,6 +301,133 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
     }
     [DockerAvailableFact]
+    public async Task RuntimeResync_UpdatesEditedSeedWithoutRestart()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using var host = CreateHost(
+            connectionString, sourceDirectory, new CountingEmbeddingClient(), runtimeResyncEnabled: true);
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            "\nRuntime synchronization update.",
+            TestContext.Current.CancellationToken);
+        await WaitUntilAsync(async () =>
+            (await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md")).Version == 2);
+
+        var status = host.Services.GetRequiredService<IMemorySeedSyncStatus>().Snapshot;
+        Assert.True(status.RuntimeResyncEnabled);
+        Assert.NotNull(status.LastSuccessAtUtc);
+        Assert.NotNull(status.ActiveGeneration);
+        Assert.Null(status.LastErrorCode);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [DockerAvailableFact]
+    public async Task RuntimeResync_DeactivatesRemovedSeedWithoutRestart()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using var host = CreateHost(
+            connectionString, sourceDirectory, new CountingEmbeddingClient(), runtimeResyncEnabled: true);
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        File.Delete(Path.Combine(sourceDirectory, "incidents", "provider-unavailable.md"));
+        await WaitUntilAsync(async () => (await ReadMemoryCountsAsync(connectionString)).Items == 1);
+
+        var removed = await ReadSeedStateAsync(connectionString, "incidents/provider-unavailable.md");
+        Assert.False(removed.IsActive);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [DockerAvailableFact]
+    public async Task RuntimeResync_FailureIsVisibleWhilePreviousCorpusRemainsActive()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using var host = CreateHost(
+            connectionString, sourceDirectory, new FailAfterEmbeddingClient(2), runtimeResyncEnabled: true);
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var original = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        await File.AppendAllTextAsync(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            "\nRuntime synchronization failure trigger.",
+            TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() =>
+            Task.FromResult(host.Services.GetRequiredService<IMemorySeedSyncStatus>()
+                .Snapshot.LastErrorCode == "memory_sync_failed"));
+
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "default"));
+        var current = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        Assert.Equal(original.Content, current.Content);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [DockerAvailableFact]
+    public async Task StartupOnlyMode_DoesNotResyncEditedSeed()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using var host = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient());
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            "\nStartup-only update.",
+            TestContext.Current.CancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        var state = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        Assert.Equal(1, state.Version);
+        Assert.False(host.Services.GetRequiredService<IMemorySeedSyncStatus>().Snapshot.RuntimeResyncEnabled);
+        await host.StopAsync(TestContext.Current.CancellationToken);
+    }
+    [DockerAvailableFact]
+    public async Task RuntimeResync_StopCancelsInflightSyncWithoutFailureStatus()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        var embeddingClient = new BlockingAfterEmbeddingClient(2);
+        using var host = CreateHost(
+            connectionString, sourceDirectory, embeddingClient, runtimeResyncEnabled: true);
+
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            "\nCancellation trigger.",
+            TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => Task.FromResult(embeddingClient.CallCount >= 3));
+
+        await host.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(host.Services.GetRequiredService<IMemorySeedSyncStatus>().Snapshot.LastErrorCode);
+    }
+
+    [DockerAvailableFact]
+    public async Task StartAsync_RuntimeResyncRejectsOutOfRangeInterval()
+    {
+        var connectionString = await CreateSchemaAsync();
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using var host = CreateHost(
+            connectionString,
+            sourceDirectory,
+            new CountingEmbeddingClient(),
+            runtimeResyncEnabled: true,
+            runtimeResyncIntervalSeconds: 0);
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.IsType<InvalidOperationException>(exception);
+    }
+
+    [DockerAvailableFact]
     public async Task StartAsync_FrontmatterMetadataIsPersisted()
     {
         var connectionString = await CreateSchemaAsync();
@@ -316,6 +446,31 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         Assert.Contains("checkout", state.Tags);
     }
 
+    [DockerAvailableFact]
+    public async Task StartAsync_FailureStatusPersistenceDoesNotMaskSyncFailureOrStall()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var statusWriter = new BlockingFailureStatusWriter();
+        using var host = CreateHost(
+            connectionString,
+            await CreateSeedDirectoryAsync(),
+            new FailAfterEmbeddingClient(0),
+            configureServices: services =>
+            {
+                services.RemoveAll<IMemorySeedSyncStatusWriter>();
+                services.AddSingleton<IMemorySeedSyncStatusWriter>(statusWriter);
+            });
+
+        var stopwatch = Stopwatch.StartNew();
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => host.StartAsync(TestContext.Current.CancellationToken));
+        stopwatch.Stop();
+
+        Assert.Equal("Simulated embedding failure.", exception.Message);
+        Assert.True(statusWriter.FailureSaveStarted);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(4));
+    }
     private async Task<string> CreateSchemaAsync()
     {
         var connectionString = await postgres.GetConnectionStringAsync();
@@ -327,7 +482,10 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         string connectionString,
         string sourceDirectory,
         IEmbeddingClient embeddingClient,
-        string owner = "default")
+        string owner = "default",
+        bool runtimeResyncEnabled = false,
+        int runtimeResyncIntervalSeconds = 1,
+        Action<IServiceCollection>? configureServices = null)
     {
         return new HostBuilder()
             .ConfigureAppConfiguration(configuration =>
@@ -339,6 +497,8 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
                     ["IncidentCompass:Memory:Seed:Enabled"] = "true",
                     ["IncidentCompass:Memory:Seed:TenantId"] = "local",
                     ["IncidentCompass:Memory:Seed:Owner"] = owner,
+                    ["IncidentCompass:Memory:Seed:RuntimeResyncEnabled"] = runtimeResyncEnabled.ToString(),
+                    ["IncidentCompass:Memory:Seed:RuntimeResyncIntervalSeconds"] = runtimeResyncIntervalSeconds.ToString(),
                     ["IncidentCompass:Memory:Seed:SourceDirectory"] = sourceDirectory
                 });
             })
@@ -348,10 +508,19 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
                 services.AddSingleton<IEmbeddingClient>(embeddingClient);
                 services.AddTestApplication(context.Configuration);
                 services.AddInfrastructure(context.Configuration);
+                configureServices?.Invoke(services);
             })
             .Build();
     }
 
+    private static async Task WaitUntilAsync(Func<Task<bool>> predicate)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        while (!await predicate())
+        {
+            await Task.Delay(50, timeout.Token);
+        }
+    }
     private static async Task<string> CreateSeedDirectoryAsync()
     {
         var directory = Path.Combine(Path.GetTempPath(), "incidentcompass-memory-seed-" + Guid.NewGuid().ToString("N"));
@@ -486,6 +655,21 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         throw new InvalidOperationException("Repository root was not found.");
     }
 
+    private sealed class BlockingFailureStatusWriter : IMemorySeedSyncStatusWriter
+    {
+        public bool FailureSaveStarted { get; private set; }
+
+        public Task SaveAsync(MemorySeedSyncSnapshot snapshot, CancellationToken cancellationToken)
+        {
+            if (snapshot.LastErrorCode != "memory_sync_failed")
+            {
+                return Task.CompletedTask;
+            }
+
+            FailureSaveStarted = true;
+            return Task.Delay(Timeout.InfiniteTimeSpan, CancellationToken.None);
+        }
+    }
     private sealed class CountingEmbeddingClient : IEmbeddingClient
     {
         private int callCount;
@@ -517,6 +701,26 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
             return Task.FromResult(new EmbeddingResponse([1f, 0f], request.Model, "test", 1, request.CorrelationId));
         }
     }
+    private sealed class BlockingAfterEmbeddingClient(int successfulCalls) : IEmbeddingClient
+    {
+        private int callCount;
+
+        public int CallCount => Volatile.Read(ref callCount);
+
+        public async Task<EmbeddingResponse> CreateEmbeddingAsync(
+            EmbeddingRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref callCount) <= successfulCalls)
+            {
+                return new EmbeddingResponse([1f, 0f], request.Model, "test", 1, request.CorrelationId);
+            }
+
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            throw new InvalidOperationException("Cancellation did not stop the embedding request.");
+        }
+    }
+
     private sealed record MemoryCounts(long Items, long Chunks, long Sources);
 
     private sealed record SeedState(

@@ -151,8 +151,10 @@ $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=inc
 dotnet run --project src/IncidentCompass.Api --launch-profile http
 ~~~
 
-After the seed completes, stop the host and unset `IncidentCompass__Memory__Seed__Enabled` for normal
-runs. Seeding is idempotent for the same tenant/source/content hash/version.
+The default is startup-only synchronization. To apply file edits and removals without restarting, set
+`IncidentCompass__Memory__Seed__RuntimeResyncEnabled=true` and choose a bounded
+`IncidentCompass__Memory__Seed__RuntimeResyncIntervalSeconds` value from 1 through 86400. The metadata-only
+status is available at `GET /api/v1/health/memory-sync`. The Worker persists this metadata by the configured memory seed tenant and owner, so the API reports the Worker-persisted synchronization snapshot rather than its own local singleton. It is not a Worker liveness probe. When hosts are configured separately, they must use the same memory seed tenant and owner; the standard Compose file supplies the shared values. Seeding is idempotent for the same owner/source/content hash/version.
 
 Run the API:
 

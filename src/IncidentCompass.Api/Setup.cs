@@ -17,7 +17,8 @@ public static class Setup
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
         services.AddHealthChecks()
-            .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
+            .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"])
+            .AddCheck<MemorySeedSyncHealthCheck>("memory_seed_sync", tags: ["ready"]);
         services.AddOpenApi();
 
         return services;

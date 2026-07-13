@@ -45,6 +45,8 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
       IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
+      IncidentCompass__Memory__Seed__TenantId: ${INCIDENTCOMPASS_MEMORY_SEED_TENANT_ID:-local}
+      IncidentCompass__Memory__Seed__Owner: ${INCIDENTCOMPASS_MEMORY_SEED_OWNER:-default}
       IncidentCompass__Memory__Seed__SourceDirectory: /app/samples
     ports:
       - "${IC_API_PORT:-5198}:8080"
@@ -69,6 +71,8 @@ services:
       ConnectionStrings__IncidentCompass: Host=postgres;Port=5432;Database=${POSTGRES_DB:-incidentcompass};Username=${POSTGRES_USER:-incidentcompass};Password=${POSTGRES_PASSWORD:-incidentcompass_dev_password}
       IncidentCompass__ConfigSource__Path: /app/config/incidentcompass.config.json
       IncidentCompass__Memory__Seed__Enabled: "true"
+      IncidentCompass__Memory__Seed__TenantId: ${INCIDENTCOMPASS_MEMORY_SEED_TENANT_ID:-local}
+      IncidentCompass__Memory__Seed__Owner: ${INCIDENTCOMPASS_MEMORY_SEED_OWNER:-default}
       IncidentCompass__Memory__Seed__SourceDirectory: /app/samples
       IncidentCompass__Worker__PollIntervalSeconds: "1"
       IncidentCompass__Worker__RetryDelaySeconds: "2"

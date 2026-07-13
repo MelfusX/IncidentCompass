@@ -37,10 +37,16 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2, 3, 4], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2, 3, 4], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
+        Assert.Equal(
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            await ReadGuidAsync(
+                upgraded.ConnectionString,
+                "SELECT job_id FROM incidentcompass.triage_reports WHERE id = '55555555-5555-5555-5555-555555555555';"));
+        await AssertReportRowsAreImmutableAsync(upgraded.ConnectionString);
 
         foreach (var tableName in new[]
                  {
@@ -64,7 +70,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2, 3, 4], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
     }
 
@@ -260,11 +266,104 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                        'service_name', 'component', 'release_name', 'is_active',
                        'seed_managed', 'updated_at_utc', 'superseded_at_utc',
                        'seed_owner', 'seed_generation')) = 9
+                AND
+                (SELECT count(*)
+                 FROM information_schema.columns
+                 WHERE table_schema = 'incidentcompass'
+                   AND table_name IN ('signals', 'faults')
+                   AND column_name IN ('grouping_rule_id', 'grouping_rule_version')) = 4
+                AND
+                (SELECT count(*)
+                 FROM information_schema.columns
+                 WHERE table_schema = 'incidentcompass'
+                   AND table_name = 'signals'
+                   AND column_name IN ('suppression_rule_id', 'effective_suppression_window_minutes')) = 2
+                AND
+                (SELECT count(*)
+                 FROM pg_indexes
+                 WHERE schemaname = 'incidentcompass'
+                   AND indexname IN (
+                       'ux_faults_open_group',
+                       'ix_faults_versioned_group_lookup',
+                       'ix_signals_versioned_neighbor_lookup',
+                       'ix_signals_suppression_audit',
+                       'ix_recurrence_states_escalation_intent')) = 5
+                AND
+                (SELECT count(*)
+                 FROM information_schema.columns
+                 WHERE table_schema = 'incidentcompass'
+                   AND table_name = 'triage_reports'
+                   AND column_name IN ('job_id', 'supersedes_report_id')) = 2
+                AND
+                (SELECT count(*)
+                 FROM pg_indexes
+                 WHERE schemaname = 'incidentcompass'
+                   AND indexname IN (
+                       'ux_triage_reports_job',
+                       'ux_triage_reports_supersedes',
+                       'ix_triage_reports_fault_history')) = 3
+                AND
+                EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'incidentcompass'
+                      AND table_name = 'recurrence_states')
+                AND
+                (SELECT count(*)
+                 FROM pg_constraint
+                 WHERE connamespace = 'incidentcompass'::regnamespace
+                   AND conname IN (
+                       'ck_triage_artifacts_kind', 'ck_triage_evidence_kind',
+                       'ck_triage_reports_no_self_supersede')
+                   AND (pg_get_constraintdef(oid) LIKE '%RecurrenceState%'
+                        OR conname = 'ck_triage_reports_no_self_supersede')) = 3
+                AND
+                (SELECT count(*)
+                 FROM information_schema.columns
+                 WHERE table_schema = 'incidentcompass'
+                   AND table_name = 'triage_jobs'
+                   AND column_name IN ('retriage_trigger_job_id', 'supersedes_report_id')) = 2
+                AND
+                (SELECT count(*)
+                 FROM pg_indexes
+                 WHERE schemaname = 'incidentcompass'
+                   AND indexname IN (
+                       'ux_triage_jobs_retriage_trigger',
+                       'ix_triage_reports_created_desc',
+                       'ix_faults_tenant_id')) = 3
+                AND
+                EXISTS (
+                    SELECT 1
+                    FROM pg_trigger
+                    WHERE tgrelid = 'incidentcompass.triage_reports'::regclass
+                      AND tgname = 'trg_triage_reports_immutable')
+                AND
+                (SELECT count(*)
+                 FROM pg_constraint
+                 WHERE connamespace = 'incidentcompass'::regnamespace
+                   AND conname IN (
+                       'uq_triage_reports_id_fault',
+                       'fk_triage_reports_superseded_same_fault')) = 2
             );
             """;
         return Convert.ToBoolean(await ExecuteScalarAsync(connectionString, sql));
     }
 
+    private static async Task AssertReportRowsAreImmutableAsync(string connectionString)
+    {
+        var exception = await Record.ExceptionAsync(() => ExecuteAsync(
+            connectionString,
+            "UPDATE incidentcompass.triage_reports SET summary = 'mutated' WHERE id = '55555555-5555-5555-5555-555555555555';"));
+
+        var postgresException = Assert.IsType<PostgresException>(exception);
+        Assert.Contains("immutable", postgresException.MessageText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<Guid> ReadGuidAsync(string connectionString, string sql)
+    {
+        var value = await ExecuteScalarAsync(connectionString, sql);
+        return (Guid)value!;
+    }
     private static async Task<IReadOnlyList<int>> ReadAppliedVersionsAsync(string connectionString)
     {
         await using var connection = await OpenAsync(connectionString);

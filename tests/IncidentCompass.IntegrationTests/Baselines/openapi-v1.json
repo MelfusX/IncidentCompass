@@ -55,6 +55,27 @@
         }
       }
     },
+    "/api/v1/health/memory-sync": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Metadata-only Worker memory synchronization status persisted in PostgreSQL.",
+        "operationId": "GetMemorySeedSyncStatus",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySeedSyncSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/me": {
       "get": {
         "tags": [
@@ -704,6 +725,52 @@
       },
       "JsonElement": {},
       "JsonNode": {},
+      "MemorySeedSyncSnapshot": {
+        "required": [
+          "enabled",
+          "runtimeResyncEnabled",
+          "lastAttemptAtUtc",
+          "lastSuccessAtUtc",
+          "activeGeneration",
+          "lastErrorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "runtimeResyncEnabled": {
+            "type": "boolean"
+          },
+          "lastAttemptAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastSuccessAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "activeGeneration": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "lastErrorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {

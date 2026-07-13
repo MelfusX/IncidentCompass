@@ -80,7 +80,8 @@ frontmatter is the content embedded and cited by reports.
 API and Worker may start together and sync the same corpus safely. A changed file updates one stable
 source record and re-embeds its body. A removed file is deactivated, so its old chunks stay available
 for audit history but no longer participate in `memory_search`. Git history remains the provenance and
-review path; there is no memory write API.
+review path; there is no memory write API. Runtime resync is disabled by default; enable it only with a
+bounded interval when a long-running local corpus should follow reviewed file changes.
 
 ## Model Configuration
 

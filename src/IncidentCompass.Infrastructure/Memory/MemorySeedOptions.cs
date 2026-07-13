@@ -11,4 +11,8 @@ internal sealed class MemorySeedOptions
     public string Owner { get; init; } = "default";
 
     public string SourceDirectory { get; init; } = "../../samples";
+
+    public bool RuntimeResyncEnabled { get; init; }
+
+    public int RuntimeResyncIntervalSeconds { get; init; } = 300;
 }

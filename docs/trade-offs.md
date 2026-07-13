@@ -75,7 +75,7 @@ Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the app
 Memory content stays in reviewed files instead of an unauthenticated admin endpoint. Source path is
 the stable database identity; a content change updates and re-embeds that item, and a removed file is
 deactivated from retrieval. This keeps provenance simple and prevents an edited file from leaving a
-second stale live item. It also means operators need a repository change and restart to update memory.
+second stale live item. Runtime resync is opt-in and bounded; operators may enable it for reviewed file changes without adding a memory write API. The default remains startup-only synchronization.
 
 ## Memory Embedding Model Changes Require Re-Embedding
 

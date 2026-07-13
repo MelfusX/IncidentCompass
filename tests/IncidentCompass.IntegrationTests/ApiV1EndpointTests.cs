@@ -277,6 +277,24 @@ public sealed class ApiV1EndpointTests(MockProvidersWebApplicationFactory factor
     }
 
     [Fact]
+    public async Task MemorySyncHealth_ReturnsMetadataOnlyStatus()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+        var response = await client.GetAsync("/api/v1/health/memory-sync");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MemorySyncHealthResponse>();
+        Assert.NotNull(body);
+        Assert.False(body.Enabled);
+        Assert.False(body.RuntimeResyncEnabled);
+        Assert.Null(body.LastErrorCode);
+    }
+
+    [Fact]
     public async Task OtlpTraceEndpoint_AcceptsAnEmptyProtobufExport()
     {
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -290,6 +308,36 @@ public sealed class ApiV1EndpointTests(MockProvidersWebApplicationFactory factor
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("application/x-protobuf", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_RejectsChunkedPayloadOverTheConfiguredLimit()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var content = new ChunkedByteContent(new byte[65537]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+
+        var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_RejectsUnsupportedMediaType()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var content = new ByteArrayContent([]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
     }
 
     [Fact]
@@ -365,6 +413,33 @@ public sealed class ApiV1EndpointTests(MockProvidersWebApplicationFactory factor
                 }
             }
         };
+
+    private sealed class ChunkedByteContent(byte[] payload) : HttpContent
+    {
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            const int chunkSize = 4096;
+            for (var offset = 0; offset < payload.Length; offset += chunkSize)
+            {
+                var length = Math.Min(chunkSize, payload.Length - offset);
+                await stream.WriteAsync(payload.AsMemory(offset, length));
+            }
+        }
+    }
+
+    private sealed record MemorySyncHealthResponse(
+        bool Enabled,
+        bool RuntimeResyncEnabled,
+        DateTimeOffset? LastAttemptAtUtc,
+        DateTimeOffset? LastSuccessAtUtc,
+        Guid? ActiveGeneration,
+        string? LastErrorCode);
 
     private sealed record HealthResponse(
         string Status,
