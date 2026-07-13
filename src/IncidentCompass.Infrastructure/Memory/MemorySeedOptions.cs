@@ -8,5 +8,7 @@ internal sealed class MemorySeedOptions
 
     public string TenantId { get; init; } = "local";
 
+    public string Owner { get; init; } = "default";
+
     public string SourceDirectory { get; init; } = "../../samples";
 }

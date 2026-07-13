@@ -27,17 +27,33 @@ internal static class MemorySeedFileLoader
             ["postmortem"] = "postmortem"
         };
 
-    public static IReadOnlyList<MemorySeedFile> Load(string rootDirectory)
+    public static IReadOnlyList<MemorySeedFile> Load(string rootDirectory) =>
+        LoadScan(rootDirectory).Files;
+
+    public static MemorySeedScan LoadScan(string rootDirectory)
     {
         if (!Directory.Exists(rootDirectory))
         {
-            return [];
+            throw new DirectoryNotFoundException($"Memory seed directory '{rootDirectory}' does not exist.");
         }
 
-        return SeedDirectories
-            .SelectMany(mapping => LoadKind(rootDirectory, mapping.Directory, mapping.Kind))
-            .OrderBy(static file => file.Source, StringComparer.Ordinal)
-            .ToArray();
+        var presentDirectories = new HashSet<string>(StringComparer.Ordinal);
+        var files = new List<MemorySeedFile>();
+        foreach (var (directory, kind) in SeedDirectories)
+        {
+            var path = Path.Combine(rootDirectory, directory);
+            if (!Directory.Exists(path))
+            {
+                continue;
+            }
+
+            presentDirectories.Add(directory);
+            files.AddRange(LoadKind(rootDirectory, directory, kind));
+        }
+
+        return new MemorySeedScan(
+            files.OrderBy(static file => file.Source, StringComparer.Ordinal).ToArray(),
+            presentDirectories);
     }
 
     public static Guid DeterministicId(string value)
@@ -52,11 +68,6 @@ internal static class MemorySeedFileLoader
         string defaultKind)
     {
         var directory = Path.Combine(rootDirectory, directoryName);
-        if (!Directory.Exists(directory))
-        {
-            yield break;
-        }
-
         foreach (var path in Directory.EnumerateFiles(directory, "*.md").Order(StringComparer.Ordinal))
         {
             var source = Path.GetRelativePath(rootDirectory, path).Replace('\\', '/');

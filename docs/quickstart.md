@@ -145,6 +145,7 @@ PostgreSQL, start either host once with memory seeding enabled; the seed path us
 ~~~powershell
 $env:IncidentCompass__Memory__Seed__Enabled = "true"
 $env:IncidentCompass__Memory__Seed__TenantId = "local"
+$env:IncidentCompass__Memory__Seed__Owner = "default"
 $env:IncidentCompass__Memory__Seed__SourceDirectory = "../../samples"
 $env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=incidentcompass;Username=incidentcompass;Password=incidentcompass_dev_password"
 dotnet run --project src/IncidentCompass.Api --launch-profile http

@@ -15,7 +15,26 @@ internal sealed class PostgresMemoryRepository(
             "search memory",
             () => SearchCoreAsync(request, cancellationToken));
 
-    private async Task<IReadOnlyList<MemorySearchMatch>> SearchCoreAsync(MemorySearchRequest request, CancellationToken cancellationToken)
+    public Task<bool> SeedItemExistsAsync(
+        string owner,
+        MemorySeedItem item,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "check memory seed item",
+            () => PostgresMemorySeedWriter.SeedItemExistsAsync(
+                dataSourceProvider, owner, item, cancellationToken));
+
+    public Task ReconcileSeedCorpusAsync(
+        MemorySeedCorpus corpus,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "reconcile memory seed corpus",
+            () => PostgresMemorySeedWriter.ReconcileAsync(
+                dataSourceProvider, timeProvider.GetUtcNow(), corpus, cancellationToken));
+
+    private async Task<IReadOnlyList<MemorySearchMatch>> SearchCoreAsync(
+        MemorySearchRequest request,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
@@ -77,45 +96,5 @@ internal sealed class PostgresMemoryRepository(
         }
 
         return results;
-    }
-
-    public Task<bool> SeedItemExistsAsync(
-        MemorySeedItem item,
-        CancellationToken cancellationToken)
-    {
-        return PostgresOperation.ExecuteAsync(
-            "check memory seed item",
-            () => PostgresMemorySeedWriter.SeedItemExistsAsync(
-                dataSourceProvider,
-                item,
-                cancellationToken));
-    }
-
-    public Task UpsertSeedAsync(
-        MemorySeedItem item,
-        IReadOnlyList<MemorySeedChunk> chunks,
-        CancellationToken cancellationToken)
-    {
-        return PostgresOperation.ExecuteAsync(
-            "upsert memory seed",
-            () => PostgresMemorySeedWriter.UpsertSeedAsync(
-                dataSourceProvider,
-                timeProvider.GetUtcNow(),
-                item,
-                chunks,
-                cancellationToken));
-    }
-
-    public Task DeactivateMissingSeedsAsync(
-        string tenantId,
-        IReadOnlyCollection<string> activeSources,
-        CancellationToken cancellationToken)
-    {
-        return PostgresMemorySeedWriter.DeactivateMissingSeedsAsync(
-            dataSourceProvider,
-            timeProvider.GetUtcNow(),
-            tenantId,
-            activeSources,
-            cancellationToken);
     }
 }

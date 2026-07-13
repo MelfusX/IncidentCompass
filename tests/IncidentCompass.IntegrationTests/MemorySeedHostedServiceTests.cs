@@ -33,6 +33,7 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         Assert.Equal(2, counts.Items);
         Assert.Equal(2, counts.Chunks);
         Assert.Equal(2, counts.Sources);
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
     }
 
     [DockerAvailableFact]
@@ -61,6 +62,7 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         Assert.Equal(2, counts.Items);
         Assert.Equal(2, counts.Chunks);
         Assert.Equal(2, counts.Sources);
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
     }
 
     [DockerAvailableFact]
@@ -138,6 +140,164 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
     }
 
     [DockerAvailableFact]
+    public async Task StartAsync_DivergentOwnerCannotDeactivatePrimaryCorpus()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var primaryDirectory = await CreateSeedDirectoryAsync();
+        using (var primary = CreateHost(connectionString, primaryDirectory, new CountingEmbeddingClient(), "primary"))
+        {
+            await primary.StartAsync(TestContext.Current.CancellationToken);
+            await primary.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var divergentDirectory = Path.Combine(Path.GetTempPath(), "incidentcompass-memory-divergent-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(divergentDirectory, "runbooks"));
+        File.Copy(
+            Path.Combine(primaryDirectory, "runbooks", "checkout-timeout.md"),
+            Path.Combine(divergentDirectory, "runbooks", "checkout-timeout.md"));
+        using (var secondary = CreateHost(connectionString, divergentDirectory, new CountingEmbeddingClient(), "secondary"))
+        {
+            await secondary.StartAsync(TestContext.Current.CancellationToken);
+            await secondary.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "primary"));
+        Assert.Equal(1, await ReadActiveOwnerCountAsync(connectionString, "secondary"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "primary"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "secondary"));
+    }
+
+    [DockerAvailableFact]
+    public async Task StartAsync_MissingRootLeavesPreviousGenerationActive()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using (var first = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient()))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        Directory.Delete(sourceDirectory, recursive: true);
+        using var failing = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient());
+
+        var exception = await Record.ExceptionAsync(() => failing.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.IsType<DirectoryNotFoundException>(exception);
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "default"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
+    }
+
+    [DockerAvailableFact]
+    public async Task StartAsync_EmbeddingFailureDoesNotPublishPartialCorpus()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using (var first = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient()))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var original = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        await File.AppendAllTextAsync(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            "\nUpdated before a failing second embedding.",
+            TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(
+            Path.Combine(sourceDirectory, "incidents", "provider-unavailable.md"),
+            "\nUpdated before a failing second embedding.",
+            TestContext.Current.CancellationToken);
+        using var failing = CreateHost(connectionString, sourceDirectory, new FailAfterEmbeddingClient(1));
+
+        var exception = await Record.ExceptionAsync(() => failing.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "default"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
+        var current = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
+        Assert.Equal(original.Content, current.Content);
+    }
+    [DockerAvailableFact]
+    public async Task StartAsync_EmptyRootDoesNotDeactivateCurrentCorpus()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using (var first = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient()))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var emptyDirectory = Path.Combine(Path.GetTempPath(), "incidentcompass-memory-empty-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(emptyDirectory);
+        using var failing = CreateHost(connectionString, emptyDirectory, new CountingEmbeddingClient());
+
+        var exception = await Record.ExceptionAsync(() => failing.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "default"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
+    }
+
+    [DockerAvailableFact]
+    public async Task StartAsync_MissingExistingCategoryDoesNotDeactivateCurrentCorpus()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using (var first = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient()))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var partialDirectory = Path.Combine(Path.GetTempPath(), "incidentcompass-memory-partial-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(partialDirectory, "runbooks"));
+        File.Copy(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            Path.Combine(partialDirectory, "runbooks", "checkout-timeout.md"));
+        using var failing = CreateHost(connectionString, partialDirectory, new CountingEmbeddingClient());
+
+        var exception = await Record.ExceptionAsync(() => failing.StartAsync(TestContext.Current.CancellationToken));
+
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "default"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
+    }
+    [DockerAvailableFact]
+    public async Task StartAsync_ConcurrentPartialScanCannotDeactivateCompleteOwnerGeneration()
+    {
+        var connectionString = await CreateSchemaAsync();
+        await ClearMemoryAsync(connectionString);
+        var sourceDirectory = await CreateSeedDirectoryAsync();
+        using (var first = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient()))
+        {
+            await first.StartAsync(TestContext.Current.CancellationToken);
+            await first.StopAsync(TestContext.Current.CancellationToken);
+        }
+
+        var partialDirectory = Path.Combine(Path.GetTempPath(), "incidentcompass-memory-race-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(partialDirectory, "runbooks"));
+        File.Copy(
+            Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
+            Path.Combine(partialDirectory, "runbooks", "checkout-timeout.md"));
+        using var complete = CreateHost(connectionString, sourceDirectory, new CountingEmbeddingClient());
+        using var partial = CreateHost(connectionString, partialDirectory, new CountingEmbeddingClient());
+
+        var completeStart = complete.StartAsync(TestContext.Current.CancellationToken);
+        var partialResult = Record.ExceptionAsync(() => partial.StartAsync(TestContext.Current.CancellationToken)).AsTask();
+        await Task.WhenAll(completeStart, partialResult);
+
+        Assert.IsType<InvalidOperationException>(await partialResult);
+        Assert.Equal(2, await ReadActiveOwnerCountAsync(connectionString, "default"));
+        Assert.Equal(1, await ReadActiveGenerationCountAsync(connectionString, "default"));
+    }
+    [DockerAvailableFact]
     public async Task StartAsync_FrontmatterMetadataIsPersisted()
     {
         var connectionString = await CreateSchemaAsync();
@@ -166,7 +326,8 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
     private static IHost CreateHost(
         string connectionString,
         string sourceDirectory,
-        CountingEmbeddingClient embeddingClient)
+        IEmbeddingClient embeddingClient,
+        string owner = "default")
     {
         return new HostBuilder()
             .ConfigureAppConfiguration(configuration =>
@@ -177,6 +338,7 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
                     ["IncidentCompass:ConfigSource:Path"] = Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.config.json"),
                     ["IncidentCompass:Memory:Seed:Enabled"] = "true",
                     ["IncidentCompass:Memory:Seed:TenantId"] = "local",
+                    ["IncidentCompass:Memory:Seed:Owner"] = owner,
                     ["IncidentCompass:Memory:Seed:SourceDirectory"] = sourceDirectory
                 });
             })
@@ -258,6 +420,31 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         return new MemoryCounts(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
     }
 
+    private static async Task<long> ReadActiveOwnerCountAsync(string connectionString, string owner)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT count(*)
+            FROM incidentcompass.memory_items
+            WHERE tenant_id = 'local' AND seed_owner = @owner AND is_active = true;
+            """, connection);
+        command.Parameters.AddWithValue("owner", owner);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private static async Task<long> ReadActiveGenerationCountAsync(string connectionString, string owner)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT count(DISTINCT seed_generation)
+            FROM incidentcompass.memory_items
+            WHERE tenant_id = 'local' AND seed_owner = @owner AND is_active = true;
+            """, connection);
+        command.Parameters.AddWithValue("owner", owner);
+        return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
     private static async Task<SeedState> ReadSeedStateAsync(string connectionString, string source)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -314,6 +501,22 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
         }
     }
 
+    private sealed class FailAfterEmbeddingClient(int successfulCalls) : IEmbeddingClient
+    {
+        private int callCount;
+
+        public Task<EmbeddingResponse> CreateEmbeddingAsync(
+            EmbeddingRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref callCount) > successfulCalls)
+            {
+                throw new InvalidOperationException("Simulated embedding failure.");
+            }
+
+            return Task.FromResult(new EmbeddingResponse([1f, 0f], request.Model, "test", 1, request.CorrelationId));
+        }
+    }
     private sealed record MemoryCounts(long Items, long Chunks, long Sources);
 
     private sealed record SeedState(

@@ -37,8 +37,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
 
@@ -64,7 +64,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
     }
 
@@ -247,8 +247,10 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                  FROM pg_indexes
                  WHERE schemaname = 'incidentcompass'
                    AND indexname IN (
-                       'ux_memory_items_active_seed_source',
-                       'ix_memory_items_active_lookup')) = 2
+                       'ux_memory_items_active_seed_owner_source',
+                       'ux_memory_items_seed_owner_content',
+                       'ix_memory_items_active_lookup',
+                       'ix_memory_items_seed_owner_generation')) = 4
                 AND
                 (SELECT count(*)
                  FROM information_schema.columns
@@ -256,7 +258,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                    AND table_name = 'memory_items'
                    AND column_name IN (
                        'service_name', 'component', 'release_name', 'is_active',
-                       'seed_managed', 'updated_at_utc', 'superseded_at_utc')) = 7
+                       'seed_managed', 'updated_at_utc', 'superseded_at_utc',
+                       'seed_owner', 'seed_generation')) = 9
             );
             """;
         return Convert.ToBoolean(await ExecuteScalarAsync(connectionString, sql));

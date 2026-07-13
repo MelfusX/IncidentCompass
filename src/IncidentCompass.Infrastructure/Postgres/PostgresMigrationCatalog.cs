@@ -15,6 +15,7 @@ internal static class PostgresMigrationCatalog
             "010-memory.sql"
         ]),
         new(2, "v0.2-memory-file-sync", ["011-memory-file-sync.sql"]),
-        new(3, "v0.2-signal-delivery-idempotency", ["012-signal-delivery-idempotency.sql"])
+        new(3, "v0.2-signal-delivery-idempotency", ["012-signal-delivery-idempotency.sql"]),
+        new(4, "v0.2-memory-seed-generations", ["013-memory-seed-generations.sql"])
     ];
 }

@@ -29,22 +29,22 @@ internal sealed class MemorySeedHostedService(
         var memoryRepository = scope.ServiceProvider.GetRequiredService<IMemoryRepository>();
         var configuration = await configurationRepository.GetCurrentAsync(cancellationToken);
         var route = ResolveEmbeddingRoute(configuration);
-        var files = MemorySeedFileLoader.Load(ResolveRootDirectory());
-        foreach (var file in files)
+        var scan = MemorySeedFileLoader.LoadScan(ResolveRootDirectory());
+        var entries = new List<MemorySeedEntry>(scan.Files.Count);
+        foreach (var file in scan.Files)
         {
-            await SeedFileAsync(file, route, embeddingClient, memoryRepository, cancellationToken);
+            entries.Add(await PrepareSeedAsync(
+                file, route, embeddingClient, memoryRepository, cancellationToken));
         }
 
-        await memoryRepository.DeactivateMissingSeedsAsync(
-            options.Value.TenantId,
-            files.Select(static file => file.Source).ToArray(),
+        await memoryRepository.ReconcileSeedCorpusAsync(
+            new MemorySeedCorpus(
+                options.Value.TenantId, options.Value.Owner, Guid.NewGuid(),
+                scan.PresentDirectories, entries),
             cancellationToken);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     private static TriageRouteSettings ResolveEmbeddingRoute(TriageConfiguration configuration)
     {
@@ -57,7 +57,7 @@ internal sealed class MemorySeedHostedService(
         return configuration.Routes[tool.EmbeddingRouteId];
     }
 
-    private async Task SeedFileAsync(
+    private async Task<MemorySeedEntry> PrepareSeedAsync(
         MemorySeedFile file,
         TriageRouteSettings route,
         IEmbeddingClient embeddingClient,
@@ -66,9 +66,9 @@ internal sealed class MemorySeedHostedService(
     {
         var contentHash = ComputeSha256Hex(file.Content);
         var item = CreateItem(file, contentHash);
-        if (await memoryRepository.SeedItemExistsAsync(item, cancellationToken))
+        if (await memoryRepository.SeedItemExistsAsync(options.Value.Owner, item, cancellationToken))
         {
-            return;
+            return new MemorySeedEntry(item, []);
         }
 
         var embedding = await embeddingClient.CreateEmbeddingAsync(
@@ -84,13 +84,14 @@ internal sealed class MemorySeedHostedService(
             embedding.Vector.Count,
             embedding.Vector);
 
-        await memoryRepository.UpsertSeedAsync(item, [chunk], cancellationToken);
+        return new MemorySeedEntry(item, [chunk]);
     }
 
     private MemorySeedItem CreateItem(MemorySeedFile file, string contentHash)
     {
         return new MemorySeedItem(
-            MemorySeedFileLoader.DeterministicId(options.Value.TenantId + ":" + file.Source + ":seed-v2"),
+            MemorySeedFileLoader.DeterministicId(
+                options.Value.TenantId + ":" + options.Value.Owner + ":" + file.Source + ":seed-v3"),
             options.Value.TenantId,
             file.Kind,
             file.Source,
@@ -112,8 +113,6 @@ internal sealed class MemorySeedHostedService(
             : Path.GetFullPath(Path.Combine(environment.ContentRootPath, sourceDirectory));
     }
 
-    private static string ComputeSha256Hex(string value)
-    {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-    }
+    private static string ComputeSha256Hex(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 }

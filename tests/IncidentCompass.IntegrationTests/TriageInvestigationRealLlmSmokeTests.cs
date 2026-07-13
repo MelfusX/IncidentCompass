@@ -419,7 +419,14 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             embedding.Vector.Count,
             embedding.Vector);
 
-        await repository.UpsertSeedAsync(item, [chunk], TestContext.Current.CancellationToken);
+        await repository.ReconcileSeedCorpusAsync(
+            new MemorySeedCorpus(
+                "local",
+                "test",
+                Guid.NewGuid(),
+                new HashSet<string>(StringComparer.Ordinal) { "samples" },
+                [new MemorySeedEntry(item, [chunk])]),
+            TestContext.Current.CancellationToken);
     }
 
     private static async Task<EndpointProbeResult> ProbeEndpointAsync(RealLocalLlmSmokeSettings settings)
