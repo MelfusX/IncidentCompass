@@ -6,6 +6,7 @@ using IncidentCompass.Infrastructure.Intake;
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddPostgresMigrations();
 builder.Services.AddWorker(builder.Configuration);
 
 var host = builder.Build();

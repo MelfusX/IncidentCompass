@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddApplication(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddPostgresMigrations();
 builder.Services.AddApi(builder.Configuration, builder.Environment);
 
 var app = builder.Build();

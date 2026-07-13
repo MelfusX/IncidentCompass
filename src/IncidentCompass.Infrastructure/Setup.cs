@@ -20,6 +20,7 @@ using IncidentCompass.Infrastructure.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Infrastructure;
@@ -43,6 +44,18 @@ public static class Setup
         // Infrastructure supplies the background identity used by Worker hosts.
         // API foreground auth must bind IUserContext explicitly.
         services.TryAddScoped<IBackgroundUserContext, SystemUserContext>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddPostgresMigrations(this IServiceCollection services)
+    {
+        services.TryAddSingleton<IPostgresMigrationFailureInjector, NoPostgresMigrationFailureInjector>();
+        services.TryAddSingleton<PostgresMigrationReadiness>();
+        services.TryAddSingleton<IPostgresMigrationReadiness>(
+            serviceProvider => serviceProvider.GetRequiredService<PostgresMigrationReadiness>());
+        services.TryAddSingleton<PostgresMigrationRunner>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, PostgresMigrationHostedService>());
 
         return services;
     }

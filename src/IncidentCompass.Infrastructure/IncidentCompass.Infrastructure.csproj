@@ -16,6 +16,10 @@
     <PackageReference Include="Pgvector" Version="0.3.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\infra\postgres\init\*.sql" Link="PostgresSchemaScripts\%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -1,4 +1,5 @@
 using IncidentCompass.Infrastructure.Configuration;
+using IncidentCompass.Infrastructure.Postgres;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -7,13 +8,20 @@ namespace IncidentCompass.Api.Health;
 
 internal sealed class PostgresReadinessHealthCheck(
     IConfiguration configuration,
-    IOptions<PostgresOptions> options)
+    IOptions<PostgresOptions> options,
+    IPostgresMigrationReadiness migrationReadiness)
     : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        if (!migrationReadiness.IsReady)
+        {
+            return HealthCheckResult.Unhealthy(
+                "PostgreSQL migrations have not completed successfully.");
+        }
+
         var connectionStringName = options.Value.ConnectionStringName;
         var connectionString = configuration.GetConnectionString(connectionStringName);
         if (string.IsNullOrWhiteSpace(connectionString))
