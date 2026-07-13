@@ -18,6 +18,8 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
     {
         await EnsureHealthyAsync(cancellationToken);
         var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+        var emission = OtlpDemoEmitter.EmitFailure(options.BaseUrl, runId);
+        Console.WriteLine($"OTLP SDK scenario exported error span {emission.TraceId}/{emission.SpanId} for {emission.ServiceName}.");
         var results = new List<DemoResult>();
 
         foreach (var scenario in DemoScenario.CreateAll(runId))
