@@ -20,6 +20,7 @@ Before making non-trivial changes, read the relevant public docs:
 - `docs/code-organization.md` for maintainability rules.
 - `docs/security-model.md` for auth and logging safety.
 - `docs/model-gateway.md` for provider abstraction rules.
+- `docs/observability.md` for live telemetry and privacy boundaries.
 - `docs/trade-offs.md` for documented compromises.
 
 ## Architecture Contract
@@ -27,18 +28,22 @@ Before making non-trivial changes, read the relevant public docs:
 - Keep the solution a layered monolith (a single `Application` project with feature folders; layer
   boundaries are by convention + `ArchitectureTests`, not enforced module assemblies).
 - `Domain` must not depend on `Application`, `Infrastructure`, `Api`, `Worker`, provider SDKs or persistence libraries.
-- `Application` is a single project with internal feature folders: `Core/`, `Intake/`, `Investigation/`,
-  `Memory/`, `Governance/`. `Core/`, `Governance/` and `Intake/` are populated today;
-  `Investigation/` and `Memory/` are reserved for later phases.
+- `Application` is a single project with populated feature folders: `Core/`, `Intake/`,
+  `Investigation/`, `Memory/` and `Governance/`.
 - `Core/` holds the dispatcher, identity/correlation, model/embedding gateway abstractions and shared options.
 - `Intake/` holds source normalization, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts.
-- `Governance/` holds the governed tool-execution/policy/audit primitive (`GovernedAgentToolExecutor`,
-  `ToolPolicy`, `AgentToolAuditLogWriter`). It is currently uncalled library code; a future phase wires a caller.
-- `Infrastructure` implements persistence, model clients, embedding clients and other adapters.
-- The observability mechanism lives in `Infrastructure`, including sanitized AI request logging,
-  pricing/cost estimation and log/pricing persistence details.
+- `Investigation/` holds Worker job orchestration, config rehydration, bounded model calls, delegation,
+  worker-tool execution and grounded report publication contracts.
+- `Memory/` holds incident-memory contracts and the governed `memory_search` tool.
+- `Governance/` holds live triage-ledger contracts and worker-policy helpers. The upstream standalone
+  `GovernedAgentToolExecutor` / `AgentToolAuditLogWriter` stack remains dormant and is not the live Worker path.
+- `Infrastructure` implements PostgreSQL persistence, configuration loading, model/embedding clients,
+  incident memory and other Application ports.
+- Live model observability uses structured application logs plus durable `ModelCall` and `BudgetEvent`
+  entries in the triage ledger. Full rendered prompt/body logging remains disabled.
 - `Api` maps HTTP input/output, OpenAPI metadata and foreground user context only.
-- `Worker` runs a background host and should compose only `Application` and `Infrastructure`.
+- `Worker` runs the database-backed claim loop and governed investigation processing, composing only
+  `Application` and `Infrastructure`.
 - Hosts compose `AddApplication` + `AddInfrastructure` (+ `AddApi`/`AddWorker`) rather than per-feature registration.
 - Provider-specific DTOs, HTTP details, SQL details and SDK concepts must not leak into Application or Domain contracts.
 
@@ -53,8 +58,8 @@ Before making non-trivial changes, read the relevant public docs:
 - Persistence: raw Npgsql for explicit PostgreSQL behavior.
 - Auth: foreground `IUserContext` for API callers, `IBackgroundUserContext`
   for Worker/system jobs, and demo header auth only for local/sample use.
-- Providers: deterministic mock providers by default; OpenAI-compatible adapters are replaceable infrastructure adapters.
-- Governance: tool execution is deterministic backend behavior gated by policy; the executor remains uncalled library code until a later phase wires a caller.
+- Providers: OpenAI-compatible providers are the normal local/demo runtime path; deterministic mock providers are for automated tests and explicit mock-only checks.
+- Governance: the live Worker path validates role grants and configured rules before backend tool execution, records decisions in the triage ledger and fails closed. The dormant standalone executor is not registered.
 - Intake fingerprinting: a strong fingerprint requires both a real non-`unknown` service name and structured `errorType`. A user/manual report with only an operator-entered `serviceName` remains weak and opens its own fault.
 
 ## Safety Rules
