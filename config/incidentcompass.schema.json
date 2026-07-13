@@ -203,6 +203,14 @@
         "Source": { "enum": ["otel", "user", "tester", "manual"] }
       }
     },
+    "recurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["EscalateAfterCount"],
+      "properties": {
+        "EscalateAfterCount": { "type": "integer", "minimum": 1 }
+      }
+    },
     "suppressionRule": {
       "type": "object",
       "additionalProperties": false,
@@ -230,6 +238,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/suppressionRule" }
         },
+        "Recurrence": { "$ref": "#/$defs/recurrence" },
         "MassIssue": {
           "type": "object",
           "additionalProperties": false,

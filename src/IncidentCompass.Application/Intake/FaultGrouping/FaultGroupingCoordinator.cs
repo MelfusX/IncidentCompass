@@ -10,6 +10,7 @@ public sealed class FaultGroupingCoordinator(
     IFaultRepository faultRepository,
     ITriageJobRepository triageJobRepository,
     IIntakeUnitOfWork intakeUnitOfWork,
+    RecurrenceTracker recurrenceTracker,
     GroundedFactsAssembler groundedFactsAssembler,
     OpenFaultNeighborSetRefresher neighborSetRefresher,
     TimeProvider timeProvider)
@@ -165,14 +166,15 @@ public sealed class FaultGroupingCoordinator(
         var fault = insertedFault;
         await signalRepository.AttachToFaultAsync(draftSignal.Id, fault.Id, cancellationToken);
         var job = await triageJobRepository.InsertPendingAsync(fault.Id, configuration.ConfigHash, cancellationToken);
+        var finalSignal = signalWithoutFault with { FaultId = fault.Id };
+        var recurrenceState = await recurrenceTracker.TrackAsync(fault, finalSignal, job, configuration.FaultGrouping, cancellationToken);
 
         var neighborCount = draftSignal.CanGroup
             ? await FaultGroupingMetrics.CountNeighborsAsync(signalRepository, draftSignal, configuration.FaultGrouping, cancellationToken)
             : 0;
         var isMassIssue = FaultGroupingMetrics.DetermineIsMassIssue(draftSignal, neighborCount, configuration.FaultGrouping);
 
-        var finalSignal = signalWithoutFault with { FaultId = fault.Id };
-        await groundedFactsAssembler.AssembleAsync(job, finalSignal, fault, neighborCount, isMassIssue, configuration.FaultGrouping, cancellationToken);
+        await groundedFactsAssembler.AssembleAsync(job, finalSignal, fault, neighborCount, isMassIssue, configuration.FaultGrouping, cancellationToken, recurrenceState);
 
         return new FaultGroupingOutcome(fault, job, IsNewFault: true, IsNewJob: true, IsSuppressed: false);
     }

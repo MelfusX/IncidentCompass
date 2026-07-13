@@ -43,7 +43,30 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Assert.Equal("untrusted-prior-hypothesis", priorEvidence.ArtifactPayload.GetProperty("trust").GetString());
     }
 
-    private async Task<TestScope> CreateScopeAsync()
+    [DockerAvailableFact]
+    public async Task GetTriageReportById_CitedRecurrenceStateShowsEscalationFacts()
+    {
+        using var scope = await CreateScopeAsync(citeRecurrenceState: true);
+        var serviceName = "recurrence-evidence-svc-" + Guid.NewGuid().ToString("N");
+        var first = await PostIngestAsync(scope.Client, serviceName);
+        await RunClaimedJobAsync(scope, first.JobId!.Value, "worker-recurrence-evidence-prior");
+        await ExecuteAsync(scope.ConnectionString, "UPDATE incidentcompass.faults SET created_at_utc = now() - interval '3 hours', completed_at_utc = now() - interval '2 hours' WHERE id = @fault_id;", ("fault_id", first.FaultId));
+
+        var recurrence = await PostIngestAsync(scope.Client, serviceName);
+        await RunClaimedJobAsync(scope, recurrence.JobId!.Value, "worker-recurrence-evidence");
+        Assert.Equal("Succeeded", await ScalarAsync<string>(scope.ConnectionString, "SELECT status FROM incidentcompass.triage_jobs WHERE id = @job_id;", ("job_id", recurrence.JobId!.Value)));
+
+        var reportId = await ScalarAsync<Guid>(scope.ConnectionString, "SELECT id FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;", ("fault_id", recurrence.FaultId));
+        var response = await scope.Client.GetAsync("/api/v1/triage-reports/" + reportId, TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadFromJsonAsync<TriageReportDetailsDto>(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(body);
+        var recurrenceEvidence = Assert.Single(body.Evidence, evidence => evidence.Kind == "RecurrenceState");
+        Assert.Equal("RecurrenceState", recurrenceEvidence.ArtifactKind);
+        Assert.Equal(1, recurrenceEvidence.ArtifactPayload.GetProperty("recurrenceCount").GetInt32());
+        Assert.False(recurrenceEvidence.ArtifactPayload.GetProperty("escalationIntentCreated").GetBoolean());
+    }
+    private async Task<TestScope> CreateScopeAsync(bool citeRecurrenceState = false)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
@@ -55,7 +78,9 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IAiModelClient>();
-                services.AddScoped<IAiModelClient, PriorReportCitingModelClient>();
+                services.AddScoped<IAiModelClient>(_ => citeRecurrenceState
+                    ? new RecurrenceStateCitingModelClient()
+                    : new PriorReportCitingModelClient());
             });
         });
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
@@ -166,6 +191,32 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         }
     }
 
+    private sealed class RecurrenceStateCitingModelClient : IAiModelClient
+    {
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            var referenceId = TryFindPromptArtifactId(request, "RecurrenceState")
+                ?? TryFindPromptArtifactId(request, "TriggerSignal")
+                ?? throw new InvalidOperationException("No citable artifact was found.");
+            using var arguments = JsonDocument.Parse("{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Recurrence state citation.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review recurrence facts.\"}}");
+            return Task.FromResult(new AiModelResponse(
+                "publish", request.Model, "recurrence-state-test", new AiModelUsage(10, 5, 15), request.CorrelationId,
+                [new AiToolCall("publish-recurrence", "publish_report", "v1", arguments.RootElement.Clone())]));
+        }
+
+        private static string? TryFindPromptArtifactId(AiModelRequest request, string kind)
+        {
+            var prompt = request.Messages.First(static message => message.Role == AiMessageRole.User).Content;
+            var line = prompt.Split('\n').FirstOrDefault(line => line.Contains("kind=" + kind, StringComparison.Ordinal));
+            if (line is null)
+            {
+                return null;
+            }
+
+            var start = line.IndexOf("artifact:", StringComparison.Ordinal);
+            return line[(start + "artifact:".Length)..].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        }
+    }
     private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable
     {
         public void Dispose()

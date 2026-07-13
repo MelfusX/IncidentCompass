@@ -322,11 +322,12 @@ public sealed class FaultGroupingCoordinatorTests
         var faults = new FakeFaultRepository();
         var jobs = new FakeTriageJobRepository();
         var artifacts = new FakeTriageArtifactRepository();
+        var recurrenceStates = new FakeRecurrenceStateRepository();
         var clock = timeProvider ?? TimeProvider.System;
         var assembler = new GroundedFactsAssembler(artifacts, new AlwaysNullPriorReportSummaryProvider(), clock);
         var neighborSetRefresher = new OpenFaultNeighborSetRefresher(signals, jobs, assembler);
         var coordinator = new FaultGroupingCoordinator(
-            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), assembler, neighborSetRefresher, clock);
+            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), new RecurrenceTracker(recurrenceStates), assembler, neighborSetRefresher, clock);
         return (coordinator, signals, faults, jobs, artifacts);
     }
 
@@ -403,6 +404,18 @@ public sealed class FaultGroupingCoordinatorTests
         public Task<TResult> ExecuteAsync<TResult>(
             Func<CancellationToken, Task<TResult>> operation,
             CancellationToken cancellationToken) => operation(cancellationToken);
+    }
+    private sealed class FakeRecurrenceStateRepository : IRecurrenceStateRepository
+    {
+        public Task<RecurrenceState> RecordAsync(
+            RecurrenceOccurrence occurrence,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new RecurrenceState(
+                1,
+                occurrence.OccurredAtUtc,
+                occurrence.OccurredAtUtc,
+                occurrence.EscalateAfterCount == 1 ? occurrence.JobId : null,
+                occurrence.EscalateAfterCount == 1 ? occurrence.FaultId : null));
     }
     private sealed class FakeSignalRepository : ISignalRepository
     {

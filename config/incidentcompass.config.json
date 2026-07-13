@@ -38,6 +38,7 @@
     "FingerprintVersion": 1,
     "FingerprintRules": [],
     "SuppressionRules": [],
+    "Recurrence": { "EscalateAfterCount": 3 },
     "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
   },
   "CurrentReleases": {}

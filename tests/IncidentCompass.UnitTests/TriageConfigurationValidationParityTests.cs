@@ -25,6 +25,7 @@ public sealed class TriageConfigurationValidationParityTests
         { "budget", false, false, "Orchestrator.Budget.MaxTokens" },
         { "ingestion", false, false, "Ingestion.AllowedSources" },
         { "grouping", false, false, "FaultGrouping.LookbackMinutes" },
+        { "recurrence", false, false, "FaultGrouping.Recurrence.EscalateAfterCount" },
         { "redaction", false, false, "Redaction.Patterns[0].Name" },
         { "dangling-role-route", true, false, "Roles.analysis.RouteId" }
     };
@@ -130,6 +131,9 @@ public sealed class TriageConfigurationValidationParityTests
                 return;
             case "grouping":
                 root["FaultGrouping"]!["LookbackMinutes"] = 0;
+                return;
+            case "recurrence":
+                root["FaultGrouping"]!["Recurrence"]!["EscalateAfterCount"] = 0;
                 return;
             case "redaction":
                 root["Redaction"]!["Patterns"] = new JsonArray(new JsonObject

@@ -420,6 +420,61 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     }
 
     [DockerAvailableFact]
+    public async Task IngestSignal_RecurrencesIncrementStateAndCreateOneEscalationIntent()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var envelope = TesterEnvelope("recurrence-state-svc", "prod", "TimeoutException", "Recurrence state probe timed out", "/recurrence-state");
+
+        var initial = await PostIngestAsync(scope.Client, envelope);
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, initial.FaultId);
+
+        var firstRecurrence = await PostIngestAsync(scope.Client, envelope);
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, firstRecurrence.FaultId);
+
+        var secondRecurrence = await PostIngestAsync(scope.Client, envelope);
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, secondRecurrence.FaultId);
+
+        var laterRecurrence = await PostIngestAsync(scope.Client, envelope);
+
+        Assert.True(firstRecurrence.IsNewJob);
+        Assert.True(secondRecurrence.IsNewJob);
+        Assert.True(laterRecurrence.IsNewJob);
+        Assert.Equal(3, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT recurrence_count FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "recurrence-state-svc")));
+        Assert.Equal(
+            secondRecurrence.JobId!.Value,
+            await ScalarAsync<Guid>(
+                scope.ConnectionString,
+                "SELECT escalation_intent_job_id FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+                ("service_name", "recurrence-state-svc")));
+        Assert.Equal(
+            secondRecurrence.FaultId,
+            await ScalarAsync<Guid>(
+                scope.ConnectionString,
+                "SELECT escalation_intent_fault_id FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+                ("service_name", "recurrence-state-svc")));
+        Assert.Equal(
+            "2",
+            await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'recurrenceCount' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+                ("job_id", secondRecurrence.JobId!.Value)));
+        Assert.Equal(
+            "true",
+            await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'escalationIntentCreated' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+                ("job_id", secondRecurrence.JobId!.Value)));
+        Assert.Equal(
+            "false",
+            await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'escalationIntentCreated' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+                ("job_id", laterRecurrence.JobId!.Value)));
+    }
+    [DockerAvailableFact]
     public async Task IngestSignal_NonUtcObservedAt_NormalizesBeforePostgresInsert()
     {
         using var scope = await CreateScopeAsync();
@@ -813,6 +868,11 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     private static string TestFixtureConfigPath() =>
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "test-triage-config", "incidentcompass.config.json");
 
+    private static Task CompleteOutsideSilenceWindowAsync(string connectionString, Guid faultId) =>
+        ExecuteAsync(
+            connectionString,
+            "UPDATE incidentcompass.faults SET created_at_utc = now() - interval '20 minutes', completed_at_utc = now() - interval '10 minutes', status = 'Completed' WHERE id = @id;",
+            ("id", faultId));
     private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, object envelope)
     {
         var response = await client.PostAsJsonAsync("/api/v1/incidents", envelope, TestContext.Current.CancellationToken);

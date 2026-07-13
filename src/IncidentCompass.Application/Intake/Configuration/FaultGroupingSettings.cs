@@ -6,7 +6,8 @@ public sealed record FaultGroupingSettings(
     int FingerprintVersion,
     MassIssueSettings MassIssue,
     IReadOnlyCollection<FingerprintRuleSettings>? FingerprintRules = null,
-    IReadOnlyCollection<SuppressionRuleSettings>? SuppressionRules = null)
+    IReadOnlyCollection<SuppressionRuleSettings>? SuppressionRules = null,
+    RecurrenceSettings? Recurrence = null)
 {
     public IReadOnlyCollection<FingerprintRuleSettings> Rules => FingerprintRules ?? [];
     public IReadOnlyCollection<SuppressionRuleSettings> SuppressionPolicies => SuppressionRules ?? [];

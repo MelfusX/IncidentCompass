@@ -50,7 +50,7 @@ internal sealed class PostgresReportEvidenceGrounder
             WHERE a.id = @artifact_id
               AND a.job_id = @job_id
               AND (a.attempt IS NULL OR a.attempt = @attempt)
-              AND a.kind = ANY(ARRAY['TriggerSignal','NeighborSet','PriorReport','RetrievedItem','ToolResult'])
+              AND a.kind = ANY(ARRAY['TriggerSignal','NeighborSet','PriorReport','RecurrenceState','RetrievedItem','ToolResult'])
             LIMIT 1;
             """, connection, transaction);
         command.AddParameter("artifact_id", artifactId);

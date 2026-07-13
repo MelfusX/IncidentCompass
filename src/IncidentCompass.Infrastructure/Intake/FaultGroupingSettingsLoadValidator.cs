@@ -31,6 +31,11 @@ internal static class FaultGroupingSettingsLoadValidator
         ValidateFingerprintRules(settings.Rules);
         ValidateSuppressionRules(settings.SuppressionPolicies);
 
+        if (settings.Recurrence is { EscalateAfterCount: <= 0 } recurrence)
+        {
+            throw Invalid("FaultGrouping.Recurrence.EscalateAfterCount", recurrence.EscalateAfterCount.ToString(), "a positive integer");
+        }
+
         if (settings.MassIssue.MinNeighborCount <= 0)
         {
             throw Invalid("FaultGrouping.MassIssue.MinNeighborCount", settings.MassIssue.MinNeighborCount.ToString(), "a positive integer");

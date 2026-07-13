@@ -40,6 +40,7 @@
     "SuppressionRules": [
       { "Id": "service-extended", "SilenceWindowMinutes": 60, "ServiceName": "suppression-extended" }
     ],
+    "Recurrence": { "EscalateAfterCount": 2 },
     "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
   }
 }
