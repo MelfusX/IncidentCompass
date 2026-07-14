@@ -7,10 +7,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.33.1" />
+    <PackageReference Include="Grpc.Tools" Version="2.76.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <!-- Keep Microsoft.OpenApi on 2.x: 2.8.0 avoids the deprecated transitive 2.0.0,
          while 3.x is not compatible with Microsoft.AspNetCore.OpenApi 10.x source generation. -->
     <PackageReference Include="Microsoft.OpenApi" Version="[2.10.0, 3.0.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Endpoints\Otlp\Protos\opentelemetry\proto\**\*.proto" ProtoRoot="Endpoints\Otlp\Protos" GrpcServices="None" />
   </ItemGroup>
 
   <ItemGroup>

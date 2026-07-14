@@ -1,7 +1,6 @@
 using IncidentCompass.Application.Memory;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Memory;
 
@@ -16,7 +15,26 @@ internal sealed class PostgresMemoryRepository(
             "search memory",
             () => SearchCoreAsync(request, cancellationToken));
 
-    private async Task<IReadOnlyList<MemorySearchMatch>> SearchCoreAsync(MemorySearchRequest request, CancellationToken cancellationToken)
+    public Task<bool> SeedItemExistsAsync(
+        string owner,
+        MemorySeedItem item,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "check memory seed item",
+            () => PostgresMemorySeedWriter.SeedItemExistsAsync(
+                dataSourceProvider, owner, item, cancellationToken));
+
+    public Task ReconcileSeedCorpusAsync(
+        MemorySeedCorpus corpus,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "reconcile memory seed corpus",
+            () => PostgresMemorySeedWriter.ReconcileAsync(
+                dataSourceProvider, timeProvider.GetUtcNow(), corpus, cancellationToken));
+
+    private async Task<IReadOnlyList<MemorySearchMatch>> SearchCoreAsync(
+        MemorySearchRequest request,
+        CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
@@ -28,10 +46,14 @@ internal sealed class PostgresMemoryRepository(
                        mi.title,
                        mc.chunk_position,
                        mc.text,
-                       mc.embedding_vector
+                       mc.embedding_vector,
+                       mi.service_name,
+                       mi.component,
+                       mi.release_name
                 FROM incidentcompass.memory_chunks mc
                 JOIN incidentcompass.memory_items mi ON mi.id = mc.memory_item_id
                 WHERE mc.tenant_id = @tenant_id
+                  AND mi.is_active = true
                   AND mc.embedding_provider = @embedding_provider
                   AND mc.embedding_model = @embedding_model
                   AND mc.embedding_dimensions = @embedding_dimensions
@@ -41,7 +63,8 @@ internal sealed class PostgresMemoryRepository(
                        1 - (embedding_vector <=> @query_vector) AS score
                 FROM candidate_chunks
             )
-            SELECT memory_item_id, chunk_id, kind, source, title, chunk_position, text, score
+            SELECT memory_item_id, chunk_id, kind, source, title, chunk_position, text, score,
+                   service_name, component, release_name
             FROM scored_chunks
             WHERE score >= @min_score
             ORDER BY score DESC, chunk_id
@@ -51,7 +74,7 @@ internal sealed class PostgresMemoryRepository(
         command.AddParameter("embedding_provider", request.EmbeddingProvider);
         command.AddParameter("embedding_model", request.EmbeddingModel);
         command.AddParameter("embedding_dimensions", request.EmbeddingDimensions);
-        AddVectorParameter(command, "query_vector", request.QueryVector);
+        command.Parameters.AddWithValue("query_vector", PostgresVectorParameter.From(request.QueryVector));
         command.AddParameter("min_score", request.MinScore);
         command.AddParameter("top_k", request.TopK);
         var results = new List<MemorySearchMatch>();
@@ -66,41 +89,12 @@ internal sealed class PostgresMemoryRepository(
                 reader.GetString(4),
                 reader.GetInt32(5),
                 reader.GetString(6),
-                reader.GetDouble(7)));
+                reader.GetDouble(7),
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10)));
         }
+
         return results;
-    }
-
-    public Task<bool> SeedItemExistsAsync(
-        MemorySeedItem item,
-        CancellationToken cancellationToken)
-    {
-        return PostgresOperation.ExecuteAsync(
-            "check memory seed item",
-            () => PostgresMemorySeedWriter.SeedItemExistsAsync(
-                dataSourceProvider,
-                item,
-                cancellationToken));
-    }
-
-    public Task UpsertSeedAsync(
-        MemorySeedItem item,
-        IReadOnlyList<MemorySeedChunk> chunks,
-        CancellationToken cancellationToken)
-    {
-        return PostgresOperation.ExecuteAsync(
-            "upsert memory seed",
-            () => PostgresMemorySeedWriter.UpsertSeedAsync(
-                dataSourceProvider,
-                timeProvider.GetUtcNow(),
-                item,
-                chunks,
-                cancellationToken));
-    }
-
-
-    private static void AddVectorParameter(NpgsqlCommand command, string name, IReadOnlyList<float> value)
-    {
-        command.Parameters.AddWithValue(name, PostgresVectorParameter.From(value));
     }
 }

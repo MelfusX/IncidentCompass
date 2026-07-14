@@ -10,4 +10,6 @@ internal sealed record SerializedTriageConfiguration(
     IReadOnlyDictionary<string, TriageToolSettings>? Tools,
     IReadOnlyCollection<TriageRuleSettings>? Rules,
     IngestionSettings? Ingestion,
-    FaultGroupingSettings? FaultGrouping);
+    FaultGroupingSettings? FaultGrouping,
+    RedactionSettings? Redaction,
+    IReadOnlyDictionary<string, string>? CurrentReleases);

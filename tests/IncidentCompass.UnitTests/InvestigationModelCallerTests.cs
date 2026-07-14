@@ -1,5 +1,9 @@
+using System.Diagnostics;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Observability;
+using IncidentCompass.Application.Core.Resilience;
+using Microsoft.Extensions.Options;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
@@ -10,6 +14,59 @@ namespace IncidentCompass.UnitTests;
 
 public sealed class InvestigationModelCallerTests
 {
+    [Fact]
+    public async Task CompleteAsync_DoesNotAttachPromptContentToRuntimeActivity()
+    {
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "IncidentCompass.Runtime",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        var writer = new RecordingLedgerWriter();
+        var caller = CreateCaller(new StaticModelClient(new AiModelUsage(1, 1, 2)), writer, TimeProvider.System, telemetry: new RuntimeTelemetry());
+        var context = CreateContext(TimeProvider.System.GetUtcNow(), maxWallClockSeconds: 60);
+        const string secret = "prompt-body-must-not-export";
+
+        await caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, secret)],
+            tools: null,
+            CancellationToken.None);
+
+        var modelActivities = activities.Where(item => item.OperationName == "triage.model.call").ToArray();
+        Assert.NotEmpty(modelActivities);
+        Assert.All(modelActivities, activity =>
+            Assert.DoesNotContain(activity.TagObjects, tag => tag.Value?.ToString()?.Contains(secret, StringComparison.Ordinal) == true));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ContinuesWhenActivityExporterFails()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "IncidentCompass.Runtime",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = static _ => throw new InvalidOperationException("export unavailable")
+        };
+        ActivitySource.AddActivityListener(listener);
+        var writer = new RecordingLedgerWriter();
+        var caller = CreateCaller(new StaticModelClient(new AiModelUsage(1, 1, 2)), writer, TimeProvider.System, telemetry: new RuntimeTelemetry());
+        var context = CreateContext(TimeProvider.System.GetUtcNow(), maxWallClockSeconds: 60);
+
+        var response = await caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, "Complete despite telemetry exporter failure.")],
+            tools: null,
+            CancellationToken.None);
+
+        Assert.Equal("A concise response.", response.Content);
+        Assert.Contains(writer.Requests, request => request.EventType == TriageLedgerEventType.ModelCall);
+    }
     [Fact]
     public async Task CompleteAsync_AllZeroProviderUsageChargesEstimatedTokens()
     {
@@ -34,6 +91,27 @@ public sealed class InvestigationModelCallerTests
         Assert.True(charge.TokensDelta > 0);
     }
 
+    [Fact]
+    public async Task CompleteAsync_SuccessClearsProviderBackpressure()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var tracker = new ProviderOutageTracker(
+            Options.Create(new ProviderResilienceOptions { FailureThreshold = 1, BackpressureSeconds = 60 }),
+            new ConstantTimeProvider(now));
+        tracker.RecordProviderFailure();
+        var writer = new RecordingLedgerWriter();
+        var caller = CreateCaller(new StaticModelClient(new AiModelUsage(1, 1, 2)), writer, new ConstantTimeProvider(now), tracker);
+        var context = CreateContext(now, maxWallClockSeconds: 60);
+
+        await caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, "Recover provider availability.")],
+            tools: null,
+            CancellationToken.None);
+
+        Assert.False(tracker.IsBackpressured);
+    }
     [Fact]
     public async Task CompleteAsync_WallClockReachedBeforeCallDoesNotInvokeModel()
     {
@@ -108,13 +186,17 @@ public sealed class InvestigationModelCallerTests
     private static InvestigationModelCaller CreateCaller(
         IAiModelClient modelClient,
         RecordingLedgerWriter writer,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IProviderOutageTracker? providerOutageTracker = null,
+        IRuntimeTelemetry? telemetry = null)
     {
         return new InvestigationModelCaller(
             modelClient,
             new StaticLedgerReader(),
             new TriageLedgerAppender(writer),
-            timeProvider);
+            timeProvider,
+            providerOutageTracker,
+            telemetry);
     }
 
     private static TriageJobCallContext CreateContext(DateTimeOffset attemptStartedAtUtc, int maxWallClockSeconds)
@@ -149,9 +231,9 @@ public sealed class InvestigationModelCallerTests
             new Dictionary<string, TriageToolSettings>(),
             [],
             new IngestionSettings("local", ["tester"]),
-            new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")));
+            new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")),
+            RedactionSettings.Default);
     }
-
     private static TriageJob CreateJob(DateTimeOffset now)
     {
         return new TriageJob(
@@ -217,7 +299,7 @@ public sealed class InvestigationModelCallerTests
             string scope,
             CancellationToken cancellationToken) => Task.FromResult(false);
 
-        public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(Guid faultId, CancellationToken cancellationToken) =>
+        public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(Guid faultId, string tenantId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
     }
 

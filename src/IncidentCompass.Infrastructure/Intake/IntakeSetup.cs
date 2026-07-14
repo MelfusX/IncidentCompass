@@ -24,15 +24,21 @@ internal static class IntakeSetup
         services.TryAddSingleton<TriageConfigurationLoadValidator>();
         services.TryAddSingleton<TriageConfigurationMaterializer>();
         services.TryAddSingleton<TriageConfigurationSnapshotStore>();
+        services.TryAddSingleton<ITriageConfigurationSnapshotStore>(
+            serviceProvider => serviceProvider.GetRequiredService<TriageConfigurationSnapshotStore>());
         services.TryAddSingleton<FileTriageConfigurationRepository>();
         services.TryAddSingleton<ITriageConfigurationRepository>(
             serviceProvider => serviceProvider.GetRequiredService<FileTriageConfigurationRepository>());
 
+        services.TryAddSingleton<PostgresTriageJobLeaseStore>();
+        services.TryAddScoped<PostgresTriageJobAttemptFailureStore>();
         services.TryAddScoped<PostgresIntakeTransactionContext>();
         services.TryAddScoped<IIntakeUnitOfWork, PostgresIntakeUnitOfWork>();
         services.TryAddScoped<ISignalRepository, PostgresSignalRepository>();
         services.TryAddScoped<IFaultRepository, PostgresFaultRepository>();
         services.TryAddScoped<ITriageJobRepository, PostgresTriageJobRepository>();
+        services.TryAddScoped<IRecurrenceStateRepository, PostgresRecurrenceStateRepository>();
+        services.Replace(ServiceDescriptor.Scoped<IRecurrenceEscalationReTriageScheduler, PostgresRecurrenceEscalationReTriageScheduler>());
         services.TryAddScoped<ITriageJobRuntimeRepository, PostgresTriageJobRuntimeRepository>();
         services.TryAddScoped<ITriageArtifactRepository, PostgresTriageArtifactRepository>();
         services.TryAddScoped<IPriorReportSummaryProvider, PostgresPriorReportSummaryProvider>();

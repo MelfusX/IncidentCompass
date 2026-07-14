@@ -9,6 +9,12 @@ public interface ITriageJobRunner
         TimeSpan leaseDuration,
         CancellationToken cancellationToken);
 
+    Task<bool> RenewLeaseAsync(
+        TriageJob job,
+        string workerId,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken);
+
     Task ProcessClaimedAsync(
         TriageJob job,
         string workerId,

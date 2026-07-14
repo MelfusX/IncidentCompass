@@ -11,10 +11,7 @@ using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Memory;
 
-internal sealed class MemorySearchTool(
-    IEmbeddingClient embeddingClient,
-    IMemoryRepository memoryRepository,
-    TimeProvider timeProvider) : IAgentTool
+internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemoryRepository memoryRepository, TimeProvider timeProvider) : IAgentTool
 {
     private const int DefaultTopK = 5;
     private const double DefaultMinScore = 0.25;
@@ -83,36 +80,27 @@ internal sealed class MemorySearchTool(
         var matches = MemorySearchLexicalFilter.Apply(
             query,
             await memoryRepository.SearchAsync(
-                new MemorySearchRequest(
-                    context.TenantId,
-                    embedding.Provider,
-                    embedding.Model,
-                    embedding.Vector.Count,
-                    embedding.Vector,
-                    NormalizeTopK(toolSettings.TopK),
-                    NormalizeMinScore(toolSettings.MinScore)),
+                new MemorySearchRequest(context.TenantId, embedding.Provider, embedding.Model,
+                    embedding.Vector.Count, embedding.Vector, NormalizeTopK(toolSettings.TopK), NormalizeMinScore(toolSettings.MinScore)),
                 cancellationToken));
 
         var artifacts = matches
-            .Select(match => CreateRetrievedArtifact(context.Job, embedding, match))
+            .Select(match => CreateRetrievedArtifact(context, embedding, match))
             .ToArray();
         return new ToolExecutionResult(
             ToolExecutionStatus.Succeeded,
-            CreateOutput(matches, artifacts),
+            CreateOutput(context, matches, artifacts),
             Artifacts: artifacts);
     }
 
-    private TriageArtifact CreateRetrievedArtifact(
-        TriageJob job,
-        EmbeddingResponse embedding,
-        MemorySearchMatch match)
+    private TriageArtifact CreateRetrievedArtifact(AgentToolExecutionContext context, EmbeddingResponse embedding, MemorySearchMatch match)
     {
-        var payload = CreateRetrievedPayload(embedding, match);
+        var payload = CreateRetrievedPayload(context, embedding, match);
         var canonicalPayload = CanonicalJsonSerializer.Canonicalize(payload);
         return new TriageArtifact(
             Guid.NewGuid(),
-            job.Id,
-            job.Attempt,
+            context.Job.Id,
+            context.Job.Attempt,
             ArtifactKind.RetrievedItem,
             "memory_item:" + match.MemoryItemId,
             CanonicalJsonSerializer.ToElement(payload),
@@ -120,10 +108,9 @@ internal sealed class MemorySearchTool(
             timeProvider.GetUtcNow());
     }
 
-    private static JsonObject CreateRetrievedPayload(
-        EmbeddingResponse embedding,
-        MemorySearchMatch match)
+    private static JsonObject CreateRetrievedPayload(AgentToolExecutionContext context, EmbeddingResponse embedding, MemorySearchMatch match)
     {
+        var documentation = MemoryDocumentationStatusEvaluator.Assess(context.Configuration, context.FaultServiceName, match);
         return new JsonObject
         {
             ["memoryItemId"] = match.MemoryItemId.ToString(),
@@ -134,20 +121,25 @@ internal sealed class MemorySearchTool(
             ["chunkPosition"] = match.ChunkPosition,
             ["quote"] = CreateQuote(match.Text),
             ["score"] = Math.Round(match.Score, 6),
+            ["retrievalConfidence"] = MemoryRetrievalConfidence.Band(match.Score),
+            ["serviceName"] = match.ServiceName,
+            ["component"] = match.Component,
+            ["release"] = match.ReleaseName,
+            ["targetCurrentRelease"] = documentation.TargetCurrentRelease,
+            ["documentationStatus"] = documentation.Status.ToString(),
             ["embeddingProvider"] = embedding.Provider,
             ["embeddingModel"] = embedding.Model,
             ["embeddingDimensions"] = embedding.Vector.Count
         };
     }
 
-    private static JsonElement CreateOutput(
-        IReadOnlyList<MemorySearchMatch> matches,
-        IReadOnlyList<TriageArtifact> artifacts)
+    private static JsonElement CreateOutput(AgentToolExecutionContext context, IReadOnlyList<MemorySearchMatch> matches, IReadOnlyList<TriageArtifact> artifacts)
     {
         var items = new JsonArray();
         for (var i = 0; i < matches.Count; i++)
         {
             var match = matches[i];
+            var documentation = MemoryDocumentationStatusEvaluator.Assess(context.Configuration, context.FaultServiceName, match);
             items.Add(new JsonObject
             {
                 ["artifactId"] = artifacts[i].Id.ToString(),
@@ -156,7 +148,13 @@ internal sealed class MemorySearchTool(
                 ["kind"] = match.Kind,
                 ["source"] = match.Source,
                 ["quote"] = CreateQuote(match.Text),
-                ["score"] = Math.Round(match.Score, 6)
+                ["score"] = Math.Round(match.Score, 6),
+                ["retrievalConfidence"] = MemoryRetrievalConfidence.Band(match.Score),
+                ["serviceName"] = match.ServiceName,
+                ["component"] = match.Component,
+                ["release"] = match.ReleaseName,
+                ["targetCurrentRelease"] = documentation.TargetCurrentRelease,
+                ["documentationStatus"] = documentation.Status.ToString()
             });
         }
 

@@ -1,3 +1,5 @@
+using IncidentCompass.Application.Core.Observability;
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
 using Microsoft.Extensions.DependencyInjection;
@@ -5,39 +7,20 @@ using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.Worker;
 
-public sealed class WorkerJobPump(
+public sealed partial class WorkerJobPump(
     IServiceScopeFactory serviceScopeFactory,
-    ILogger<WorkerJobPump> logger)
+    WorkerJobLeaseRenewer leaseRenewer,
+    ILogger<WorkerJobPump> logger,
+    IProviderOutageTracker? providerOutageTracker = null,
+    IRuntimeTelemetry? telemetry = null)
 {
-    private readonly List<Task> activeJobs = [];
+    private readonly WorkerJobTaskSet activeJobs = new(logger);
 
     public int ActiveJobCount => activeJobs.Count;
 
-    public async Task ObserveCompletedAsync(CancellationToken cancellationToken)
-    {
-        for (var index = activeJobs.Count - 1; index >= 0; index--)
-        {
-            var task = activeJobs[index];
-            if (!task.IsCompleted)
-            {
-                continue;
-            }
+    public Task ObserveCompletedAsync(CancellationToken cancellationToken) => activeJobs.ObserveCompletedAsync(cancellationToken);
 
-            activeJobs.RemoveAt(index);
-            try
-            {
-                await task;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                logger.LogWarning(exception, "Claimed triage job processing failed after claim.");
-            }
-        }
-    }
+    public Task DrainAsync() => activeJobs.DrainAsync();
 
     public async Task<int> FillAvailableSlotsAsync(
         string workerId,
@@ -45,7 +28,7 @@ public sealed class WorkerJobPump(
         CancellationToken cancellationToken)
     {
         var started = 0;
-        while (activeJobs.Count < options.MaxConcurrentJobs)
+        while (providerOutageTracker?.IsBackpressured != true && activeJobs.Count < options.MaxConcurrentJobs)
         {
             var job = await ClaimNextAsync(workerId, options, cancellationToken);
             if (job is null)
@@ -53,37 +36,39 @@ public sealed class WorkerJobPump(
                 break;
             }
 
-            activeJobs.Add(ProcessClaimedAsync(workerId, options, job, cancellationToken));
-            started++;
+            var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            try
+            {
+                activeJobs.Add(ProcessClaimedAsync(workerId, options, job, jobCancellation.Token), jobCancellation);
+                started++;
+            }
+            catch
+            {
+                jobCancellation.Dispose();
+                throw;
+            }
         }
 
         return started;
     }
 
-    public async Task WaitForNextWakeAsync(TimeSpan delay, CancellationToken cancellationToken)
-    {
-        if (activeJobs.Count == 0)
-        {
-            await Task.Delay(delay, cancellationToken);
-            return;
-        }
-
-        var delayTask = Task.Delay(delay, cancellationToken);
-        var completionTask = Task.WhenAny(activeJobs);
-        await Task.WhenAny(delayTask, completionTask);
-    }
+    public Task WaitForNextWakeAsync(TimeSpan delay, CancellationToken cancellationToken) =>
+        activeJobs.WaitForNextWakeAsync(delay, cancellationToken);
 
     private async Task<TriageJob?> ClaimNextAsync(
         string workerId,
         WorkerOptions options,
         CancellationToken cancellationToken)
     {
+        using var claimTelemetry = telemetry?.StartJobClaim();
         using var scope = serviceScopeFactory.CreateScope();
         var runner = scope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
-        return await runner.ClaimNextAsync(
-            workerId,
-            TimeSpan.FromSeconds(options.LeaseSeconds),
-            cancellationToken);
+        var job = await runner.ClaimNextAsync(workerId, TimeSpan.FromSeconds(options.LeaseSeconds), cancellationToken);
+        if (job is not null)
+        {
+            telemetry?.RecordJobClaim();
+        }
+        return job;
     }
 
     private async Task ProcessClaimedAsync(
@@ -94,12 +79,89 @@ public sealed class WorkerJobPump(
     {
         using var scope = serviceScopeFactory.CreateScope();
         var runner = scope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
-        await runner.ProcessClaimedAsync(
+        var leaseDuration = TimeSpan.FromSeconds(options.LeaseSeconds);
+        using var processingCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var renewalCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var renewalTask = leaseRenewer.RenewUntilStoppedAsync(runner, job, workerId, leaseDuration, renewalCancellation.Token);
+        var processingTask = runner.ProcessClaimedAsync(
             job,
             workerId,
-            new TriageJobProcessingSettings(
-                options.MaxAttempts,
-                TimeSpan.FromSeconds(options.RetryDelaySeconds)),
-            cancellationToken);
+            new TriageJobProcessingSettings(options.MaxAttempts, TimeSpan.FromSeconds(options.RetryDelaySeconds)),
+            processingCancellation.Token);
+
+        if (await Task.WhenAny(processingTask, renewalTask) == processingTask)
+        {
+            renewalCancellation.Cancel();
+            await ObserveRenewalStopAsync(renewalTask, cancellationToken);
+            await processingTask;
+            return;
+        }
+
+        await CancelProcessingAfterLeaseLossAsync(job, processingTask, renewalTask, processingCancellation, cancellationToken);
     }
+
+    private async Task CancelProcessingAfterLeaseLossAsync(
+        TriageJob job,
+        Task processingTask,
+        Task<bool> renewalTask,
+        CancellationTokenSource processingCancellation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await renewalTask;
+            LogLeaseOwnershipLost(logger, job.Id, job.Attempt);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            processingCancellation.Cancel();
+            await ObserveProcessingStopAsync(processingTask);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            LogLeaseRenewalFailed(logger, exception, job.Id, job.Attempt);
+        }
+
+        processingCancellation.Cancel();
+        await ObserveProcessingStopAsync(processingTask);
+    }
+
+    private static async Task ObserveRenewalStopAsync(Task renewalTask, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await renewalTask;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static async Task ObserveProcessingStopAsync(Task processingTask)
+    {
+        try
+        {
+            await processingTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    [LoggerMessage(
+        EventId = 1101,
+        Level = LogLevel.Warning,
+        Message = "Triage job {JobId} attempt {Attempt} lost lease ownership; cancelling in-flight work.")]
+    private static partial void LogLeaseOwnershipLost(ILogger logger, Guid jobId, int attempt);
+
+    [LoggerMessage(
+        EventId = 1102,
+        Level = LogLevel.Warning,
+        Message = "Triage job {JobId} attempt {Attempt} lease renewal failed; cancelling in-flight work.")]
+    private static partial void LogLeaseRenewalFailed(ILogger logger, Exception exception, Guid jobId, int attempt);
 }

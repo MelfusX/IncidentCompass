@@ -1,3 +1,11 @@
+---
+kind: Runbook
+service: checkout-api
+component: payments
+release: 0.1
+tags: [checkout, timeout, payments]
+---
+
 # Checkout Timeout Runbook
 
 Use this runbook when checkout requests time out while waiting on the inventory service.

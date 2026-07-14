@@ -1,10 +1,12 @@
 using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Core.Tenancy;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Intake.Fingerprinting;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Intake.Redaction;
+using IncidentCompass.Domain.Exceptions;
 using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Intake.IngestSignal;
@@ -12,8 +14,11 @@ namespace IncidentCompass.Application.Intake.IngestSignal;
 public sealed class IngestSignalCommandHandler(
     ITriageConfigurationRepository configurationRepository,
     SignalNormalizerRegistry normalizerRegistry,
+    UserIdentifierPseudonymizer pseudonymizer,
     FaultGroupingCoordinator faultGroupingCoordinator,
-    TimeProvider timeProvider) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
+    ISignalRepository signalRepository,
+    TimeProvider timeProvider,
+    IIncidentTenantContext incidentTenantContext) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
 {
     public async Task<IngestSignalResponse> HandleAsync(IngestSignalCommand command, CancellationToken cancellationToken)
     {
@@ -21,31 +26,86 @@ public sealed class IngestSignalCommandHandler(
         var receivedAtUtc = timeProvider.GetUtcNow();
         var normalizer = normalizerRegistry.Resolve(command.SourceKind);
         var normalized = normalizer.Normalize(command, receivedAtUtc);
-        var redacted = SecretRedactor.Redact(normalized);
-        var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping.FingerprintVersion);
+        var pseudonymized = pseudonymizer.Protect(normalized, configuration.Redaction);
+        var redacted = SecretRedactor.Redact(
+            pseudonymized,
+            configuration.Redaction,
+            pseudonymizer.IsCanonicalPseudonym);
+        var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping);
+        var tenantId = await incidentTenantContext.GetTenantIdAsync(cancellationToken);
         var draftSignal = BuildSignal(
             redacted,
             fingerprint,
-            configuration.FaultGrouping.FingerprintVersion,
-            configuration.Ingestion.DefaultTenant,
+            tenantId,
             receivedAtUtc);
 
-        var outcome = await faultGroupingCoordinator.ResolveAsync(draftSignal, configuration, cancellationToken);
+        ExistingSignalDelivery? existingDelivery = null;
+        if (draftSignal.DeliveryKey is { } existingDeliveryKey)
+        {
+            existingDelivery = await signalRepository.FindDeliveryAsync(
+                draftSignal.TenantId,
+                draftSignal.Source,
+                existingDeliveryKey,
+                cancellationToken);
+        }
 
-        return new IngestSignalResponse(
-            draftSignal.Id,
-            outcome.Fault.Id,
-            outcome.IsNewFault,
-            outcome.IsNewJob,
-            outcome.IsSuppressed,
-            outcome.Job?.Id,
-            outcome.Job?.ConfigHash);
+        if (existingDelivery is not null)
+        {
+            return FromExistingDelivery(existingDelivery);
+        }
+        try
+        {
+            var outcome = await faultGroupingCoordinator.ResolveAsync(draftSignal, configuration, cancellationToken);
+            return new IngestSignalResponse(
+                draftSignal.Id,
+                outcome.Fault.Id,
+                outcome.IsNewFault,
+                outcome.IsNewJob,
+                outcome.IsSuppressed,
+                outcome.Job?.Id,
+                outcome.Job?.ConfigHash);
+        }
+        catch (DuplicateSignalDeliveryException)
+        {
+            if (draftSignal.DeliveryKey is not { } raceDeliveryKey)
+            {
+                throw;
+            }
+
+            existingDelivery = await signalRepository.FindDeliveryAsync(
+                draftSignal.TenantId,
+                draftSignal.Source,
+                raceDeliveryKey,
+                cancellationToken)
+                ?? throw new InvariantViolationException("A duplicate signal delivery was reported but no accepted signal was found.");
+            return FromExistingDelivery(existingDelivery);
+        }
     }
 
+    private static IngestSignalResponse FromExistingDelivery(ExistingSignalDelivery delivery) =>
+        new(
+            delivery.SignalId,
+            delivery.FaultId,
+            IsNewFault: false,
+            IsNewJob: false,
+            delivery.IsSuppressed,
+            delivery.JobId,
+            delivery.ConfigHash);
+
+    private static string? CreateDeliveryKey(NormalizedSignal signal)
+    {
+        if (!string.IsNullOrWhiteSpace(signal.ExternalId))
+        {
+            return "external:" + signal.ExternalId;
+        }
+
+        return !string.IsNullOrWhiteSpace(signal.TraceId) && !string.IsNullOrWhiteSpace(signal.SpanId)
+            ? $"trace:{signal.TraceId}:span:{signal.SpanId}"
+            : null;
+    }
     private static Signal BuildSignal(
         NormalizedSignal redacted,
         FingerprintResult fingerprint,
-        int fingerprintVersion,
         string tenantId,
         DateTimeOffset receivedAtUtc)
     {
@@ -55,7 +115,7 @@ public sealed class IngestSignalCommandHandler(
             Source: redacted.Source,
             FaultId: null,
             Fingerprint: fingerprint.Value,
-            FingerprintVersion: fingerprintVersion,
+            FingerprintVersion: fingerprint.EffectiveRule.Version,
             FingerprintStrength: fingerprint.Strength,
             CanGroup: fingerprint.Strength == FingerprintStrength.Strong,
             ExternalId: redacted.ExternalId,
@@ -80,6 +140,11 @@ public sealed class IngestSignalCommandHandler(
             Attributes: CanonicalJsonSerializer.ToElement(redacted.Attributes),
             Body: CanonicalJsonSerializer.ToElement(redacted.Body),
             ObservedAtUtc: redacted.ObservedAtUtc,
-            ReceivedAtUtc: receivedAtUtc);
+            ReceivedAtUtc: receivedAtUtc,
+            DeliveryKey: CreateDeliveryKey(redacted))
+        {
+            GroupingRuleId = fingerprint.EffectiveRule.Id,
+            GroupingRuleVersion = fingerprint.EffectiveRule.Version
+        };
     }
 }

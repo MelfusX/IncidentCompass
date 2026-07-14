@@ -180,7 +180,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
                 {
                     ["Kind"] = "OpenAICompatible",
                     ["Endpoint"] = "local-smoke",
-                    ["ApiKeySecretRef"] = "INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY"
+                    ["ApiKeySecretRef"] = "INCIDENTCOMPASS_LLM_SMOKE_API_KEY"
                 }
             },
             ["Routes"] = new JsonObject
@@ -405,7 +405,10 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             content,
             ComputeSha256Hex(content),
             Version: 1,
-            ["checkout", "timeout"]);
+            ["checkout", "timeout"],
+            ServiceName: "checkout",
+            Component: null,
+            ReleaseName: null);
         var chunk = new MemorySeedChunk(
             Guid.NewGuid(),
             Position: 0,
@@ -416,7 +419,14 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             embedding.Vector.Count,
             embedding.Vector);
 
-        await repository.UpsertSeedAsync(item, [chunk], TestContext.Current.CancellationToken);
+        await repository.ReconcileSeedCorpusAsync(
+            new MemorySeedCorpus(
+                "local",
+                "test",
+                Guid.NewGuid(),
+                new HashSet<string>(StringComparer.Ordinal) { "samples" },
+                [new MemorySeedEntry(item, [chunk])]),
+            TestContext.Current.CancellationToken);
     }
 
     private static async Task<EndpointProbeResult> ProbeEndpointAsync(RealLocalLlmSmokeSettings settings)
@@ -583,9 +593,9 @@ public sealed class RealLocalLlmSmokeFactAttribute : FactAttribute
         [CallerLineNumber] int sourceLineNumber = 0)
         : base(sourceFilePath, sourceLineNumber)
     {
-        if (!IsTruthy(Environment.GetEnvironmentVariable("INCIDENTCOMPASS_REAL_LLM_SMOKE")))
+        if (!IsTruthy(Environment.GetEnvironmentVariable("INCIDENTCOMPASS_LLM_SMOKE_ENABLED")))
         {
-            Skip = "Set INCIDENTCOMPASS_REAL_LLM_SMOKE=true to run the non-gated real local LLM smoke.";
+            Skip = "Set INCIDENTCOMPASS_LLM_SMOKE_ENABLED=true to run the non-gated real local LLM smoke.";
         }
     }
 
@@ -611,14 +621,14 @@ internal sealed record RealLocalLlmSmokeSettings(
     public static RealLocalLlmSmokeSettings FromEnvironment()
     {
         return new RealLocalLlmSmokeSettings(
-            Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_BASE_URL", "http://localhost:1234"),
-            Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_CHAT_PATH", "/v1/chat/completions"),
-            Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_MODEL", "local-model"),
-            Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_API_KEY", "local-smoke-key"),
-            ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_RUNS", 3),
-            ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_LEASE_SECONDS", 180),
-            ReadPositiveInt("INCIDENTCOMPASS_REAL_LLM_SMOKE_TIMEOUT_SECONDS", 120),
-            Path.GetFullPath(Read("INCIDENTCOMPASS_REAL_LLM_SMOKE_RESULT_PATH", Path.Combine(FindRepositoryRoot(), "docs", "phase-5-real-llm-smoke-result.md"))));
+            Read("INCIDENTCOMPASS_LLM_SMOKE_BASE_URL", "http://localhost:1234"),
+            Read("INCIDENTCOMPASS_LLM_SMOKE_CHAT_PATH", "/v1/chat/completions"),
+            Read("INCIDENTCOMPASS_LLM_SMOKE_MODEL", "local-model"),
+            Read("INCIDENTCOMPASS_LLM_SMOKE_API_KEY", "local-smoke-key"),
+            ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_RUNS", 3),
+            ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_LEASE_SECONDS", 180),
+            ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_TIMEOUT_SECONDS", 120),
+            Path.GetFullPath(Read("INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH", Path.Combine(FindRepositoryRoot(), "docs", "phase-5-real-llm-smoke-result.md"))));
     }
 
     private static string Read(string name, string fallback)

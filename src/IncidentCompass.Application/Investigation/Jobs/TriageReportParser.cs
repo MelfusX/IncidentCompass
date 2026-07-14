@@ -28,6 +28,7 @@ internal static class TriageReportParser
             throw new TriageReportValidationException("publish_report confidence must be Low, Medium, or High.");
         }
 
+        var documentationFit = ReadDocumentationFit(root);
         var evidence = ReadEvidence(root);
         if (status == TriageReportStatus.Completed && evidence.Count == 0)
         {
@@ -41,7 +42,10 @@ internal static class TriageReportParser
             confidence,
             evidence,
             ReadRequiredStringArray(root, "limitations"),
-            ReadReportString(root, "recommendedNextAction"));
+            ReadReportString(root, "recommendedNextAction"))
+        {
+            DocumentationFit = documentationFit
+        };
     }
 
     private static void ValidateClassification(TriageReportStatus status, string classification)
@@ -62,6 +66,19 @@ internal static class TriageReportParser
         {
             throw new TriageReportValidationException("Completed reports must use a concrete non-Unknown classification.");
         }
+    }
+
+    private static DocumentationFitStatus ReadDocumentationFit(JsonElement root)
+    {
+        var documentationFitName = ReadReportString(root, "documentationFit");
+        if (!Enum.TryParse<DocumentationFitStatus>(documentationFitName, ignoreCase: false, out var documentationFit) ||
+            !Enum.IsDefined(documentationFit))
+        {
+            throw new TriageReportValidationException(
+                "publish_report documentationFit must be Current, CurrentWithHistorical, StaleOnly, Missing, or MultipleCurrentDocuments.");
+        }
+
+        return documentationFit;
     }
 
     private static JsonElement ResolveReportRoot(JsonElement arguments)

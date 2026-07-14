@@ -18,6 +18,8 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
     {
         await EnsureHealthyAsync(cancellationToken);
         var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+        var emission = await OtlpDemoEmitter.EmitFailureAsync(ResolveOtlpTracesEndpoint(options.BaseUrl), runId, cancellationToken);
+        Console.WriteLine($"OTLP SDK scenario exported error span {emission.TraceId}/{emission.SpanId} for {emission.ServiceName}.");
         var results = new List<DemoResult>();
 
         foreach (var scenario in DemoScenario.CreateAll(runId))
@@ -164,6 +166,22 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
         return new DemoResult(scenario, null, null, null, null, null, null, false, detail);
     }
 
+    private static Uri ResolveOtlpTracesEndpoint(Uri apiBaseUrl)
+    {
+        var configured = Environment.GetEnvironmentVariable("INCIDENTCOMPASS_TESTER_OTLP_TRACES_ENDPOINT");
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            return new Uri(apiBaseUrl, "v1/traces");
+        }
+
+        var endpoint = new Uri(configured);
+        if (!endpoint.IsAbsoluteUri || !endpoint.AbsolutePath.EndsWith("/v1/traces", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("INCIDENTCOMPASS_TESTER_OTLP_TRACES_ENDPOINT must be an absolute /v1/traces URL.");
+        }
+
+        return endpoint;
+    }
     private string BuildUrl(string path) => new Uri(options.PublicBaseUrl, path).ToString();
 
     private static bool TryParseReportId(string? payloadRef, out Guid reportId)

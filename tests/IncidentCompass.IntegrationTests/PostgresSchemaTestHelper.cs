@@ -8,8 +8,7 @@ internal static class PostgresSchemaTestHelper
 {
     public static async Task EnsureSchemaAsync(string connectionString)
     {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await using var connection = await OpenAsync(connectionString);
 
         foreach (var scriptPath in Directory
                      .GetFiles(FindInitScriptDirectory(), "*.sql")
@@ -19,19 +18,34 @@ internal static class PostgresSchemaTestHelper
         }
     }
 
-    public static async Task ApplyInitScriptsAsync(
+    public static Task ApplyInitScriptsAsync(
         string connectionString,
-        params string[] scriptNames)
-    {
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        params string[] scriptNames) =>
+        ApplyScriptsAsync(connectionString, FindInitScriptDirectory(), scriptNames);
 
-        var initScriptDirectory = FindInitScriptDirectory();
+    public static Task ApplyReleasedV011ScriptsAsync(
+        string connectionString,
+        params string[] scriptNames) =>
+        ApplyScriptsAsync(connectionString, FindReleasedV011FixtureDirectory(), scriptNames);
+
+    private static async Task ApplyScriptsAsync(
+        string connectionString,
+        string scriptDirectory,
+        IReadOnlyList<string> scriptNames)
+    {
+        await using var connection = await OpenAsync(connectionString);
+
         foreach (var scriptName in scriptNames)
         {
-            var scriptPath = Path.Combine(initScriptDirectory, scriptName);
-            await ExecuteScriptAsync(connection, scriptPath);
+            await ExecuteScriptAsync(connection, Path.Combine(scriptDirectory, scriptName));
         }
+    }
+
+    private static async Task<NpgsqlConnection> OpenAsync(string connectionString)
+    {
+        var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        return connection;
     }
 
     private static async Task ExecuteScriptAsync(
@@ -41,6 +55,22 @@ internal static class PostgresSchemaTestHelper
         var schemaSql = await File.ReadAllTextAsync(scriptPath);
         await using var command = new NpgsqlCommand(schemaSql, connection);
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static string FindReleasedV011FixtureDirectory()
+    {
+        var directory = Path.Combine(
+            AppContext.BaseDirectory,
+            "Fixtures",
+            "Postgres",
+            "v0.1.1");
+        if (!Directory.Exists(directory))
+        {
+            throw new InvalidOperationException(
+                "Released v0.1.1 PostgreSQL fixture directory was not found.");
+        }
+
+        return directory;
     }
 
     private static string FindInitScriptDirectory()

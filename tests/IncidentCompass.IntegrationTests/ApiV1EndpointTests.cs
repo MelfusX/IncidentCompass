@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using Google.Protobuf;
+using OpenTelemetry.Proto.Collector.Trace.V1;
+using OpenTelemetry.Proto.Trace.V1;
 using IncidentCompass.Application.Core.Security;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -8,8 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace IncidentCompass.IntegrationTests;
 
-public sealed class ApiV1EndpointTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ApiV1EndpointTests(MockProvidersWebApplicationFactory factory)
+    : IClassFixture<MockProvidersWebApplicationFactory>
 {
     [Fact]
     public async Task Health_ReturnsHealthyStatusUnderApiV1()
@@ -272,6 +275,171 @@ public sealed class ApiV1EndpointTests(WebApplicationFactory<Program> factory)
         Assert.Contains("admin", body.Roles);
         Assert.Contains("engineering", body.Groups);
     }
+
+    [Fact]
+    public async Task MemorySyncHealth_ReturnsMetadataOnlyStatus()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+
+        var response = await client.GetAsync("/api/v1/health/memory-sync");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<MemorySyncHealthResponse>();
+        Assert.NotNull(body);
+        Assert.False(body.Enabled);
+        Assert.False(body.RuntimeResyncEnabled);
+        Assert.Null(body.LastErrorCode);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_AcceptsAnEmptyProtobufExport()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var content = new ByteArrayContent([]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+
+        var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/x-protobuf", response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_RejectsChunkedPayloadOverTheConfiguredLimit()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var content = new ChunkedByteContent(new byte[65537]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+
+        var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_RejectsUnsupportedMediaType()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var content = new ByteArrayContent([]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+        var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_RejectsMalformedProtobuf()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var content = new ByteArrayContent([0xff]);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+
+        var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task OtlpTraceEndpoint_ValidatesTraceAndSpanIdentifiers()
+    {
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        var validTrace = ByteString.CopyFrom(new byte[] { 0, 1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 });
+        var validSpan = ByteString.CopyFrom(new byte[] { 0, 2, 3, 4, 5, 6, 7, 8 });
+        var invalid = new[]
+        {
+            (ByteString.Empty, validSpan, ByteString.Empty),
+            (ByteString.CopyFrom(new byte[16]), validSpan, ByteString.Empty),
+            (ByteString.CopyFrom(new byte[15]), validSpan, ByteString.Empty),
+            (validTrace, ByteString.Empty, ByteString.Empty),
+            (validTrace, ByteString.CopyFrom(new byte[8]), ByteString.Empty),
+            (validTrace, ByteString.CopyFrom(new byte[7]), ByteString.Empty),
+            (validTrace, validSpan, ByteString.CopyFrom(new byte[8])),
+            (validTrace, validSpan, ByteString.CopyFrom(new byte[7]))
+        };
+
+        foreach (var (traceId, spanId, parentSpanId) in invalid)
+        {
+            var export = CreateTraceExport("invalid", traceId, spanId, parentSpanId);
+            using var content = new ByteArrayContent(export.ToByteArray());
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+            var response = await client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        var validExport = CreateTraceExport("valid", validTrace, validSpan, ByteString.Empty);
+        using var validContent = new ByteArrayContent(validExport.ToByteArray());
+        validContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+        var validResponse = await client.PostAsync("/v1/traces", validContent, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, validResponse.StatusCode);
+    }
+
+    private static ExportTraceServiceRequest CreateTraceExport(
+        string name,
+        ByteString traceId,
+        ByteString spanId,
+        ByteString parentSpanId) =>
+        new()
+        {
+            ResourceSpans =
+            {
+                new ResourceSpans
+                {
+                    ScopeSpans =
+                    {
+                        new ScopeSpans
+                        {
+                            Spans =
+                            {
+                                new Span { Name = name, TraceId = traceId, SpanId = spanId, ParentSpanId = parentSpanId }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+    private sealed class ChunkedByteContent(byte[] payload) : HttpContent
+    {
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            const int chunkSize = 4096;
+            for (var offset = 0; offset < payload.Length; offset += chunkSize)
+            {
+                var length = Math.Min(chunkSize, payload.Length - offset);
+                await stream.WriteAsync(payload.AsMemory(offset, length));
+            }
+        }
+    }
+
+    private sealed record MemorySyncHealthResponse(
+        bool Enabled,
+        bool RuntimeResyncEnabled,
+        DateTimeOffset? LastAttemptAtUtc,
+        DateTimeOffset? LastSuccessAtUtc,
+        Guid? ActiveGeneration,
+        string? LastErrorCode);
 
     private sealed record HealthResponse(
         string Status,

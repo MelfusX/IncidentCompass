@@ -1,4 +1,6 @@
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
+using Microsoft.Extensions.Options;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Worker;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +17,7 @@ public sealed class WorkerJobPumpTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ITriageJobRunner>(runner);
+        services.AddSingleton<WorkerJobLeaseRenewer>();
         using var provider = services.BuildServiceProvider();
         var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
         var options = new WorkerOptions
@@ -42,10 +45,87 @@ public sealed class WorkerJobPumpTests
 
         processorRelease.SetResult();
         await WaitUntilAsync(() => runner.CompletedProcessingCount == 2);
+        await pump.WaitForNextWakeAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
         await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
         Assert.Equal(0, pump.ActiveJobCount);
     }
 
+
+    [Fact]
+    public async Task FillAvailableSlotsAsync_DoesNotClaimWhileProviderIsBackpressured()
+    {
+        var runner = new BlockingTriageJobRunner(availableJobs: 1, Task.CompletedTask);
+        var tracker = new ProviderOutageTracker(
+            Options.Create(new ProviderResilienceOptions { FailureThreshold = 1, BackpressureSeconds = 60 }),
+            TimeProvider.System);
+        tracker.RecordProviderFailure();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITriageJobRunner>(runner);
+        services.AddSingleton<IProviderOutageTracker>(tracker);
+        services.AddSingleton<WorkerJobLeaseRenewer>();
+        using var provider = services.BuildServiceProvider();
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+
+        var started = await pump.FillAvailableSlotsAsync(
+            "worker-provider-backpressure",
+            new WorkerOptions { MaxConcurrentJobs = 1, LeaseSeconds = 60, MaxAttempts = 3, RetryDelaySeconds = 1 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, started);
+        Assert.Equal(0, runner.ClaimedCount);
+    }
+    [Fact]
+    public async Task FillAvailableSlotsAsync_OwnershipLossCancelsProcessing()
+    {
+        var runner = new OwnershipLossTriageJobRunner();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITriageJobRunner>(runner);
+        services.AddSingleton<WorkerJobLeaseRenewer>();
+        using var provider = services.BuildServiceProvider();
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+        var options = new WorkerOptions
+        {
+            MaxConcurrentJobs = 1,
+            LeaseSeconds = 1,
+            MaxAttempts = 3,
+            RetryDelaySeconds = 1
+        };
+
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-ownership-loss", options, TestContext.Current.CancellationToken));
+        await runner.ProcessingCancelled.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await ObserveUntilNoActiveJobsAsync(pump);
+
+        Assert.True(runner.RenewalCallCount > 0);
+        Assert.Equal(0, pump.ActiveJobCount);
+    }
+    [Fact]
+    public async Task DrainAsync_CancelsAndWaitsForActiveProcessing()
+    {
+        var processorRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runner = new BlockingTriageJobRunner(availableJobs: 1, processorRelease.Task);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITriageJobRunner>(runner);
+        services.AddSingleton<WorkerJobLeaseRenewer>();
+        using var provider = services.BuildServiceProvider();
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+        var options = new WorkerOptions
+        {
+            MaxConcurrentJobs = 1,
+            LeaseSeconds = 60,
+            MaxAttempts = 3,
+            RetryDelaySeconds = 1
+        };
+
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-drain", options, TestContext.Current.CancellationToken));
+        await WaitUntilAsync(() => runner.StartedProcessingCount == 1);
+        await pump.DrainAsync();
+
+        Assert.True(runner.ProcessingCancelled.Task.IsCompletedSuccessfully);
+        Assert.Equal(0, pump.ActiveJobCount);
+    }
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -55,6 +135,64 @@ public sealed class WorkerJobPumpTests
         }
     }
 
+    private static async Task ObserveUntilNoActiveJobsAsync(WorkerJobPump pump)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (pump.ActiveJobCount > 0)
+        {
+            await pump.WaitForNextWakeAsync(TimeSpan.FromMilliseconds(10), timeout.Token);
+            await pump.ObserveCompletedAsync(timeout.Token);
+        }
+    }
+
+
+    private sealed class OwnershipLossTriageJobRunner : ITriageJobRunner
+    {
+        private readonly TriageJob job = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            TriageJobStatus.Processing,
+            1,
+            "worker-ownership-loss",
+            DateTimeOffset.UtcNow.AddSeconds(1),
+            null,
+            null,
+            null,
+            "ownership-loss-config",
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+        private int renewalCallCount;
+
+        public TaskCompletionSource ProcessingCancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int RenewalCallCount => Volatile.Read(ref renewalCallCount);
+
+        public Task<TriageJob?> ClaimNextAsync(string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken) =>
+            Task.FromResult<TriageJob?>(job);
+
+        public Task<bool> RenewLeaseAsync(TriageJob job, string workerId, TimeSpan leaseDuration, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref renewalCallCount);
+            return Task.FromResult(false);
+        }
+
+        public async Task ProcessClaimedAsync(
+            TriageJob job,
+            string workerId,
+            TriageJobProcessingSettings settings,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                ProcessingCancelled.TrySetResult();
+                throw;
+            }
+        }
+    }
     private sealed class BlockingTriageJobRunner(int availableJobs, Task processorRelease) : ITriageJobRunner
     {
         private int remainingJobs = availableJobs;
@@ -68,6 +206,8 @@ public sealed class WorkerJobPumpTests
         public int StartedProcessingCount => Volatile.Read(ref startedProcessingCount);
 
         public int CompletedProcessingCount => Volatile.Read(ref completedProcessingCount);
+
+        public TaskCompletionSource ProcessingCancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task<TriageJob?> ClaimNextAsync(
             string workerId,
@@ -96,6 +236,11 @@ public sealed class WorkerJobPumpTests
                 UpdatedAtUtc: DateTimeOffset.UtcNow));
         }
 
+        public Task<bool> RenewLeaseAsync(
+            TriageJob job,
+            string workerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) => Task.FromResult(true);
         public async Task ProcessClaimedAsync(
             TriageJob job,
             string workerId,
@@ -103,8 +248,16 @@ public sealed class WorkerJobPumpTests
             CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref startedProcessingCount);
-            await processorRelease.WaitAsync(cancellationToken);
-            Interlocked.Increment(ref completedProcessingCount);
+            try
+            {
+                await processorRelease.WaitAsync(cancellationToken);
+                Interlocked.Increment(ref completedProcessingCount);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                ProcessingCancelled.TrySetResult();
+                throw;
+            }
         }
     }
 }

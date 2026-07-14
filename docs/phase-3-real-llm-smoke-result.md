@@ -8,6 +8,6 @@
 - publish_report reach-rate: 3/3
 
 ## Outcomes
-- Run 1: reached — publish_report_reached
-- Run 2: reached — publish_report_reached
-- Run 3: reached — publish_report_reached
+- Run 1: reached - publish_report_reached
+- Run 2: reached - publish_report_reached
+- Run 3: reached - publish_report_reached

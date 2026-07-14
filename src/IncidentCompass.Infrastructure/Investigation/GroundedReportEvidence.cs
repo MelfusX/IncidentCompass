@@ -5,4 +5,6 @@ internal sealed record GroundedReportEvidence(
     string Kind,
     string Reference,
     string? Quote,
-    double? Score);
+    double? Score,
+    Guid? MemoryItemId,
+    string? DocumentationStatus);

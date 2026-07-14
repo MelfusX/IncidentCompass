@@ -5,4 +5,7 @@ internal sealed record MemorySeedFile(
     string Source,
     string Title,
     string Content,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string? ServiceName,
+    string? Component,
+    string? ReleaseName);

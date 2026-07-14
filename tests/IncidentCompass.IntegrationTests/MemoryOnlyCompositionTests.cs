@@ -8,6 +8,7 @@ using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.Get;
+using IncidentCompass.Application.Investigation.Reports.List;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
@@ -44,9 +45,11 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<IIntakeUnitOfWork, InMemoryIntakeUnitOfWork>();
         services.AddSingleton<ITriageJobRepository, InMemoryTriageJobRepository>();
         services.AddSingleton<ITriageArtifactRepository, InMemoryTriageArtifactRepository>();
+        services.AddSingleton<IRecurrenceStateRepository, InMemoryRecurrenceStateRepository>();
         services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
+        services.AddSingleton<ITriageReportListRepository, InMemoryTriageReportListRepository>();
         services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
@@ -105,7 +108,8 @@ public sealed class MemoryOnlyCompositionTests
                 LookbackMinutes: 15,
                 SilenceWindowMinutes: 30,
                 FingerprintVersion: 1,
-                MassIssue: new MassIssueSettings(MinNeighborCount: 5, MinFingerprintStrength: "strong")));
+                MassIssue: new MassIssueSettings(MinNeighborCount: 5, MinFingerprintStrength: "strong")),
+            Redaction: RedactionSettings.Default);
 
         public Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken) =>
             Task.FromResult(Configuration);
@@ -124,6 +128,11 @@ public sealed class MemoryOnlyCompositionTests
     {
         public Task InsertAsync(Signal signal, CancellationToken cancellationToken) => Task.CompletedTask;
 
+        public Task<ExistingSignalDelivery?> FindDeliveryAsync(
+            string tenantId,
+            string source,
+            string deliveryKey,
+            CancellationToken cancellationToken) => Task.FromResult<ExistingSignalDelivery?>(null);
         public Task AttachToFaultAsync(Guid signalId, Guid faultId, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task<int> CountDistinctNeighborsAsync(
@@ -132,6 +141,8 @@ public sealed class MemoryOnlyCompositionTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             DateTimeOffset windowStartUtc,
             DateTimeOffset windowEndUtc,
             CancellationToken cancellationToken) => Task.FromResult(0);
@@ -145,6 +156,8 @@ public sealed class MemoryOnlyCompositionTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
 
         public Task<Fault?> FindMostRecentClosedFaultAsync(
@@ -153,6 +166,8 @@ public sealed class MemoryOnlyCompositionTests
             string environment,
             string fingerprint,
             int fingerprintVersion,
+            string groupingRuleId,
+            int groupingRuleVersion,
             CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
 
         public Task<Fault?> TryInsertAsync(Fault fault, CancellationToken cancellationToken) => Task.FromResult<Fault?>(fault);
@@ -160,7 +175,7 @@ public sealed class MemoryOnlyCompositionTests
         public Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult<Fault?>(null);
 
-        public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
+        public Task<Fault?> FindByIdAsync(Guid id, string tenantId, CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
     }
 
     private sealed class InMemoryTriageJobRepository : ITriageJobRepository
@@ -193,6 +208,14 @@ public sealed class MemoryOnlyCompositionTests
         public Task ReplaceJobLevelAsync(TriageArtifact artifact, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
+    private sealed class InMemoryRecurrenceStateRepository : IRecurrenceStateRepository
+    {
+        public Task<RecurrenceState> RecordAsync(
+            RecurrenceOccurrence occurrence,
+            CancellationToken cancellationToken) => Task.FromResult(
+                new RecurrenceState(0, occurrence.OccurredAtUtc, occurrence.OccurredAtUtc, null, null));
+    }
+
     private sealed class InMemoryTriageJobRuntimeRepository : ITriageJobRuntimeRepository
     {
         public Task<TriageJob?> ClaimNextAsync(
@@ -200,6 +223,11 @@ public sealed class MemoryOnlyCompositionTests
             TimeSpan leaseDuration,
             CancellationToken cancellationToken) => Task.FromResult<TriageJob?>(null);
 
+        public Task<bool> RenewLeaseAsync(
+            TriageJob job,
+            string workerId,
+            TimeSpan leaseDuration,
+            CancellationToken cancellationToken) => Task.FromResult(true);
         public Task RecordAttemptFailureAsync(
             TriageJob job,
             string workerId,
@@ -216,12 +244,14 @@ public sealed class MemoryOnlyCompositionTests
     {
         public Task<IReadOnlyList<MemorySearchMatch>> SearchAsync(MemorySearchRequest request, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<MemorySearchMatch>>([]);
-        public Task<bool> SeedItemExistsAsync(MemorySeedItem item, CancellationToken cancellationToken) =>
-            Task.FromResult(false);
+        public Task<bool> SeedItemExistsAsync(
+            string owner,
+            MemorySeedItem item,
+            CancellationToken cancellationToken) => Task.FromResult(false);
 
-
-        public Task UpsertSeedAsync(MemorySeedItem item, IReadOnlyList<MemorySeedChunk> chunks, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task ReconcileSeedCorpusAsync(
+            MemorySeedCorpus corpus,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
 
@@ -246,14 +276,25 @@ public sealed class MemoryOnlyCompositionTests
 
         public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
             Guid faultId,
+            string tenantId,
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
     }
     private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
     {
-        public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>
+        public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, string tenantId, CancellationToken cancellationToken) =>
+            Task.FromResult<TriageReportDetailsResponse?>(null);
+
+        public Task<TriageReportDetailsResponse?> FindLatestByFaultIdAsync(Guid faultId, string tenantId, CancellationToken cancellationToken) =>
             Task.FromResult<TriageReportDetailsResponse?>(null);
     }
 
+    private sealed class InMemoryTriageReportListRepository : ITriageReportListRepository
+    {
+        public Task<IReadOnlyList<TriageReportListItemResponse>> ListAsync(
+            TriageReportListFilter filter,
+            string tenantId,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageReportListItemResponse>>([]);
+    }
     private sealed class InMemoryPriorReportSummaryProvider : IPriorReportSummaryProvider
     {
         public Task<PriorReportSummary?> FindLatestAsync(Guid faultId, CancellationToken cancellationToken) =>

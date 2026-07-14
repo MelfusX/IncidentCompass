@@ -166,7 +166,8 @@ public sealed class GroundedFactsAssemblerTests
         Attributes: EmptyJson(),
         Body: EmptyJson(),
         ObservedAtUtc: DateTimeOffset.UtcNow,
-        ReceivedAtUtc: DateTimeOffset.UtcNow);
+        ReceivedAtUtc: DateTimeOffset.UtcNow,
+        DeliveryKey: null);
 
     private static JsonElement EmptyJson()
     {

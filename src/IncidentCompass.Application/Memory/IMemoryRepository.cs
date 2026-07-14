@@ -7,11 +7,11 @@ internal interface IMemoryRepository
         CancellationToken cancellationToken);
 
     Task<bool> SeedItemExistsAsync(
+        string owner,
         MemorySeedItem item,
         CancellationToken cancellationToken);
 
-    Task UpsertSeedAsync(
-        MemorySeedItem item,
-        IReadOnlyList<MemorySeedChunk> chunks,
+    Task ReconcileSeedCorpusAsync(
+        MemorySeedCorpus corpus,
         CancellationToken cancellationToken);
 }

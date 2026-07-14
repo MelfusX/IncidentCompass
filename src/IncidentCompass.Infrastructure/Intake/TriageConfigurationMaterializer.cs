@@ -25,8 +25,11 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
             RequireDictionary(document.Tools, "Tools", allowEmpty: true),
             rules,
             RequireValue(document.Ingestion, "Ingestion"),
-            RequireValue(document.FaultGrouping, "FaultGrouping"));
-
+            RequireValue(document.FaultGrouping, "FaultGrouping"),
+            document.Redaction ?? RedactionSettings.Default)
+        {
+            CurrentReleases = NormalizeCurrentReleases(document.CurrentReleases)
+        };
         validator.Validate(configuration);
         return configuration;
     }
@@ -99,6 +102,16 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
                 Scope = string.IsNullOrWhiteSpace(rule.Scope) ? "attempt" : rule.Scope
             })
             .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> NormalizeCurrentReleases(
+        IReadOnlyDictionary<string, string>? currentReleases)
+    {
+        return currentReleases?.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.Ordinal)
+            ?? new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
     private static string ResolveReference(string value, JsonObject referencesNode)

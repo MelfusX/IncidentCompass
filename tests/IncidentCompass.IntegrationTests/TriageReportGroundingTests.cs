@@ -1,6 +1,10 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using IncidentCompass.Application.Intake.Redaction;
+using IncidentCompass.Infrastructure.ModelGateway.Mock;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
@@ -44,6 +48,78 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         Assert.Equal(0, workerOutputEvidence);
     }
 
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_RedactsCraftedMarkersBeforePersistenceArtifactsAndModelRequests()
+    {
+        const string rawIdentifier = "raw-user-redaction-e2e@example.test";
+        const string configuredAttributeSecret = "configured-customer-account-redaction-e2e";
+        var crafted = "[PSEUDONYM:v1:" + new string('a', 64) + ":" + new string('b', 64) + "]";
+        var requests = new ConcurrentQueue<AiModelRequest>();
+        using var scope = await CreateScopeAsync(services =>
+        {
+            services.RemoveAll<IAiModelClient>();
+            services.AddScoped<IAiModelClient>(_ => new CapturingMockAiModelClient(requests));
+        });
+        var response = await scope.Client.PostAsJsonAsync(
+            "/api/v1/incidents",
+            new
+            {
+                sourceKind = "tester",
+                serviceName = "redaction-e2e-" + Guid.NewGuid().ToString("N"),
+                environment = "prod",
+                observedAtUtc = DateTimeOffset.UtcNow,
+                attributes = new
+                {
+                    errorType = "TimeoutException",
+                    errorMessage = "request by " + rawIdentifier,
+                    httpRoute = "/redaction-e2e",
+                    user = new { id = rawIdentifier },
+                    password = crafted,
+                    customer = new
+                    {
+                        account = new { id = configuredAttributeSecret }
+                    }
+                },
+                payload = new
+                {
+                    user = new { email = rawIdentifier },
+                    password = crafted
+                }
+            },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var ingested = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
+        Assert.NotNull(ingested);
+        Assert.NotNull(ingested.JobId);
+        await RunClaimedJobAsync(scope, ingested.JobId.Value, "worker-redaction-e2e", 1);
+
+        var signalText = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT concat_ws('|', error_message, summary, attributes::text, body::text) FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+        var triggerPayload = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT redacted_payload::text FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'TriggerSignal';", ("job_id", ingested.JobId.Value));
+        var canonicalUserId = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT attributes #>> '{user,id}' FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+        var password = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT attributes->>'password' FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+        var authorization = await ScalarAsync<string>(scope.ConnectionString,
+            "SELECT attributes #>> '{customer,account,id}' FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", ingested.SignalId));
+
+        Assert.Equal("[REDACTED]", password);
+        Assert.Equal("[REDACTED]", authorization);
+        Assert.DoesNotContain(rawIdentifier, signalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(crafted, signalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(configuredAttributeSecret, signalText, StringComparison.Ordinal);
+        Assert.DoesNotContain(rawIdentifier, triggerPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain(crafted, triggerPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain(configuredAttributeSecret, triggerPayload, StringComparison.Ordinal);
+        var modelText = string.Join("\n", requests.SelectMany(request => request.Messages).Select(message => message.Content));
+        Assert.NotEmpty(requests);
+        Assert.DoesNotContain(rawIdentifier, modelText, StringComparison.Ordinal);
+        Assert.DoesNotContain(crafted, modelText, StringComparison.Ordinal);
+        Assert.DoesNotContain(configuredAttributeSecret, modelText, StringComparison.Ordinal);
+        var pseudonymizer = scope.Factory.Services.GetRequiredService<UserIdentifierPseudonymizer>();
+        Assert.True(pseudonymizer.IsCanonicalPseudonym(JsonValue.Create(canonicalUserId), "user.id"));
+    }
     [DockerAvailableFact]
     public async Task ProcessClaimedAsync_UnverifiableQuoteIsDroppedButCitationPersists()
     {
@@ -136,6 +212,100 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
 
 
     [DockerAvailableFact]
+    public async Task PublishAsync_DerivesAndPersistsDocumentationFitFromCitedMemoryItems()
+    {
+        var cases = new (string[] DocumentationStatuses, DocumentationFitStatus ExpectedFit, string? ExpectedLimitation)[]
+        {
+            (["Current"], DocumentationFitStatus.Current, null),
+            (["Current", "Stale"], DocumentationFitStatus.CurrentWithHistorical, null),
+            (["Stale"], DocumentationFitStatus.StaleOnly, null),
+            ([], DocumentationFitStatus.Missing, null),
+            (["Unversioned"], DocumentationFitStatus.Missing, "Cited documentation is unversioned or service-mismatched, so its currentness cannot be assessed."),
+            (["Current", "Current"], DocumentationFitStatus.MultipleCurrentDocuments, "Multiple current documents were cited; their compatibility requires operator review.")
+        };
+        foreach (var testCase in cases)
+        {
+            using var scope = await CreateScopeAsync();
+            var ingested = await PostIngestAsync(scope.Client, "documentation-fit");
+            var claimed = await ClaimAsync(scope, ingested.JobId!.Value, "worker-documentation-fit");
+            var artifactIds = new List<Guid>();
+            foreach (var documentationStatus in testCase.DocumentationStatuses)
+            {
+                artifactIds.Add(await InsertRetrievedMemoryArtifactAsync(
+                    scope.ConnectionString,
+                    claimed.Id,
+                    claimed.Attempt,
+                    documentationStatus));
+            }
+
+            if (artifactIds.Count == 0)
+            {
+                artifactIds.Add(await ReadArtifactIdAsync(scope.ConnectionString, claimed.Id, "TriggerSignal"));
+            }
+
+            using var serviceScope = scope.Factory.Services.CreateScope();
+            var repository = serviceScope.ServiceProvider.GetRequiredService<ITriageReportRepository>();
+            var reportId = await repository.PublishAsync(
+                claimed,
+                "worker-documentation-fit",
+                CreateReport(artifactIds[0]) with
+                {
+                    DocumentationFit = testCase.ExpectedFit,
+                    Evidence = artifactIds.Select(static id => new TriageReportEvidenceReference(id.ToString(), null)).ToArray()
+                },
+                TestContext.Current.CancellationToken);
+
+            var persistedFit = await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT documentation_fit FROM incidentcompass.triage_reports WHERE id = @report_id;",
+                ("report_id", reportId));
+            Assert.Equal(testCase.ExpectedFit.ToString(), persistedFit);
+
+            var response = await scope.Client.GetAsync(
+                "/api/v1/triage-reports/" + reportId,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var details = await response.Content.ReadFromJsonAsync<DocumentationFitDetailsDto>(TestContext.Current.CancellationToken);
+            Assert.NotNull(details);
+            Assert.Equal(testCase.ExpectedFit.ToString(), details.DocumentationFit);
+            if (testCase.ExpectedLimitation is null)
+            {
+                Assert.Empty(details.Limitations);
+            }
+            else
+            {
+                Assert.Contains(testCase.ExpectedLimitation, details.Limitations);
+            }
+        }
+    }
+
+    [DockerAvailableFact]
+    public async Task PublishAsync_RejectsModelDocumentationFitThatDisagreesWithCitedMemoryItems()
+    {
+        using var scope = await CreateScopeAsync();
+        var ingested = await PostIngestAsync(scope.Client, "documentation-fit-rejection");
+        var claimed = await ClaimAsync(scope, ingested.JobId!.Value, "worker-documentation-fit-rejection");
+        var artifactId = await InsertRetrievedMemoryArtifactAsync(
+            scope.ConnectionString,
+            claimed.Id,
+            claimed.Attempt,
+            "Current");
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<ITriageReportRepository>();
+        await Assert.ThrowsAsync<TriageReportValidationException>(() => repository.PublishAsync(
+            claimed,
+            "worker-documentation-fit-rejection",
+            CreateReport(artifactId),
+            TestContext.Current.CancellationToken));
+
+        var reports = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            ("fault_id", ingested.FaultId));
+        Assert.Equal(0, reports);
+    }
+    [DockerAvailableFact]
     public async Task PublishAsync_RefreshedNeighborSetKeepsStableEvidenceReference()
     {
         using var scope = await CreateScopeAsync();
@@ -178,6 +348,8 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
+            builder.UseSetting("IncidentCompass:Pseudonymization:Salt", "redaction-e2e-salt");
             if (configureServices is not null)
             {
                 builder.ConfigureTestServices(configureServices);
@@ -296,6 +468,40 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         return await ScalarAsync<Guid>(connectionString, "SELECT id FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = @kind ORDER BY created_at_utc, id LIMIT 1;", ("job_id", jobId), ("kind", kind));
     }
 
+    private static async Task<Guid> InsertRetrievedMemoryArtifactAsync(
+        string connectionString,
+        Guid jobId,
+        int attempt,
+        string documentationStatus)
+    {
+        var memoryItemId = Guid.NewGuid();
+        var artifactId = Guid.NewGuid();
+        var unique = Guid.NewGuid().ToString("N");
+        await ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.memory_items (
+                id, tenant_id, kind, source, title, content, content_hash, version, tags, created_at_utc)
+            VALUES (
+                @id, 'demo', 'runbook', @source, 'Documentation fit test', @content, @content_hash, 1,
+                ARRAY['documentation'], now());
+            """,
+            ("id", memoryItemId),
+            ("source", "test://documentation-fit/" + unique),
+            ("content", "Documentation status " + documentationStatus),
+            ("content_hash", unique));
+        await ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES (
+                @id, @job_id, @attempt, 'RetrievedItem', @domain_ref, @payload::jsonb, @content_hash, now());
+            """,
+            ("id", artifactId),
+            ("job_id", jobId),
+            ("attempt", attempt),
+            ("domain_ref", "memory_item:" + memoryItemId),
+            ("payload", JsonSerializer.Serialize(new { documentationStatus, score = 0.9 })),
+            ("content_hash", unique));
+        return artifactId;
+    }
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -322,6 +528,16 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         return (T)(await command.ExecuteScalarAsync())!;
     }
 
+    private sealed class CapturingMockAiModelClient(ConcurrentQueue<AiModelRequest> requests) : IAiModelClient
+    {
+        private readonly MockAiModelClient inner = new();
+
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            requests.Enqueue(request);
+            return inner.CompleteAsync(request, cancellationToken);
+        }
+    }
     private sealed class WorkerOutputThenTriggerEvidenceModelClient : IAiModelClient
     {
         public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
@@ -375,7 +591,7 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
     private static AiToolCall PublishCall(AiModelRequest request, string referenceId, string? quote)
     {
         var quoteJson = quote is null ? string.Empty : ",\"quote\":\"" + quote + "\"";
-        return ToolCall("publish-" + Guid.NewGuid().ToString("N"), "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Grounded report.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"" + quoteJson + "}],\"limitations\":[],\"recommendedNextAction\":\"Review the evidence.\"}}");
+        return ToolCall("publish-" + Guid.NewGuid().ToString("N"), "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Grounded report.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"" + quoteJson + "}],\"limitations\":[],\"recommendedNextAction\":\"Review the evidence.\"}}");
     }
 
     private static bool IsOrchestrator(AiModelRequest request)
@@ -455,6 +671,8 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         bool IsSuppressed,
         Guid? JobId,
         string? ConfigHash);
+
+    private sealed record DocumentationFitDetailsDto(string DocumentationFit, IReadOnlyList<string> Limitations);
 
     private sealed record EvidenceRow(string Kind, string? Quote);
 }

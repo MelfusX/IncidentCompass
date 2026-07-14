@@ -31,11 +31,37 @@ public sealed class ConfigSnapshotHashTests(PostgresRepositoryFixture postgres)
         Assert.Equal("analysis instructions v2", second.Roles["analysis"].Instructions);
     }
 
+    [DockerAvailableFact]
+    public async Task GetCurrentAsync_CurrentReleaseEditChangesHashAndOldHashRehydratesPriorSnapshot()
+    {
+        var connectionString = await postgres.GetConnectionStringAsync();
+        await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
+        var configPath = await CreateConfigurationAsync("analysis instructions");
+
+        using var firstFactory = CreateFactory(connectionString, configPath);
+        var first = await LoadCurrentAsync(firstFactory);
+
+        var changedConfig = (await File.ReadAllTextAsync(configPath)).Replace(
+            "\"checkout\": \"2026.07.13.1\"",
+            "\"checkout\": \"2026.07.13.2\"",
+            StringComparison.Ordinal);
+        await File.WriteAllTextAsync(configPath, changedConfig);
+
+        using var secondFactory = CreateFactory(connectionString, configPath);
+        var second = await LoadCurrentAsync(secondFactory);
+        var old = await LoadByHashAsync(secondFactory, first.ConfigHash);
+
+        Assert.NotEqual(first.ConfigHash, second.ConfigHash);
+        Assert.Equal("2026.07.13.1", old.CurrentReleases["checkout"]);
+        Assert.Equal("2026.07.13.2", second.CurrentReleases["checkout"]);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(string connectionString, string configPath)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
         });
     }
@@ -89,7 +115,8 @@ public sealed class ConfigSnapshotHashTests(PostgresRepositoryFixture postgres)
                 "SilenceWindowMinutes": 30,
                 "FingerprintVersion": 1,
                 "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
-              }
+              },
+              "CurrentReleases": { "checkout": "2026.07.13.1" }
             }
             """);
         return configPath;

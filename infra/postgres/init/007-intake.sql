@@ -4,7 +4,7 @@
 -- order that avoids the circularity: `faults` first (trigger_signal_id as a plain column), then
 -- `signals` (which can reference `faults` immediately), then an ALTER TABLE adds the deferred FK
 -- from `faults.trigger_signal_id` back to `signals`. Application code inserts a signal row with
--- `fault_id = NULL` first, then the fault row, then updates the signal's `fault_id` — see
+-- `fault_id = NULL` first, then the fault row, then updates the signal's `fault_id` - see
 -- `ISignalRepository.AttachToFaultAsync`.
 
 CREATE TABLE IF NOT EXISTS incidentcompass.faults (
@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS incidentcompass.triage_jobs (
     locked_by text NULL,
     locked_until_utc timestamptz NULL,
     next_attempt_at_utc timestamptz NULL,
+    retry_without_consuming_attempt boolean NOT NULL DEFAULT false,
     last_error_code text NULL,
     last_error_message text NULL,
     config_hash text NOT NULL REFERENCES incidentcompass.triage_config_snapshots (config_hash),
@@ -121,7 +122,7 @@ CREATE TABLE IF NOT EXISTS incidentcompass.triage_artifacts (
     job_id uuid NOT NULL REFERENCES incidentcompass.triage_jobs (id),
     -- NULL = job-level (intake artifacts: TriggerSignal/NeighborSet/PriorReport, valid across retries);
     -- set = attempt-level (worker artifacts, written starting Phase 2). NULL is a deliberate sentinel,
-    -- not "unknown" — do not make this column NOT NULL.
+    -- not "unknown" - do not make this column NOT NULL.
     attempt integer NULL,
     kind text NOT NULL CHECK (kind IN ('TriggerSignal', 'NeighborSet', 'PriorReport', 'RetrievedItem', 'ToolResult', 'WorkerOutput')),
     domain_ref text NULL,

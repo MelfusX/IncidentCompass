@@ -10,7 +10,7 @@ namespace IncidentCompass.Infrastructure.Intake;
 internal sealed class TriageConfigurationSnapshotStore(
     PostgresDataSourceProvider dataSourceProvider,
     TimeProvider timeProvider,
-    ILogger<TriageConfigurationSnapshotStore> logger)
+    ILogger<TriageConfigurationSnapshotStore> logger) : ITriageConfigurationSnapshotStore
 {
     public Task PersistAsync(
         string configHash,

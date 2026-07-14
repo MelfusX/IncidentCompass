@@ -8,6 +8,6 @@
 - publish_report reach-rate: 0/3
 
 ## Outcomes
-- Run 1: missed — DeadLettered (triage_job_attempt_failed: Analysis worker output at output.keyFacts[0] must be string.)
-- Run 2: missed — DeadLettered (triage_job_attempt_failed: Analysis worker output at output.keyFacts[0] must be string.)
-- Run 3: missed — DeadLettered (triage_job_attempt_failed: Analysis worker output at output.keyFacts[0] must be string.)
+- Run 1: missed - DeadLettered (triage_job_attempt_failed: Analysis worker output at output.keyFacts[0] must be string.)
+- Run 2: missed - DeadLettered (triage_job_attempt_failed: Analysis worker output at output.keyFacts[0] must be string.)
+- Run 3: missed - DeadLettered (triage_job_attempt_failed: Analysis worker output at output.keyFacts[0] must be string.)

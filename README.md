@@ -1,43 +1,98 @@
 # IncidentCompass
 
-A governed incident-triage agent backend. It ingests a signal, an orchestrator delegates to scoped
-workers under policy/audit/budget rails, and the system produces a grounded report.
+[![CI](https://github.com/MelfusX/IncidentCompass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MelfusX/IncidentCompass/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/MelfusX/IncidentCompass)](https://github.com/MelfusX/IncidentCompass/releases/latest)
+[![License](https://img.shields.io/github/license/MelfusX/IncidentCompass)](LICENSE)
 
-This is reference-quality software, not a production system. This snapshot includes the Phase 0
-repository bootstrap, Phase 1 intake, the Phase 2 governed investigation loop, Phase 3 governance
-rails, Phase 4 memory worker, Phase 5 grounded report closeout and Phase 6 demo packaging: typed
-triage configuration rehydration, a durable triage ledger, a bounded Worker claim loop,
-deterministic analysis and memory delegation, governed memory_search, backend-grounded
-publish_report persistence, ledger/report readback, Docker Compose packaging and a deterministic
-Tester-driven local demo.
+A .NET 10 backend that turns an incident signal into a reviewable, evidence-backed triage report.
 
-## What This Is
+IncidentCompass explores a narrow question: can an LLM choose useful investigation steps without
+receiving authority over credentials, persistence or external side effects? The model may delegate
+work and propose tool calls. The backend owns tool grants, budgets, evidence checks, the audit ledger
+and the final report commit.
 
-- A layered-monolith .NET 10 skeleton using Clean Architecture and a lightweight internal
-  application pipeline.
-- A model/embedding gateway abstraction with deterministic mock providers (default) and
-  OpenAI-compatible adapters behind the same ports.
-- A Phase 1 intake pipeline (Intake) with POST /api/v1/incidents, GET /api/v1/faults/{id}, source
-  normalizers, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake
-  artifacts.
-- Governance rails for the investigation loop: typed tool schemas, role-scoped backend tool grants,
-  backend policy decisions, a durable triage ledger writer and GET /api/v1/faults/{id}/ledger for
-  readback. The Worker path records Delegated, WorkerCompleted, ToolProposed, PolicyDecision,
-  ToolResult and same-transaction ReportPublished events.
-- ModelCall ledger telemetry, grounded triage report readback, deterministic Docker demo packaging,
-  and generic dispatch/health/security/user scaffolding over PostgreSQL.
+Version `v0.2.0` adds governed OTLP intake, memory synchronization, immutable report history,
+server-owned incident tenancy and operational hardening.
 
-## What This Is Not
+## One Investigation
 
-- Not a chat backend, a RAG/document-ingestion system, an evaluation harness, a usage dashboard, or
-  an MCP host/client. All of that existed in the upstream starter kit and was deliberately removed
-  here.
-- Not a full framework with stable public extension contracts.
-- Not production-ready as-is: demo auth and mock providers are intentionally replaceable adapters
-  with no battle-testing and no SLA.
-- Not proof that a local LLM can reliably complete the multi-turn investigation loop. The gated demo
-  uses scripted mock providers to prove the backend rails and packaging; optional real-LLM smoke runs
-  are separate evidence.
+1. The API accepts native OTLP trace/log protobuf exports or an OTel-shaped, user or tester signal, redacts sensitive fields, groups it into a
+   fault and creates a durable triage job.
+2. The Worker claims the job and reloads the exact versioned configuration captured at intake.
+3. The orchestrator may delegate to analysis and memory workers. Each role receives only its configured
+   tools, and every proposed call passes deterministic backend policy.
+4. `publish_report` succeeds only when cited evidence resolves to allowed artifacts from the same
+   job and, for attempt-scoped artifacts, the current attempt. Policy decisions, model calls, tool activity and publication are recorded in the ledger.
+
+![IncidentCompass deterministic demo report](docs/images/incidentcompass-demo-report.png)
+
+The screenshot is from the deterministic `v0.1.1` demo: a `KnownIncident` report with one cited
+runbook and 22 ledger events. It demonstrates the backend path and review surface, not classification
+accuracy for arbitrary models or incidents.
+
+## Try The Local Flow
+
+The normal local path uses OpenAI-compatible chat and embedding endpoints. On Windows and macOS,
+Docker Compose points to `host.docker.internal:1234` by default.
+
+~~~powershell
+Copy-Item .env.example .env
+# Set exact model ids in .env when your provider requires them.
+dotnet run --project src/IncidentCompass.Api -- config validate
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
+~~~
+
+The script builds PostgreSQL, API, Worker and Tester containers, runs the local scenarios and prints
+URLs for the fault ledger and triage report. Use `scripts/demo.ps1 -Mock` only when you need the
+fully deterministic mock path. The configurable ingestion payload limit must be between 1 KiB and 1 MiB. The upper bound caps per-request buffering; the 1 KiB lower bound prevents a misconfiguration that rejects ordinary small OTLP exports. `MaxAttributesBytes` must be positive and no greater than `MaxPayloadBytes`. The default limits are 64 KiB and 16 KiB. See [Quickstart](docs/quickstart.md) and
+[Local demo walkthrough](docs/local-demo.md) for provider settings, port overrides and manual steps.
+
+## What The Demo Proves
+
+- The orchestration loop is bounded by backend-owned worker, token, wall-clock and reprompt budgets.
+- Worker tools are role-scoped and fail closed when they are unknown, ungranted or denied by policy.
+- Report evidence is resolved against stored artifacts instead of trusting model-authored citations.
+- The investigation can be reconstructed from durable ledger and configuration snapshot records.
+- Automated tests remain deterministic and do not call real providers by default.
+
+Model quality is separate from these guarantees. A weak or incompatible model may still fail to
+complete the multi-turn trajectory or reach a correct conclusion.
+
+## Current Implementation
+
+- Layered-monolith .NET 10 application with Clean Architecture boundaries and a lightweight internal
+  dispatcher/pipeline.
+- Signal intake with source normalization, configurable redaction, fingerprinting, grouping, triage
+  job creation and grounded intake artifacts.
+- OpenAI-compatible model and embedding adapters for the normal runtime path, with explicit mock
+  adapters for tests and deterministic checks.
+- Configured orchestrator and worker roles, typed output schemas, role-scoped tools and ledger-backed
+  policy decisions.
+- PostgreSQL/pgvector incident memory with governed `memory_search`, file-backed seed identity and snapshotted per-service current-release markers for documentation fit.
+- Backend-grounded triage reports plus fault, report and ledger read APIs.
+- Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
+- Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
+
+## Code Walkthrough
+
+- [Signal intake handler](src/IncidentCompass.Application/Intake/IngestSignal/Handler.cs) - normalizes,
+  redacts, groups and persists an incoming signal.
+- [Governed investigation processor](src/IncidentCompass.Application/Investigation/Jobs/GovernedTriageInvestigationProcessor.cs) -
+  runs the bounded orchestrator/worker loop.
+- [Worker tool rule engine](src/IncidentCompass.Application/Investigation/Jobs/WorkerToolRuleEngine.cs) -
+  applies configured grants and policy rules before tool execution.
+- [Report evidence grounder](src/IncidentCompass.Infrastructure/Investigation/PostgresReportEvidenceGrounder.cs) -
+  resolves model-proposed references against citable artifacts from the active attempt.
+
+## How This Was Built
+
+Implementation and refactoring were heavily assisted by coding agents. Igor Lagutin owned the
+product scope, architecture, task decomposition, acceptance criteria, review decisions and release
+gates. Generated changes were treated as untrusted until the relevant build, tests, Docker scenarios,
+code-organization checks and vulnerability gate passed.
+
+Failures and trade-offs stay visible in the repository. The recorded real-model smoke results include
+unsuccessful runs instead of presenting only the best outcome.
 
 ## Architecture
 
@@ -49,117 +104,43 @@ flowchart LR
     Worker["IncidentCompass.Worker"] --> App
     App --> Domain["IncidentCompass.Domain"]
     Infrastructure["IncidentCompass.Infrastructure"] --> App
-    Infrastructure --> Postgres["PostgreSQL"]
-    Infrastructure --> Providers["Mock or OpenAI-compatible providers"]
+    Infrastructure --> Postgres["PostgreSQL + pgvector"]
+    Infrastructure --> Providers["OpenAI-compatible providers"]
+    Infrastructure --> TestProviders["Mock providers (tests only)"]
 ~~~
 
-IncidentCompass.Application is a single project organized by feature folder: Core/ (dispatcher,
-identity/correlation, model/embedding gateway abstractions, options), Governance/ (triage
-ledger and worker policy helpers), Intake/ (signal normalization, redaction, fingerprinting, fault
-grouping and triage-job orchestration), Investigation/ (Worker claim/runtime orchestration, config
-rehydration and the governed processor) and Memory/ (memory search contracts, seed records and
-memory_search) are populated today. Infrastructure implements persistence and provider adapters. Api
-maps HTTP input/output only. Worker polls PostgreSQL, claims bounded triage jobs and runs the
-configured orchestrator with only delegate and publish_report available. Tester is a console HTTP
-client for the deterministic local demo; it has no dependency on the application assemblies. The
-memory role can call only the governed memory_search worker tool. publish_report can cite only
-backend-grounded artifacts; the backend derives mass-issue state and evidence kind.
+`IncidentCompass.Application` is organized by feature folder: `Core`, `Governance`, `Intake`,
+`Investigation` and `Memory`. `Infrastructure` implements persistence, provider, configuration and
+memory adapters. The API remains transport-focused. The Worker owns job claiming and governed
+background processing. Tester is an external HTTP client for the local scenarios.
 
-Start here:
+Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
+[Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).
 
-- [Architecture](docs/architecture.md)
-- [Application pipeline](docs/application-pipeline.md)
-- [Versioning](docs/versioning.md)
-- [Trade-offs](docs/trade-offs.md)
+## Scope And Limits
+
+IncidentCompass is reference-quality software for local review, not a production incident platform.
+The current scope does not provide enterprise authentication, a stable extension framework, a UI,
+external actions, an MCP surface, a usage dashboard or a general document-ingestion system. Local
+credentials, demo auth and Compose defaults must be replaced before any non-local deployment.
 
 ## Documentation
 
 - [Quickstart](docs/quickstart.md)
 - [Local demo walkthrough](docs/local-demo.md)
+- [Architecture](docs/architecture.md)
 - [Security model](docs/security-model.md)
 - [Model gateway](docs/model-gateway.md)
-- [Cost tracking](docs/cost-tracking.md)
 - [Observability](docs/observability.md)
 - [Code organization](docs/code-organization.md)
-- [Phase 2 implementation report](docs/phase-2-implementation-report.md)
-- [Phase 3 implementation report](docs/phase-3-implementation-report.md)
+- [Versioning and release flow](docs/versioning.md)
+- [Release candidate notes for v0.2.0](docs/release-notes-v0.2.0.md)
+- [Published v0.1.1 notes](docs/release-notes-v0.1.1.md)
 
-## Target Stack
+## Relationship To dotnet-genai-starter
 
-- .NET 10 LTS.
-- ASP.NET Core.
-- PostgreSQL with pgvector.
-- Docker Compose.
-- OpenAI-compatible model and embedding clients.
-- Mock model and embedding clients for tests and the deterministic demo.
-- xUnit, Testcontainers for integration tests.
-
-## Project Structure
-
-~~~text
-src/
-  IncidentCompass.Api
-  IncidentCompass.Application
-  IncidentCompass.Domain
-  IncidentCompass.Infrastructure
-  IncidentCompass.Tester
-  IncidentCompass.Worker
-tests/
-  IncidentCompass.UnitTests
-  IncidentCompass.IntegrationTests
-~~~
-
-## Quickstart
-
-Recommended deterministic demo path:
-
-~~~powershell
-# Optional collision overrides: IC_API_PORT=5298 and IC_POSTGRES_PORT=55432
-powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
-~~~
-
-That command builds and starts PostgreSQL, API and Worker containers, runs the HTTP-only Tester
-against all four local scenarios, and prints host URLs for the fault ledger and triage report. See
-[docs/local-demo.md](docs/local-demo.md) for -NoBuild, -RealLlm, service layout and the honesty
-caveats around scripted mocks versus optional real-LLM runs.
-
-See [docs/quickstart.md](docs/quickstart.md) for manual local setup and provider override examples.
-
-Minimal manual path:
-
-~~~powershell
-Copy-Item .env.example .env
-dotnet restore IncidentCompass.slnx
-dotnet build IncidentCompass.slnx
-dotnet test IncidentCompass.slnx
-docker compose up -d postgres
-~~~
-
-Run the API and Worker in separate terminals. Set the connection string in each terminal because
-PowerShell process environment variables are not shared across new windows:
-
-~~~powershell
-$env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=incidentcompass;Username=incidentcompass;Password=incidentcompass_dev_password"
-dotnet run --project src/IncidentCompass.Api --launch-profile http
-~~~
-
-~~~powershell
-$env:ConnectionStrings__IncidentCompass = "Host=localhost;Port=5432;Database=incidentcompass;Username=incidentcompass;Password=incidentcompass_dev_password"
-dotnet run --project src/IncidentCompass.Worker
-~~~
-
-Sample HTTP requests (health check, current-user lookup, incident ingestion, source rejection and
-fault lookup) are available in
-[src/IncidentCompass.Api/IncidentCompass.Api.http](src/IncidentCompass.Api/IncidentCompass.Api.http)
-and [samples/http/local-demo.http](samples/http/local-demo.http).
-
-## Relationship to dotnet-genai-starter
-
-IncidentCompass was bootstrapped from the dotnet-genai-starter repo's patterns: its layered .NET
-structure and its model/embedding gateway abstractions. It was then specialized into a single-purpose incident-triage agent. Everything else from
-that starter kit - chat (direct, RAG, and agentic), RAG document ingestion, evaluations, usage
-tracking, and MCP (both the local host and the external-MCP client) - was stripped out because it
-doesn't belong to this product's scope.
-
-This is reference-quality, not production, software: no battle-testing, no SLA, and the demo adapters
-(header-based demo auth, mock providers) are intentionally replaceable rather than deployment-ready.
+IncidentCompass was bootstrapped from the
+[dotnet-genai-starter](https://github.com/MelfusX/dotnet-genai-starter) repository's layered .NET
+structure and model/embedding gateway boundaries. It was then specialized into one incident-triage
+workflow. Chat, general RAG document ingestion, evaluations, usage dashboards and MCP product
+surfaces were removed because they do not belong to this project's scope.

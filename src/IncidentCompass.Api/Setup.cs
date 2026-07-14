@@ -12,11 +12,13 @@ public static class Setup
         IWebHostEnvironment environment)
     {
         services.AddHttpContextAccessor();
+        services.AddScoped<OtlpPayloadReader>();
         services.AddApiUserContext(configuration, environment);
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
         services.AddHealthChecks()
-            .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"]);
+            .AddCheck<PostgresReadinessHealthCheck>("postgres", tags: ["ready"])
+            .AddCheck<MemorySeedSyncHealthCheck>("memory_seed_sync", tags: ["ready"]);
         services.AddOpenApi();
 
         return services;

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Fingerprinting;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Domain.Incidents;
@@ -8,6 +9,29 @@ namespace IncidentCompass.UnitTests;
 
 public sealed class FingerprintCalculatorTests
 {
+    [Fact]
+    public void Compute_ServiceSpecificRule_UsesConfiguredInputsAndEffectiveIdentity()
+    {
+        var settings = new FaultGroupingSettings(
+            15,
+            30,
+            1,
+            new MassIssueSettings(5, "strong"),
+            [new FingerprintRuleSettings(
+                "checkout-route-v2",
+                2,
+                [FingerprintInputNames.ServiceName, FingerprintInputNames.HttpRoute],
+                ServiceName: "checkout-api")]);
+        var first = CreateSignal(serviceName: "checkout-api", errorMessage: "timeout from node-a");
+        var second = CreateSignal(serviceName: "checkout-api", errorMessage: "timeout from node-b");
+
+        var firstResult = FingerprintCalculator.Compute(first, settings);
+        var secondResult = FingerprintCalculator.Compute(second, settings);
+
+        Assert.Equal("checkout-route-v2", firstResult.EffectiveRule.Id);
+        Assert.Equal(2, firstResult.EffectiveRule.Version);
+        Assert.Equal(firstResult.Value, secondResult.Value);
+    }
     [Fact]
     public void Compute_MasksVariablePartsInErrorMessage_SoStructurallyIdenticalSignalsMatch()
     {

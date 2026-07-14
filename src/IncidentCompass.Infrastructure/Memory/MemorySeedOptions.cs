@@ -8,5 +8,11 @@ internal sealed class MemorySeedOptions
 
     public string TenantId { get; init; } = "local";
 
+    public string Owner { get; init; } = "default";
+
     public string SourceDirectory { get; init; } = "../../samples";
+
+    public bool RuntimeResyncEnabled { get; init; }
+
+    public int RuntimeResyncIntervalSeconds { get; init; } = 300;
 }

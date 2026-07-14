@@ -1,3 +1,3 @@
 namespace IncidentCompass.Api;
 
-public sealed record IncidentCorrelationRequest(string? TraceId, string? SpanId, string? ExternalId);
+public sealed record IncidentCorrelationRequest(string? TraceId, string? SpanId, string? ParentSpanId, string? ExternalId);

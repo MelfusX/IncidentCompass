@@ -63,6 +63,48 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
         Assert.Equal("worker-b", claimed.LockedBy);
     }
 
+
+    [DockerAvailableFact]
+    public async Task RenewLeaseAsync_ExtendsOnlyTheCurrentUnexpiredOwnerLease()
+    {
+        using var scope = await CreateScopeAsync();
+        var seed = await SeedJobAsync(scope.ConnectionString, "renew-lease", "Pending");
+        var repository = scope.Services.GetRequiredService<ITriageJobRuntimeRepository>();
+        var claimed = await repository.ClaimNextAsync(
+            "worker-renew-a",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(claimed);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(400), TestContext.Current.CancellationToken);
+        Assert.True(await repository.RenewLeaseAsync(
+            claimed,
+            "worker-renew-a",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken));
+
+        await Task.Delay(TimeSpan.FromMilliseconds(700), TestContext.Current.CancellationToken);
+        Assert.Null(await repository.ClaimNextAsync(
+            "worker-renew-b",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken));
+
+        await ExecuteAsync(
+            scope.ConnectionString,
+            """
+            UPDATE incidentcompass.triage_jobs
+            SET attempt = @attempt, locked_by = 'worker-renew-b', locked_until_utc = now() + interval '1 minute'
+            WHERE id = @job_id;
+            """,
+            ("attempt", claimed.Attempt + 1),
+            ("job_id", claimed.Id));
+
+        Assert.False(await repository.RenewLeaseAsync(
+            claimed,
+            "worker-renew-a",
+            TimeSpan.FromSeconds(1),
+            TestContext.Current.CancellationToken));
+    }
     [DockerAvailableFact]
     public async Task ClaimNextAsync_RetryPendingHonorsNextAttemptTime()
     {
@@ -103,6 +145,54 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
         Assert.Equal("worker-c", claimed.LockedBy);
     }
 
+    [DockerAvailableFact]
+    public async Task ClaimNextAsync_ProviderOutageRetriesDoNotConsumeOrdinaryAttemptBudget()
+    {
+        using var scope = await CreateScopeAsync();
+        var seed = await SeedJobAsync(scope.ConnectionString, "claim-provider-outage", "Pending");
+        var repository = scope.Services.GetRequiredService<ITriageJobRuntimeRepository>();
+
+        var firstClaim = await repository.ClaimNextAsync(
+            "worker-provider-outage",
+            TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(firstClaim);
+        Assert.Equal(1, firstClaim.Attempt);
+
+        await RecordProviderOutageAsync(repository, firstClaim);
+        var secondClaim = await repository.ClaimNextAsync(
+            "worker-provider-outage",
+            TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(secondClaim);
+        Assert.Equal(1, secondClaim.Attempt);
+        Assert.Null(secondClaim.LastErrorCode);
+
+        await RecordProviderOutageAsync(repository, secondClaim);
+        var firstOrdinaryAttempt = await repository.ClaimNextAsync(
+            "worker-provider-outage",
+            TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(firstOrdinaryAttempt);
+        Assert.Equal(1, firstOrdinaryAttempt.Attempt);
+
+        await repository.RecordAttemptFailureAsync(
+            firstOrdinaryAttempt,
+            "worker-provider-outage",
+            new TriageJobAttemptFailure(
+                TriageJobStatus.RetryPending,
+                "provider_unavailable",
+                "ordinary failure with a provider-like error code",
+                DateTimeOffset.UtcNow.AddMinutes(-1)),
+            TestContext.Current.CancellationToken);
+
+        var secondOrdinaryAttempt = await repository.ClaimNextAsync(
+            "worker-provider-outage",
+            TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(secondOrdinaryAttempt);
+        Assert.Equal(2, secondOrdinaryAttempt.Attempt);
+    }
     [DockerAvailableFact]
     public async Task RecordAttemptFailureAsync_RetryAndDeadLetterTransitionsAreFenced()
     {
@@ -346,6 +436,17 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
             reader.IsDBNull(3) ? null : reader.GetString(3));
     }
 
+    private static Task RecordProviderOutageAsync(ITriageJobRuntimeRepository repository, TriageJob job) =>
+        repository.RecordAttemptFailureAsync(
+            job,
+            "worker-provider-outage",
+            new TriageJobAttemptFailure(
+                TriageJobStatus.RetryPending,
+                "provider_unavailable",
+                "Triage delayed: provider unavailable.",
+                DateTimeOffset.UtcNow.AddMinutes(-1),
+                TriageJobRetryBudgetDisposition.DoNotConsumeAttempt),
+            TestContext.Current.CancellationToken);
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);

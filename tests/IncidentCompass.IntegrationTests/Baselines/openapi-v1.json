@@ -10,6 +10,30 @@
     }
   ],
   "paths": {
+    "/v1/traces": {
+      "post": {
+        "tags": [
+          "OtlpEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/logs": {
+      "post": {
+        "tags": [
+          "OtlpEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/health": {
       "get": {
         "tags": [
@@ -24,6 +48,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/memory-sync": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Metadata-only Worker memory synchronization status persisted in PostgreSQL.",
+        "operationId": "GetMemorySeedSyncStatus",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemorySeedSyncSnapshot"
                 }
               }
             }
@@ -177,6 +222,94 @@
         }
       }
     },
+    "/api/v1/triage-reports": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "List compact tenant-scoped triage report summaries with stable keyset pagination.",
+        "operationId": "ListTriageReports",
+        "parameters": [
+          {
+            "name": "faultId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "serviceName",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "classification",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageReportListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/triage-reports/{id}": {
       "get": {
         "tags": [
@@ -187,6 +320,48 @@
         "parameters": [
           {
             "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageReportDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faults/{faultId}/triage-report": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Return the latest triage report for a fault.",
+        "operationId": "GetLatestTriageReportForFault",
+        "parameters": [
+          {
+            "name": "faultId",
             "in": "path",
             "required": true,
             "schema": {
@@ -516,6 +691,7 @@
         "required": [
           "traceId",
           "spanId",
+          "parentSpanId",
           "externalId"
         ],
         "type": "object",
@@ -527,6 +703,12 @@
             ]
           },
           "spanId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parentSpanId": {
             "type": [
               "null",
               "string"
@@ -673,6 +855,52 @@
       },
       "JsonElement": {},
       "JsonNode": {},
+      "MemorySeedSyncSnapshot": {
+        "required": [
+          "enabled",
+          "runtimeResyncEnabled",
+          "lastAttemptAtUtc",
+          "lastSuccessAtUtc",
+          "activeGeneration",
+          "lastErrorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "runtimeResyncEnabled": {
+            "type": "boolean"
+          },
+          "lastAttemptAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastSuccessAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "activeGeneration": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "lastErrorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -753,11 +981,15 @@
           "summary",
           "classification",
           "confidence",
+          "documentationFit",
           "isMassIssue",
           "recommendedNextAction",
           "limitations",
           "configHash",
           "createdAtUtc",
+          "supersedesReportId",
+          "supersededByReportId",
+          "isLatestForFault",
           "evidence"
         ],
         "type": "object",
@@ -782,6 +1014,9 @@
           "confidence": {
             "type": "string"
           },
+          "documentationFit": {
+            "type": "string"
+          },
           "isMassIssue": {
             "type": [
               "null",
@@ -803,6 +1038,23 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "supersedesReportId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "supersededByReportId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "isLatestForFault": {
+            "type": "boolean"
           },
           "evidence": {
             "type": "array",
@@ -868,10 +1120,111 @@
             "$ref": "#/components/schemas/JsonElement"
           }
         }
+      },
+      "TriageReportListItemResponse": {
+        "required": [
+          "id",
+          "faultId",
+          "status",
+          "summary",
+          "classification",
+          "confidence",
+          "isMassIssue",
+          "recommendedNextAction",
+          "createdAtUtc",
+          "serviceName",
+          "environment",
+          "supersedesReportId",
+          "supersededByReportId",
+          "isLatestForFault"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "faultId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "isMassIssue": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "recommendedNextAction": {
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "supersedesReportId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "supersededByReportId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "isLatestForFault": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TriageReportListResponse": {
+        "required": [
+          "reports",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "reports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TriageReportListItemResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       }
     }
   },
   "tags": [
+    {
+      "name": "OtlpEndpoints"
+    },
     {
       "name": "v1"
     }

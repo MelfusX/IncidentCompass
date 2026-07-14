@@ -150,6 +150,7 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             if (configPath is not null)
             {
                 builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
@@ -176,9 +177,13 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         using var serviceScope = factory.Services.CreateScope();
         var embeddingClient = serviceScope.ServiceProvider.GetRequiredService<IEmbeddingClient>();
         var repository = serviceScope.ServiceProvider.GetRequiredService<IMemoryRepository>();
+        var configuration = await serviceScope.ServiceProvider
+            .GetRequiredService<ITriageConfigurationRepository>()
+            .GetCurrentAsync(TestContext.Current.CancellationToken);
+        var embeddingRoute = configuration.Routes["memory-embed"];
         var content = await File.ReadAllTextAsync(Path.Combine(FindRepoRoot(), "samples", "runbooks", "checkout-timeout.md"), TestContext.Current.CancellationToken);
         var embedding = await embeddingClient.CreateEmbeddingAsync(
-            new EmbeddingRequest(content, MemoryModel, "memory-test-seed"),
+            new EmbeddingRequest(content, embeddingRoute.Model, "memory-test-seed"),
             TestContext.Current.CancellationToken);
         var item = new MemorySeedItem(
             Guid.NewGuid(),
@@ -189,7 +194,10 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
             content,
             Hash(content),
             Version: 1,
-            ["checkout", "timeout"]);
+            ["checkout", "timeout"],
+            ServiceName: "checkout",
+            Component: null,
+            ReleaseName: null);
         var chunk = new MemorySeedChunk(
             Guid.NewGuid(),
             Position: 0,
@@ -200,7 +208,14 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
             embedding.Vector.Count,
             embedding.Vector);
 
-        await repository.UpsertSeedAsync(item, [chunk], TestContext.Current.CancellationToken);
+        await repository.ReconcileSeedCorpusAsync(
+            new MemorySeedCorpus(
+                "local",
+                "test",
+                Guid.NewGuid(),
+                new HashSet<string>(StringComparer.Ordinal) { "samples" },
+                [new MemorySeedEntry(item, [chunk])]),
+            TestContext.Current.CancellationToken);
     }
 
     private static async Task RunClaimedJobAsync(

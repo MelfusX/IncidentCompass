@@ -50,5 +50,6 @@ internal static class TestTriageConfiguration
             lookbackMinutes,
             silenceWindowMinutes,
             1,
-            new MassIssueSettings(minNeighborCount, minFingerprintStrength)));
+            new MassIssueSettings(minNeighborCount, minFingerprintStrength)),
+        Redaction: RedactionSettings.Default);
 }

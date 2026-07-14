@@ -7,4 +7,7 @@ public sealed record TriageReport(
     string Confidence,
     IReadOnlyList<TriageReportEvidenceReference> Evidence,
     IReadOnlyList<string> Limitations,
-    string RecommendedNextAction);
+    string RecommendedNextAction)
+{
+    public DocumentationFitStatus DocumentationFit { get; init; } = DocumentationFitStatus.Missing;
+}

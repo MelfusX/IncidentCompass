@@ -34,7 +34,7 @@ The analysis role has no tools, so `ToolProposed`, `PolicyDecision`, and `ToolRe
 
 The deterministic mock path reaches `publish_report` in the integration test `TriageInvestigationLoopTests.ProcessClaimedAsync_ScriptedMockDelegatesAnalysisAndPublishesMinimalReport`.
 
-A non-gated real-local-LLM smoke harness exists in `scripts/phase2-real-local-llm-smoke.ps1` and `TriageInvestigationRealLlmSmokeTests`. It is opt-in through `INCIDENTCOMPASS_REAL_LLM_SMOKE=true` and records a reach-rate result to `docs/phase-2-real-llm-smoke-result.md`.
+A non-gated real-local-LLM smoke harness exists in `scripts/phase2-real-local-llm-smoke.ps1` and `TriageInvestigationRealLlmSmokeTests`. It is opt-in through `INCIDENTCOMPASS_LLM_SMOKE_ENABLED=true` and records a reach-rate result to `docs/phase-2-real-llm-smoke-result.md`.
 
 Current recorded result: executed against LM Studio at `http://localhost:1234` using `qwen2.5-14b-instruct`. Reach-rate was `0/3`: all three runs reached the analysis worker but failed validation before `publish_report` because the model returned non-string `keyFacts` array items. This is the plan's expected bad-smoke case: `qwen2.5-14b-instruct` is below the reference-model floor for the current multi-turn trajectory. The pre-agreed fallback remains to either raise the documented reference-model floor, collapse weak local models to a single-shot report path, or add a bounded delegation-retry/repair path in a later phase.
 

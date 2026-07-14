@@ -15,4 +15,8 @@ public sealed record Fault(
     string? CorrelationId,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? CompletedAtUtc,
-    Guid? RecurrenceOf);
+    Guid? RecurrenceOf)
+{
+    public string GroupingRuleId { get; init; } = "default";
+    public int GroupingRuleVersion { get; init; } = 1;
+}

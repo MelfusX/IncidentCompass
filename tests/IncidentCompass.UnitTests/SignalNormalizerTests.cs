@@ -20,6 +20,7 @@ public sealed class SignalNormalizerTests
             ObservedAtUtc: observed,
             TraceId: null,
             SpanId: null,
+            ParentSpanId: null,
             ExternalId: null,
             Attributes: null,
             Payload: null);
@@ -69,6 +70,7 @@ public sealed class SignalNormalizerTests
             ObservedAtUtc: null,
             TraceId: null,
             SpanId: null,
+            ParentSpanId: null,
             ExternalId: null,
             Attributes: null,
             Payload: null);

@@ -18,12 +18,30 @@ The API registers the demo header-based `IUserContext` only for `Development` by
 
 Demo headers such as `X-Demo-User-Id`, `X-Demo-Tenant-Id` and `X-Demo-Roles` are caller-controlled sample inputs. They are useful for local walkthroughs, but they are not authentication and must not be trusted in deployed environments.
 
+## Incident Data Tenant Scope
+
+`IIncidentTenantContext` is separate from `IUserContext`. In v0.2.0 it reads `Ingestion.DefaultTenant` from the server-loaded triage configuration, which is the only tenant source for both manual API intake and OTLP intake. `X-Demo-Tenant-Id`, incident-envelope fields, OTLP resource attributes and other sender-controlled data never select the incident-data tenant.
+
+Fault, ledger and report read paths resolve this server-owned scope before querying. An object outside the scope is indistinguishable from a missing object and returns `404`; compact report lists only return scoped rows. This is a local/single-tenant partition, not authentication or authorization. IC-BL-024 is expected to replace this context implementation with server-side API-key-to-tenant mapping without changing intake or read use cases.
+
 ## Logging
 
 - Full rendered prompt logging is disabled by default.
 - Metadata logging is allowed: request ID, user ID, model, tokens, cost, status.
 - If full prompt logging is ever enabled, it must require opt-in, redaction, encryption, retention policy and restricted access.
 - Tool execution is controlled by backend policy. The model may propose tool calls, but it cannot execute tools directly and never receives infrastructure credentials.
+
+## Intake Redaction And Pseudonymization
+
+Built-in secret patterns remain active for every signal. The triage config can add attribute-key
+redaction and bounded .NET regular-expression replacements before persistence and before model calls.
+These rules are defense in depth, not a guarantee that every possible secret or PII shape is known.
+
+Configured user-identifier attributes are replaced before redaction with an HMAC-SHA256 pseudonym.
+The salt comes only from host secrets or `IncidentCompass__Pseudonymization__Salt`; it is not stored in
+the triage config, config snapshot, artifact or ledger. If the salt is absent, identifiers fail safe to
+`[REDACTED]`, so distinct-user continuity is unavailable but raw identifiers are not stored. Rotating
+the salt changes every pseudonym and breaks counts across the rotation boundary.
 
 ## Tools
 

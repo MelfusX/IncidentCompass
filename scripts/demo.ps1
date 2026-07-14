@@ -1,13 +1,13 @@
 param(
     [switch] $NoBuild,
-    [switch] $RealLlm
+    [switch] $Mock
 )
 
 $ErrorActionPreference = "Stop"
 
 $composeArgs = @("compose", "--profile", "demo")
-if ($RealLlm) {
-    $composeArgs = @("compose", "-f", "docker-compose.yml", "-f", "compose.real-llm.yml", "--profile", "demo")
+if ($Mock) {
+    $composeArgs = @("compose", "-f", "docker-compose.yml", "-f", "compose.mock.yml", "--profile", "demo")
 }
 
 function Invoke-DemoCompose {
@@ -31,6 +31,9 @@ function Write-DemoDiagnostics {
     Write-Host ""
     Write-Host "Last 20 worker log lines:"
     & docker @composeArgs logs --tail 20 worker
+
+    Write-Host "Last 20 OTel Collector log lines:"
+    & docker @composeArgs logs --tail 20 otel-collector
 }
 
 try {
@@ -38,7 +41,7 @@ try {
         Invoke-DemoCompose @("build", "api", "worker", "tester")
     }
 
-    Invoke-DemoCompose @("up", "-d", "--force-recreate", "postgres", "api", "worker")
+    Invoke-DemoCompose @("up", "-d", "--force-recreate", "postgres", "api", "worker", "otel-collector")
 
     $apiPortBinding = & docker @composeArgs port api 8080
     if ($LASTEXITCODE -ne 0) {

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.Validation;
@@ -15,7 +16,8 @@ internal sealed class WorkerToolCallExecutor(
     IEnumerable<IAgentTool> tools,
     WorkerToolRuleEngine ruleEngine,
     TriageLedgerAppender ledgerAppender,
-    ITriageToolResultCommitter toolResultCommitter)
+    ITriageToolResultCommitter toolResultCommitter,
+    IRuntimeTelemetry? telemetry = null)
 {
     private readonly IReadOnlyList<IAgentTool> tools = tools.ToArray();
 
@@ -37,6 +39,7 @@ internal sealed class WorkerToolCallExecutor(
         AiToolCall toolCall,
         CancellationToken cancellationToken)
     {
+        using var toolTelemetry = telemetry?.StartToolCall();
         await ledgerAppender.AppendAsync(
             job,
             TriageLedgerEventType.ToolProposed,
@@ -60,31 +63,42 @@ internal sealed class WorkerToolCallExecutor(
 
         if (decision.Decision == TriageLedgerDecision.ApprovalRequired)
         {
+            telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
             return SerializeToolFailure(ToolExecutionStatus.ApprovalRequired.ToString(), "approval_required", decision.Reason, limitation: decision.Reason);
         }
 
         if (!decision.MayExecute)
         {
+            telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
             throw new InvalidOperationException("Worker tool call denied: " + decision.Reason);
         }
 
         if (validation is null || !validation.IsValid)
         {
+            telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
             throw new InvalidOperationException("Worker tool call validation failed after policy approval.");
         }
 
         var execution = await tool!.ExecuteAsync(
-            new AgentToolExecutionContext(job, configuration, roleName, toolCall.Name, investigationContext.Fault.TenantId),
+            new AgentToolExecutionContext(
+                job,
+                configuration,
+                roleName,
+                toolCall.Name,
+                investigationContext.Fault.TenantId,
+                investigationContext.Fault.ServiceName),
             validation.SanitizedArguments,
             cancellationToken);
         if (execution.Status == ToolExecutionStatus.Succeeded)
         {
             await CommitSucceededAsync(job, roleName, toolCall.Name, execution.Output, execution.Artifacts, cancellationToken);
+            telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Succeeded);
             return execution.Output.GetRawText();
         }
 
         var errorReason = execution.ErrorMessage ?? "Tool execution failed.";
         await AppendExecutedToolFailureAsync(job, roleName, toolCall.Name, execution.Status.ToString(), errorReason, cancellationToken);
+        telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Failed);
         return SerializeToolFailure(execution.Status.ToString(), execution.ErrorCode, errorReason, limitation: errorReason);
     }
 

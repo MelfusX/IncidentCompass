@@ -10,6 +10,20 @@ Real model calls are expensive and nondeterministic. Automated tests use mock cl
 
 Full prompt logs help debugging but may leak sensitive data. Default logging is metadata-only.
 
+## Configurable Redaction Is Best Effort
+
+Built-in and configured redaction rules reduce exposure before persistence and model calls, but a
+pattern list cannot prove that all secret and PII formats are covered. New realistic data sources must
+add regression fixtures for their known sensitive fields, and operators should keep full prompt/body
+logging disabled.
+
+## Pseudonymization Salt Rotation
+
+User identifiers can be replaced with stable HMAC-SHA256 pseudonyms so later blast-radius logic can
+count distinct users without storing raw identifiers. The host-only salt is intentionally outside the
+snapshotted triage config. Rotating it breaks continuity with older pseudonyms; running without it
+fails safe to redaction and therefore loses distinct-user counting.
+
 ## Simple Access Control vs Enterprise RBAC
 
 The current implementation relies on a minimal demo `IUserContext` rather than enterprise RBAC. Real auth providers and finer-grained authorization are deferred; the architecture should not block later RBAC or Entra ID integration.
@@ -48,6 +62,10 @@ The MediatR decision remains separate. This project still uses its internal disp
 
 Identifiers like `TenantId`, `UserId`, `CorrelationId` are passed as `string` and `Guid` throughout the codebase rather than as strongly-typed value objects (e.g. `readonly record struct TenantId`). Value objects offer compile-time safety against argument-mix-ups and centralized validation, but introduce friction with `System.Text.Json`, `Npgsql` parameter binding, and `IOptions<T>` binding at this project's current scope. The current implementation accepts the small risk of string mix-ups in exchange for transport simplicity. A future scope that grows multi-context handler signatures (tenant + user + correlation + ...) may revisit this.
 
+## Local Incident Tenant Partition Is Not Authentication
+
+v0.2.0 keeps one server-configured incident-data tenant through `IIncidentTenantContext`. It prevents accidental cross-tenant reads and makes the future auth boundary explicit, but it does not authenticate callers or make demo headers trustworthy. Production multi-tenant use requires IC-BL-024 to authenticate an API key and map it server-side to exactly one tenant before replacing the config-backed context.
+
 ## Sequential Ledger-Backed Governance
 
 Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the append-only ledger. This is simple and inspectable for the MVP because worker delegation is sequential. It is not a parallel-safe counter mechanism; future parallel fan-out would need serialized policy evaluation or atomic counters to avoid two workers passing a cap at the same time.
@@ -56,19 +74,56 @@ Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the app
 
 `MaxTokens` means the backend will not start a new model call once the current-attempt budget is already reached. A single in-flight call can still overshoot the limit because final usage is known only after the provider responds. The overshoot is recorded as a `BudgetEvent` instead of hidden.
 
+## File-Backed Memory Is The Write Path
+
+Memory content stays in reviewed files instead of an unauthenticated admin endpoint. Source path is
+the stable database identity; a content change updates and re-embeds that item, and a removed file is
+deactivated from retrieval. This keeps provenance simple and prevents an edited file from leaving a
+second stale live item. Runtime resync is opt-in and bounded; operators may enable it for reviewed file changes without adding a memory write API. The default remains startup-only synchronization.
+
+## Documentation Fit Is Evidence Classification
+
+`CurrentReleases` is a manually maintained per-service marker in the snapshotted triage configuration.
+Retrieved memory is labeled from its service and release metadata before report publication. The backend
+can show current, stale-only, mixed historical, missing and multiple-current-document states, but it
+cannot prove that two documents agree semantically or that a runbook is operationally correct. Multiple
+current matches therefore add an explicit review limitation rather than being silently resolved by the
+model.
 ## Memory Embedding Model Changes Require Re-Embedding
 
-Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. The deterministic demo pins `mock-memory-embedding-v1` for `memory-embed`; any real provider/model change should be paired with a full memory re-seed or migration.
+Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. Changing the configured embedding provider or model should be paired with a full memory re-seed or migration.
+
+## Deterministic Grouping Is Not Incident Correlation
+
+Delivery deduplication, open-fault grouping, suppression and recurrence are deliberately separate.
+A duplicate delivery is ignored after its first accepted signal. A distinct matching delivery can attach
+to one open fault, be stored as suppressed against a recently closed fault, or advance a recurrence state
+once the silence window has elapsed. The state is keyed by the effective fingerprint-rule generation and
+uses a PostgreSQL upsert, so concurrent accepted recurrence deliveries count once each and create at most
+one threshold-crossing escalation intent. This keeps the behavior auditable, but the selected fingerprint
+and suppression policy can still be wrong for the operator's real incident boundary. Cross-fault incident
+correlation remains a later capability rather than an implicit effect of grouping.
+## Re-triage Reuses Untrusted History
+
+Recurrence escalation is deterministic database state, but the prior report copied into a new investigation is model output and incident-derived context, not authority. The prompt labels it as an untrusted hypothesis; the worker must independently ground its result and cite the new `RecurrenceState` artifact before publishing a successor. This prevents historical text from becoming sticky fact, but it does not make model reasoning a security boundary. There is no manual re-triage endpoint or mass-issue-flip trigger in v0.2.0; the latter is an explicit scope cut.
+
+## Provider Backpressure Is Process-Local
+
+Provider-outage backpressure is deliberately held in each Worker process. It prevents a local outage from rapidly consuming retries and clears after a successful model call, but multiple Worker hosts do not share breaker state. A future distributed deployment needs coordinated provider health if a global circuit is required; v0.2.0 remains a local/reference deployment and does not claim that property.
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.
-## Fixed Worker Leases
+## Renewable Worker Leases Require Cooperative Calls
 
-The MVP worker claims jobs with a fixed lease and does not renew leases while a job is running.
-The shipped default and Development override are longer than the configured 120-second
-investigation wall-clock budget so bounded attempts do not normally outlive their lease. A
-production deployment should add explicit lease renewal or heartbeat handling before increasing
-concurrency or allowing longer investigation budgets.
+The Worker renews an owned lease at roughly one third of its duration while processing an investigation.
+Renewal and terminal job updates are fenced by job, attempt, worker and an unexpired lease, so a stale
+owner cannot publish a report or overwrite the current owner. When renewal fails, ownership is lost or
+host shutdown begins, the Worker cancels the in-flight investigation and observes the renewal loop before
+releasing its slot. A job left in `Processing` becomes claimable after its current lease expires.
+
+This protects the durable ownership boundary, but it cannot forcibly interrupt a provider or tool that
+ignores its cancellation token. The shipped model and tool paths propagate cancellation; custom adapters
+must do the same to avoid work that can no longer publish a result.
 ## Dormant Components Kept for the Roadmap
 
 Two upstream-derived component groups are intentionally retained but not registered in DI.

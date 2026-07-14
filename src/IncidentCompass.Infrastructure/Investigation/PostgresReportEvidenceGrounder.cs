@@ -40,7 +40,9 @@ internal sealed class PostgresReportEvidenceGrounder
                        WHEN jsonb_typeof(a.redacted_payload->'score') = 'number'
                        THEN (a.redacted_payload->>'score')::double precision
                        ELSE NULL
-                   END AS score
+                   END AS score,
+                   mi.id AS memory_item_id,
+                   a.redacted_payload->>'documentationStatus' AS documentation_status
             FROM incidentcompass.triage_artifacts a
             LEFT JOIN incidentcompass.memory_items mi
               ON a.kind = 'RetrievedItem'
@@ -48,7 +50,7 @@ internal sealed class PostgresReportEvidenceGrounder
             WHERE a.id = @artifact_id
               AND a.job_id = @job_id
               AND (a.attempt IS NULL OR a.attempt = @attempt)
-              AND a.kind = ANY(ARRAY['TriggerSignal','NeighborSet','PriorReport','RetrievedItem','ToolResult'])
+              AND a.kind = ANY(ARRAY['TriggerSignal','NeighborSet','PriorReport','RecurrenceState','RetrievedItem','ToolResult'])
             LIMIT 1;
             """, connection, transaction);
         command.AddParameter("artifact_id", artifactId);
@@ -66,12 +68,16 @@ internal sealed class PostgresReportEvidenceGrounder
         var payload = reader.GetString(2);
         var memoryKind = reader.IsDBNull(3) ? null : reader.GetString(3);
         double? score = reader.IsDBNull(4) ? null : reader.GetDouble(4);
+        Guid? memoryItemId = reader.IsDBNull(5) ? null : reader.GetGuid(5);
+        var documentationStatus = reader.IsDBNull(6) ? null : reader.GetString(6);
         return new GroundedReportEvidence(
             artifactId,
             DeriveEvidenceKind(artifactKind, memoryKind),
             reference.ReferenceId,
             ValidateQuote(reference.Quote, payload),
-            score);
+            score,
+            memoryItemId,
+            documentationStatus);
     }
 
     private static Guid ParseArtifactId(string referenceId)
@@ -95,6 +101,9 @@ internal sealed class PostgresReportEvidenceGrounder
             {
                 "runbook" => "Runbook",
                 "known_incident" => "KnownIncident",
+                "operational_note" => "OperationalNote",
+                "release_note" => "ReleaseNote",
+                "postmortem" => "Postmortem",
                 _ => "RetrievedItem"
             },
             _ => artifactKind

@@ -22,6 +22,7 @@ public static class Setup
 
         services.AddScoped<IUserContext>(
             serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());
+        services.TryAddSingleton<WorkerJobLeaseRenewer>();
         services.TryAddSingleton<WorkerJobPump>();
         services.AddHostedService<Worker>();
 

@@ -30,7 +30,7 @@ internal static class StructuredSignalNormalization
             ExternalId: command.ExternalId,
             TraceId: command.TraceId,
             SpanId: command.SpanId,
-            ParentSpanId: null,
+            ParentSpanId: command.ParentSpanId,
             ServiceName: serviceName,
             Environment: environment,
             OperationName: operationName,

@@ -20,6 +20,10 @@ internal static class PostgresTriageJobMapper
             LastErrorMessage: reader.IsDBNull(8) ? null : reader.GetString(8),
             ConfigHash: reader.GetString(9),
             CreatedAtUtc: reader.GetDateTimeOffset(10),
-            UpdatedAtUtc: reader.GetDateTimeOffset(11));
+            UpdatedAtUtc: reader.GetDateTimeOffset(11))
+        {
+            ReTriageTriggerJobId = reader.IsDBNull(12) ? null : reader.GetGuid(12),
+            SupersedesReportId = reader.IsDBNull(13) ? null : reader.GetGuid(13)
+        };
     }
 }

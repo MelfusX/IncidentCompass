@@ -7,11 +7,13 @@ using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Governance;
+using IncidentCompass.Worker;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace IncidentCompass.IntegrationTests;
@@ -111,6 +113,55 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         Assert.Equal(0, toolResultEvents);
     }
 
+    [DockerAvailableFact]
+    public async Task WorkerPump_OwnershipLossCancelsBlockingToolBeforePublication()
+    {
+        var blockingTool = new BlockingSyntheticTool("tool_y");
+        using var scope = await CreateScopeAsync(
+            GovernanceScenario.Precondition,
+            services =>
+            {
+                services.RemoveAll<IAgentTool>();
+                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_x"));
+                services.AddSingleton(blockingTool);
+                services.AddScoped<IAgentTool>(serviceProvider => serviceProvider.GetRequiredService<BlockingSyntheticTool>());
+            });
+        var ingested = await PostIngestAsync(scope.Client);
+        var pump = new WorkerJobPump(
+            scope.Factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            new WorkerJobLeaseRenewer(),
+            scope.Factory.Services.GetRequiredService<ILogger<WorkerJobPump>>());
+        var options = new WorkerOptions
+        {
+            MaxConcurrentJobs = 1,
+            LeaseSeconds = 3,
+            MaxAttempts = 3,
+            RetryDelaySeconds = 1
+        };
+
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-tool-stale", options, TestContext.Current.CancellationToken));
+        await blockingTool.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await ExecuteAsync(scope.ConnectionString, """
+            UPDATE incidentcompass.triage_jobs
+            SET attempt = 2,
+                locked_by = 'worker-tool-new-owner',
+                locked_until_utc = now() + interval '5 minutes'
+            WHERE id = @job_id;
+            """, ("job_id", ingested.JobId!.Value));
+
+        await blockingTool.Cancelled.Task.WaitAsync(TestContext.Current.CancellationToken);
+        await pump.WaitForNextWakeAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
+
+        var reportCount = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            ("fault_id", ingested.FaultId));
+        var toolResults = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "ToolResult");
+        Assert.Equal(0, pump.ActiveJobCount);
+        Assert.Equal(0, reportCount);
+        Assert.DoesNotContain(toolResults, row => row.ToolName == "tool_y");
+    }
     private async Task<TestScope> CreateScopeAsync(
         GovernanceScenario scenario,
         Action<IServiceCollection>? configureServices = null)
@@ -123,6 +174,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.UseSetting("IncidentCompass:ConfigSource:Path", configPath);
             builder.ConfigureTestServices(services =>
             {
@@ -355,6 +407,18 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         return new JobRow((string)(await command.ExecuteScalarAsync())!);
     }
 
+    private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        foreach (var (name, value) in parameters)
+        {
+            command.Parameters.AddWithValue(name, value);
+        }
+
+        await command.ExecuteNonQueryAsync();
+    }
     private static async Task<T> ScalarAsync<T>(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);
@@ -451,7 +515,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         private static AiToolCall PublishToolCall(AiModelRequest request)
         {
             var referenceId = FindPromptArtifactId(request, "TriggerSignal");
-            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Synthetic governance run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review synthetic tool output.\"}}");
+            return ToolCall("publish", "publish_report", "{\"report_json\":{\"status\":\"Completed\",\"summary\":\"Synthetic governance run completed.\",\"classification\":\"SimpleKnownError\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review synthetic tool output.\"}}");
         }
 
         private static string FindPromptArtifactId(AiModelRequest request, string kind)
@@ -507,6 +571,40 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         }
     }
 
+    private sealed class BlockingSyntheticTool(string name) : IAgentTool
+    {
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public AiToolDefinition Definition { get; } = new(name, "Blocking synthetic test-only tool.", "v1", Element("{\"type\":\"object\"}"));
+
+        public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Synthetic test tool is safe.");
+
+        public ToolValidationResult Validate(JsonElement arguments) => ToolValidationResult.Valid(arguments.Clone());
+
+        public async Task<ToolExecutionResult> ExecuteAsync(AgentToolExecutionContext context, JsonElement sanitizedArguments, CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                Cancelled.TrySetResult();
+                throw;
+            }
+
+            throw new InvalidOperationException("The blocking synthetic tool unexpectedly completed.");
+        }
+
+        private static JsonElement Element(string json)
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.Clone();
+        }
+    }
     private sealed class ThrowAfterArtifactInserted : ITriageToolResultCommitFaultInjector
     {
         public Task AfterArtifactInsertedAsync(CancellationToken cancellationToken)

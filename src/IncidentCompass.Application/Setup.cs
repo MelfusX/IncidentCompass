@@ -4,10 +4,13 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.Health;
 using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Application.Core.Observability;
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Governance;
 using IncidentCompass.Application.Intake;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Intake.Redaction;
 using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Memory;
 using Microsoft.Extensions.Configuration;
@@ -27,6 +30,13 @@ public static class Setup
         services.AddValidatorsFromAssembly(typeof(Setup).Assembly, includeInternalTypes: true);
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IRuntimeTelemetry, RuntimeTelemetry>();
+        services
+            .AddOptions<ProviderResilienceOptions>()
+            .Bind(configuration.GetSection(ProviderResilienceOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ProviderResilienceOptions>, ProviderResilienceOptionsValidator>());
+        services.TryAddSingleton<IProviderOutageTracker, ProviderOutageTracker>();
         services.TryAddScoped<IApplicationDispatcher, ApplicationDispatcher>();
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(DispatchLoggingBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(RequestValidationBehavior<,>));
@@ -70,7 +80,15 @@ public static class Setup
 
         services
             .AddOptions<IngestionLimitsOptions>()
-            .Bind(configuration.GetSection(IngestionLimitsOptions.SectionName));
+            .Bind(configuration.GetSection(IngestionLimitsOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<IngestionLimitsOptions>,
+            IngestionLimitsOptionsValidator>());
+
+        services
+            .AddOptions<PseudonymizationOptions>()
+            .Bind(configuration.GetSection(PseudonymizationOptions.SectionName));
 
         return services;
     }

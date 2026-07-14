@@ -8,4 +8,7 @@ internal sealed record MemorySearchMatch(
     string Title,
     int ChunkPosition,
     string Text,
-    double Score);
+    double Score,
+    string? ServiceName,
+    string? Component,
+    string? ReleaseName);

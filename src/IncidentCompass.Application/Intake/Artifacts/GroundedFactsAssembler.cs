@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Serialization;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Intake.Artifacts;
@@ -20,10 +21,12 @@ public sealed class GroundedFactsAssembler(
         int neighborCount,
         bool? isMassIssue,
         FaultGroupingSettings settings,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RecurrenceState? recurrenceState = null)
     {
         await InsertTriggerSignalArtifactAsync(job, triggerSignal, cancellationToken);
         await InsertNeighborSetArtifactAsync(job, fault, triggerSignal, neighborCount, isMassIssue, settings, cancellationToken);
+        await InsertRecurrenceStateArtifactAsync(job, recurrenceState, cancellationToken);
         await InsertPriorReportArtifactIfRecurrenceAsync(job, fault, cancellationToken);
     }
 
@@ -88,11 +91,45 @@ public sealed class GroundedFactsAssembler(
             ["minNeighborCountThreshold"] = settings.MassIssue.MinNeighborCount,
             ["minFingerprintStrengthThreshold"] = settings.MassIssue.MinFingerprintStrength,
             ["fingerprintStrength"] = triggerSignal.FingerprintStrength.ToString(),
+            ["groupingRuleId"] = triggerSignal.GroupingRuleId,
+            ["groupingRuleVersion"] = triggerSignal.GroupingRuleVersion,
+            ["suppressionRuleId"] = triggerSignal.SuppressionRuleId,
+            ["effectiveSuppressionWindowMinutes"] = triggerSignal.EffectiveSuppressionWindowMinutes,
         };
 
         return CreateArtifact(job.Id, attempt: null, ArtifactKind.NeighborSet, $"fault:{fault.Id}", payload);
     }
 
+    public Task ReplaceRecurrenceStateAsync(TriageJob job, RecurrenceState recurrenceState, CancellationToken cancellationToken) =>
+        artifactRepository.ReplaceJobLevelAsync(CreateRecurrenceStateArtifact(job, recurrenceState), cancellationToken);
+
+    private async Task InsertRecurrenceStateArtifactAsync(
+        TriageJob job,
+        RecurrenceState? recurrenceState,
+        CancellationToken cancellationToken)
+    {
+        if (recurrenceState is null)
+        {
+            return;
+        }
+
+        var artifact = CreateRecurrenceStateArtifact(job, recurrenceState);
+        await artifactRepository.InsertAsync(artifact, cancellationToken);
+    }
+
+    private TriageArtifact CreateRecurrenceStateArtifact(TriageJob job, RecurrenceState recurrenceState)
+    {
+        var payload = new JsonObject
+        {
+            ["recurrenceCount"] = recurrenceState.Count,
+            ["firstRecurrenceAtUtc"] = recurrenceState.FirstOccurredAtUtc.ToString("O"),
+            ["lastRecurrenceAtUtc"] = recurrenceState.LastOccurredAtUtc.ToString("O"),
+            ["escalationIntentCreated"] = recurrenceState.EscalationIntentCreatedFor(job.Id),
+            ["escalationIntentJobId"] = recurrenceState.EscalationIntentJobId?.ToString(),
+        };
+
+        return CreateArtifact(job.Id, attempt: null, ArtifactKind.RecurrenceState, $"job:{job.Id}", payload);
+    }
     private async Task InsertPriorReportArtifactIfRecurrenceAsync(TriageJob job, Fault fault, CancellationToken cancellationToken)
     {
         if (fault.RecurrenceOf is not Guid recurrenceOfFaultId)

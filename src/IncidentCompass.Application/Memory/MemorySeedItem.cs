@@ -9,4 +9,7 @@ internal sealed record MemorySeedItem(
     string Content,
     string ContentHash,
     int Version,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string? ServiceName,
+    string? Component,
+    string? ReleaseName);

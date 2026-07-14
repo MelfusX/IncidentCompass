@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Google.Protobuf;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,6 +12,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
+using OpenTelemetry.Proto.Collector.Logs.V1;
+using OpenTelemetry.Proto.Collector.Trace.V1;
+using OpenTelemetry.Proto.Logs.V1;
+using OpenTelemetry.Proto.Common.V1;
+using OpenTelemetry.Proto.Resource.V1;
+using OpenTelemetry.Proto.Trace.V1;
 
 namespace IncidentCompass.IntegrationTests;
 
@@ -60,6 +68,229 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         Assert.True(snapshotExists);
     }
 
+    [DockerAvailableFact]
+    public async Task IngestSignal_ServiceScopedFingerprintRulePersistsAndSeparatesGenerations()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var selectedFirst = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("rule-checkout", "prod", "TimeoutException", "node-a timed out", "/checkout"));
+        var selectedSecond = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("rule-checkout", "prod", "TimeoutException", "node-b timed out", "/checkout"));
+        var defaultFirst = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("default-checkout", "prod", "TimeoutException", "node-a timed out", "/checkout"));
+        var defaultSecond = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("default-checkout", "prod", "TimeoutException", "node-b timed out", "/checkout"));
+
+        Assert.Equal(selectedFirst.FaultId, selectedSecond.FaultId);
+        Assert.NotEqual(defaultFirst.FaultId, defaultSecond.FaultId);
+        Assert.Equal("route-only-checkout", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT grouping_rule_id FROM incidentcompass.signals WHERE id = @signal_id;",
+            ("signal_id", selectedFirst.SignalId)));
+        Assert.Equal(2, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT grouping_rule_version FROM incidentcompass.faults WHERE id = @fault_id;",
+            ("fault_id", selectedFirst.FaultId)));
+        Assert.Equal("route-only-checkout", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'groupingRuleId' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';",
+            ("job_id", selectedFirst.JobId!.Value)));
+    }
+    [DockerAvailableFact]
+    public async Task IngestSignal_ServiceScopedSuppressionPolicyPersistsEffectiveFacts()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var envelope = TesterEnvelope("suppression-extended", "prod", "TimeoutException", "Scoped suppression probe timed out", "/suppression-probe");
+
+        var first = await PostIngestAsync(scope.Client, envelope);
+        await ExecuteAsync(
+            scope.ConnectionString,
+            "UPDATE incidentcompass.faults SET created_at_utc = now() - interval '3 hours', completed_at_utc = now() - interval '2 minutes', status = 'Completed' WHERE id = @id;",
+            ("id", first.FaultId));
+
+        var second = await PostIngestAsync(scope.Client, envelope);
+
+        Assert.True(second.IsSuppressed);
+        Assert.False(second.IsNewJob);
+        Assert.Equal(first.FaultId, second.FaultId);
+        Assert.Equal(
+            "service-extended",
+            await ScalarAsync<string>(scope.ConnectionString, "SELECT suppression_rule_id FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", second.SignalId)));
+        Assert.Equal(
+            60,
+            await ScalarAsync<int>(scope.ConnectionString, "SELECT effective_suppression_window_minutes FROM incidentcompass.signals WHERE id = @signal_id;", ("signal_id", second.SignalId)));
+        Assert.Equal(
+            "service-extended",
+            await ScalarAsync<string>(scope.ConnectionString, "SELECT redacted_payload->>'suppressionRuleId' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'NeighborSet';", ("job_id", first.JobId!.Value)));
+    }
+
+    [DockerAvailableFact]
+    public async Task IngestSignal_TriggerContextRehydratesScopedSuppressionPolicy()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var ingested = await PostIngestAsync(
+            scope.Client,
+            TesterEnvelope("suppression-extended", "prod", "TimeoutException", "Context policy probe timed out", "/suppression-context"));
+        using var services = scope.Factory.Services.CreateScope();
+        var repository = services.ServiceProvider.GetRequiredService<ITriageJobInvestigationContextRepository>();
+
+        var context = await repository.GetAsync(
+            ingested.JobId!.Value,
+            attempt: 1,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("service-extended", context.TriggerSignal.SuppressionRuleId);
+        Assert.Equal(60, context.TriggerSignal.EffectiveSuppressionWindowMinutes);
+    }
+
+    public async Task OtlpTraceExport_ErrorSpanFlowsThroughTheOtelNormalizer()
+    {
+        using var scope = await CreateScopeAsync();
+        var export = new ExportTraceServiceRequest
+        {
+            ResourceSpans =
+            {
+                new ResourceSpans
+                {
+                    Resource = new Resource
+                    {
+                        Attributes =
+                        {
+                            Attribute("service.name", "otel-checkout"),
+                            Attribute("deployment.environment.name", "staging")
+                        }
+                    },
+                    ScopeSpans =
+                    {
+                        new ScopeSpans
+                        {
+                            Spans =
+                            {
+                                new Span
+                                {
+                                    Name = "POST /checkout",
+                                    TraceId = ByteString.CopyFrom(Enumerable.Range(1, 16).Select(value => (byte)value).ToArray()),
+                                    SpanId = ByteString.CopyFrom(Enumerable.Range(17, 8).Select(value => (byte)value).ToArray()),
+                                    ParentSpanId = ByteString.CopyFrom(Enumerable.Range(25, 8).Select(value => (byte)value).ToArray()),
+                                    StartTimeUnixNano = 1_700_000_000_000_000_000,
+                                    EndTimeUnixNano = 1_700_000_000_250_000_000,
+                                    Status = new Status { Code = Status.Types.StatusCode.Error, Message = "upstream timeout" },
+                                    Attributes =
+                                    {
+                                        Attribute("exception.type", "TimeoutException"),
+                                        Attribute("exception.message", "Checkout timed out"),
+                                        Attribute("http.request.method", "POST"),
+                                        Attribute("http.route", "/checkout"),
+                                        Attribute("http.response.status_code", 504L)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        using var content = new ByteArrayContent(export.ToByteArray());
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+
+        var response = await scope.Client.PostAsync("/v1/traces", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/x-protobuf", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(1L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal("0102030405060708090a0b0c0d0e0f10", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT trace_id FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal("191a1b1c1d1e1f20", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT parent_span_id FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal("TimeoutException", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT error_type FROM incidentcompass.signals WHERE service_name = 'otel-checkout';"));
+        Assert.Equal(1L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.triage_jobs AS job JOIN incidentcompass.faults AS fault ON fault.id = job.fault_id WHERE fault.service_name = 'otel-checkout';"));
+    }
+
+    [DockerAvailableFact]
+    public async Task OtlpLogExport_DistinctUnidentifiedZeroTimestampRecordsAreNotDeduplicated()
+    {
+        using var scope = await CreateScopeAsync();
+        var export = new ExportLogsServiceRequest
+        {
+            ResourceLogs =
+            {
+                new ResourceLogs
+                {
+                    Resource = new Resource
+                    {
+                        Attributes =
+                        {
+                            Attribute("service.name", "otlp-log-delivery-key"),
+                            Attribute("deployment.environment.name", "test")
+                        }
+                    },
+                    ScopeLogs =
+                    {
+                        new ScopeLogs
+                        {
+                            LogRecords =
+                            {
+                                ErrorLog("zero timestamp record"),
+                                ErrorLog("zero timestamp record")
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        var payload = export.ToByteArray();
+
+        using (var firstContent = new ByteArrayContent(payload))
+        {
+            firstContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+            var firstResponse = await scope.Client.PostAsync("/v1/logs", firstContent, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        }
+
+        using (var secondContent = new ByteArrayContent(payload))
+        {
+            secondContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-protobuf");
+            var secondResponse = await scope.Client.PostAsync("/v1/logs", secondContent, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        }
+
+        Assert.Equal(2L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.signals WHERE service_name = @service_name;",
+            ("service_name", "otlp-log-delivery-key")));
+        Assert.Equal(2L, await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(DISTINCT delivery_key) FROM incidentcompass.signals WHERE service_name = @service_name;",
+            ("service_name", "otlp-log-delivery-key")));
+    }
+
+    private static LogRecord ErrorLog(string body) => new()
+    {
+        SeverityText = "ERROR",
+        Body = new AnyValue { StringValue = body },
+        Attributes =
+        {
+            Attribute("exception.type", "TimeoutException"),
+            Attribute("exception.message", body)
+        }
+    };
+    private static KeyValue Attribute(string key, string value) =>
+        new() { Key = key, Value = new AnyValue { StringValue = value } };
+
+    private static KeyValue Attribute(string key, long value) =>
+        new() { Key = key, Value = new AnyValue { IntValue = value } };
     [DockerAvailableFact]
     public async Task IngestSignal_TypedFieldsAreRedactedBeforePersistence()
     {
@@ -189,6 +420,118 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     }
 
     [DockerAvailableFact]
+    public async Task IngestSignal_RecurrencesIncrementStateAndCreateOneEscalationIntent()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var envelope = TesterEnvelope("recurrence-state-svc", "prod", "TimeoutException", "Recurrence state probe timed out", "/recurrence-state");
+
+        var initial = await PostIngestAsync(scope.Client, envelope);
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, initial.FaultId);
+
+        var firstRecurrence = await PostIngestAsync(scope.Client, envelope);
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, firstRecurrence.FaultId);
+
+        var secondRecurrence = await PostIngestAsync(scope.Client, envelope);
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, secondRecurrence.FaultId);
+
+        var laterRecurrence = await PostIngestAsync(scope.Client, envelope);
+
+        Assert.True(firstRecurrence.IsNewJob);
+        Assert.True(secondRecurrence.IsNewJob);
+        Assert.True(laterRecurrence.IsNewJob);
+        Assert.Equal(3, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT recurrence_count FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "recurrence-state-svc")));
+        Assert.Equal(
+            secondRecurrence.JobId!.Value,
+            await ScalarAsync<Guid>(
+                scope.ConnectionString,
+                "SELECT escalation_intent_job_id FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+                ("service_name", "recurrence-state-svc")));
+        Assert.Equal(
+            secondRecurrence.FaultId,
+            await ScalarAsync<Guid>(
+                scope.ConnectionString,
+                "SELECT escalation_intent_fault_id FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+                ("service_name", "recurrence-state-svc")));
+        Assert.Equal(
+            "2",
+            await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'recurrenceCount' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+                ("job_id", secondRecurrence.JobId!.Value)));
+        Assert.Equal(
+            "true",
+            await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'escalationIntentCreated' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+                ("job_id", secondRecurrence.JobId!.Value)));
+        Assert.Equal(
+            "false",
+            await ScalarAsync<string>(
+                scope.ConnectionString,
+                "SELECT redacted_payload->>'escalationIntentCreated' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+                ("job_id", laterRecurrence.JobId!.Value)));
+    }
+    [DockerAvailableFact]
+    public async Task IngestSignal_ConcurrentDistinctRecurrences_CountEachAcceptedDeliveryOnce()
+    {
+        using var scope = await CreateScopeAsync(useSmallSilenceWindowConfig: true);
+        var envelope = TesterEnvelope("concurrent-recurrence-svc", "prod", "TimeoutException", "Concurrent recurrence probe timed out", "/concurrent-recurrence");
+
+        var initial = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("initial") });
+        await CompleteOutsideSilenceWindowAsync(scope.ConnectionString, initial.FaultId);
+
+        var recurrences = await Task.WhenAll(
+            PostIngestAsync(scope.Client, envelope with
+            {
+                ObservedAtUtc = new DateTimeOffset(2026, 7, 14, 1, 2, 0, TimeSpan.Zero),
+                Correlation = ExternalId("recurrence-one")
+            }),
+            PostIngestAsync(scope.Client, envelope with
+            {
+                ObservedAtUtc = new DateTimeOffset(2026, 7, 14, 1, 1, 0, TimeSpan.Zero),
+                Correlation = ExternalId("recurrence-two")
+            }));
+
+        var recurrenceFaultId = Assert.Single(recurrences.Select(recurrence => recurrence.FaultId).Distinct());
+        var recurrenceJobId = Assert.Single(recurrences, recurrence => recurrence.JobId is not null).JobId!.Value;
+        Assert.NotEqual(initial.FaultId, recurrenceFaultId);
+        Assert.Equal(2, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT recurrence_count FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+        Assert.True(await ScalarAsync<bool>(
+            scope.ConnectionString,
+            "SELECT last_recurrence_at_utc > first_recurrence_at_utc FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+        Assert.Equal(recurrenceJobId, await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT escalation_intent_job_id FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+        Assert.Equal("2", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'recurrenceCount' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+            ("job_id", recurrenceJobId)));
+        Assert.Equal("true", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'escalationIntentCreated' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+            ("job_id", recurrenceJobId)));
+        Assert.Equal("2026-07-14T01:02:00.0000000+00:00", await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT redacted_payload->>'lastRecurrenceAtUtc' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'RecurrenceState';",
+            ("job_id", recurrenceJobId)));
+
+        var duplicate = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("recurrence-one") });
+
+        Assert.False(duplicate.IsNewJob);
+        Assert.Equal(2, await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT recurrence_count FROM incidentcompass.recurrence_states WHERE service_name = @service_name;",
+            ("service_name", "concurrent-recurrence-svc")));
+    }
+    [DockerAvailableFact]
     public async Task IngestSignal_NonUtcObservedAt_NormalizesBeforePostgresInsert()
     {
         using var scope = await CreateScopeAsync();
@@ -216,6 +559,15 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         var first = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("duplicate-external-id") });
         var duplicate = await PostIngestAsync(scope.Client, envelope with { Correlation = ExternalId("duplicate-external-id") });
         Assert.Equal(first.FaultId, duplicate.FaultId);
+        Assert.Equal(first.SignalId, duplicate.SignalId);
+        Assert.False(duplicate.IsNewFault);
+        Assert.False(duplicate.IsNewJob);
+
+        var acceptedDeliveryCount = await ScalarAsync<long>(
+            scope.ConnectionString,
+            "SELECT COUNT(*) FROM incidentcompass.signals WHERE delivery_key = @delivery_key;",
+            ("delivery_key", "external:duplicate-external-id"));
+        Assert.Equal(1, acceptedDeliveryCount);
 
         await ExecuteAsync(
             scope.ConnectionString,
@@ -360,6 +712,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<ITriageArtifactRepository>();
@@ -554,6 +907,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
+            builder.UseExplicitMockProviders();
             if (useSmallSilenceWindowConfig)
             {
                 builder.UseSetting("IncidentCompass:ConfigSource:Path", TestFixtureConfigPath());
@@ -571,6 +925,11 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
     private static string TestFixtureConfigPath() =>
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "test-triage-config", "incidentcompass.config.json");
 
+    private static Task CompleteOutsideSilenceWindowAsync(string connectionString, Guid faultId) =>
+        ExecuteAsync(
+            connectionString,
+            "UPDATE incidentcompass.faults SET created_at_utc = now() - interval '20 minutes', completed_at_utc = now() - interval '10 minutes', status = 'Completed' WHERE id = @id;",
+            ("id", faultId));
     private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, object envelope)
     {
         var response = await client.PostAsJsonAsync("/api/v1/incidents", envelope, TestContext.Current.CancellationToken);

@@ -1,4 +1,5 @@
 {
+  "$schema": "../../../../config/incidentcompass.schema.json",
   "Providers": {
     "local-oai": { "Kind": "OpenAICompatible", "Endpoint": "http://localhost:1234/v1", "ApiKeySecretRef": "LOCAL_OAI_KEY" }
   },
@@ -24,10 +25,22 @@
     { "Type": "rate_cap", "Tool": "*", "Scope": "attempt", "Max": 50 }
   ],
   "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"] },
+  "Redaction": {
+    "AttributeKeys": [],
+    "Patterns": [],
+    "UserIdentifierAttributes": []
+  },
   "FaultGrouping": {
     "LookbackMinutes": 15,
     "SilenceWindowMinutes": 1,
     "FingerprintVersion": 1,
+    "FingerprintRules": [
+      { "Id": "route-only-checkout", "Version": 2, "ServiceName": "rule-checkout", "Inputs": ["ServiceName", "Environment", "ErrorType", "HttpRoute"] }
+    ],
+    "SuppressionRules": [
+      { "Id": "service-extended", "SilenceWindowMinutes": 60, "ServiceName": "suppression-extended" }
+    ],
+    "Recurrence": { "EscalateAfterCount": 2 },
     "MassIssue": { "MinNeighborCount": 5, "MinFingerprintStrength": "strong" }
   }
 }

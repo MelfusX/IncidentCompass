@@ -14,26 +14,31 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
     private readonly IHostEnvironment hostEnvironment;
     private readonly IOptions<TriageConfigSourceOptions> configSourceOptions;
     private readonly TriageConfigurationMaterializer materializer;
-    private readonly TriageConfigurationSnapshotStore snapshotStore;
+    private readonly ITriageConfigurationSnapshotStore snapshotStore;
     private readonly Lazy<Task<TriageConfiguration>> lazyConfiguration;
 
     public FileTriageConfigurationRepository(
         IHostEnvironment hostEnvironment,
         IOptions<TriageConfigSourceOptions> configSourceOptions,
         TriageConfigurationMaterializer materializer,
-        TriageConfigurationSnapshotStore snapshotStore)
+        ITriageConfigurationSnapshotStore snapshotStore)
     {
         this.hostEnvironment = hostEnvironment;
         this.configSourceOptions = configSourceOptions;
         this.materializer = materializer;
         this.snapshotStore = snapshotStore;
-        lazyConfiguration = new Lazy<Task<TriageConfiguration>>(LoadAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+        lazyConfiguration = new Lazy<Task<TriageConfiguration>>(
+            () => LoadAsync(persistSnapshot: true, CancellationToken.None),
+            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     public async Task<TriageConfiguration> GetCurrentAsync(CancellationToken cancellationToken)
     {
         return await lazyConfiguration.Value.WaitAsync(cancellationToken);
     }
+
+    internal Task<TriageConfiguration> ValidateCurrentAsync(CancellationToken cancellationToken) =>
+        LoadAsync(persistSnapshot: false, cancellationToken);
 
     public async Task<TriageConfiguration> GetByHashAsync(string configHash, CancellationToken cancellationToken)
     {
@@ -51,7 +56,7 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
         return materializer.Materialize(configHash, snapshot.SerializedConfig, snapshot.Instructions);
     }
 
-    private async Task<TriageConfiguration> LoadAsync()
+    private async Task<TriageConfiguration> LoadAsync(bool persistSnapshot, CancellationToken cancellationToken)
     {
         var kind = configSourceOptions.Value.Kind;
         if (!string.Equals(kind, "File", StringComparison.Ordinal))
@@ -65,24 +70,41 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
             throw TriageConfigurationLoadException.ConfigFileMissing(absolutePath);
         }
 
-        var configNode = await ReadConfigNodeAsync(absolutePath);
-        var instructionsNode = await BuildInstructionsNodeAsync(configNode, absolutePath);
+        var configNode = await ReadConfigNodeAsync(absolutePath, cancellationToken);
+        var instructionsNode = await BuildInstructionsNodeAsync(configNode, absolutePath, cancellationToken);
         var configHash = CanonicalJsonSerializer.ComputeSha256Hex(
             CanonicalJsonSerializer.Canonicalize(configNode),
             CanonicalJsonSerializer.Canonicalize(instructionsNode));
-        var configuration = materializer.Materialize(configHash, configNode, instructionsNode);
 
-        await snapshotStore.PersistAsync(configHash, configNode, instructionsNode, CancellationToken.None);
+        TriageConfiguration configuration;
+        try
+        {
+            configuration = materializer.Materialize(configHash, configNode, instructionsNode);
+        }
+        catch (TriageConfigurationLoadException exception)
+        {
+            throw new InvalidOperationException(
+                $"Triage configuration file '{absolutePath}' is invalid: {exception.Message}",
+                exception);
+        }
+
+        if (persistSnapshot)
+        {
+            await snapshotStore.PersistAsync(configHash, configNode, instructionsNode, CancellationToken.None);
+        }
 
         return configuration;
     }
 
-    private static async Task<JsonNode> ReadConfigNodeAsync(string absolutePath)
+    private static async Task<JsonNode> ReadConfigNodeAsync(string absolutePath, CancellationToken cancellationToken)
     {
-        var text = await File.ReadAllTextAsync(absolutePath);
+        var text = await File.ReadAllTextAsync(absolutePath, cancellationToken);
         try
         {
-            return JsonNode.Parse(text) ?? throw TriageConfigurationLoadException.InvalidJson(absolutePath, new JsonException("Empty document."));
+            var node = JsonNode.Parse(text)
+                ?? throw TriageConfigurationLoadException.InvalidJson(absolutePath, new JsonException("Empty document."));
+            EnvironmentPlaceholderExpander.Expand(node);
+            return node;
         }
         catch (JsonException exception)
         {
@@ -90,7 +112,10 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
         }
     }
 
-    private static async Task<JsonObject> BuildInstructionsNodeAsync(JsonNode configNode, string absoluteConfigPath)
+    private static async Task<JsonObject> BuildInstructionsNodeAsync(
+        JsonNode configNode,
+        string absoluteConfigPath,
+        CancellationToken cancellationToken)
     {
         var refValues = new HashSet<string>(StringComparer.Ordinal);
         CollectRefs(configNode, refValues);
@@ -106,7 +131,7 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
                 throw TriageConfigurationLoadException.ReferencedFileMissing(refValue, resolvedPath);
             }
 
-            var content = await File.ReadAllTextAsync(resolvedPath);
+            var content = await File.ReadAllTextAsync(resolvedPath, cancellationToken);
             var normalizedContent = content.Replace("\r\n", "\n").Replace("\r", "\n");
             instructionsNode[refValue] = normalizedContent;
         }
