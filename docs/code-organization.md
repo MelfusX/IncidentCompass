@@ -126,7 +126,7 @@ Rationale: the API exception handler depends only on Application and Domain exce
 
 ## Dependency Registration
 
-- Each `src/*` project exposes a single `Setup.cs` at its root as the DI entry point. The class is named `Setup` and contains the public `AddX` extension method (`AddApplication`, `AddInfrastructure`, etc.). `Setup.cs` doubles as the assembly marker — prefer `typeof(Setup).Assembly` over arbitrary types for embedded-resource or assembly-scanning operations.
+- Each `src/*` project exposes a single `Setup.cs` at its root as the DI entry point. The class is named `Setup` and contains the public `AddX` extension method (`AddApplication`, `AddInfrastructure`, etc.). `Setup.cs` doubles as the assembly marker - prefer `typeof(Setup).Assembly` over arbitrary types for embedded-resource or assembly-scanning operations.
 - Feature-level registration delegates live next to the feature as `<Feature>Setup.cs` (for example `HealthSetup.cs`, `UsersSetup.cs`). The root `Setup.cs` composes these via feature-named extension methods such as `AddHealthCore` or `AddUsersCore`.
 - DI modules should register dependencies only; they should not contain business validation or runtime decision logic.
 

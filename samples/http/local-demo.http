@@ -73,7 +73,7 @@ Accept: application/json
 
 ###
 
-# Unknown source is rejected (400) — "webhook" has no registered normalizer / is not in AllowedSources.
+# Unknown source is rejected (400) - "webhook" has no registered normalizer / is not in AllowedSources.
 POST {{host}}/api/v1/incidents
 Content-Type: application/json
 Accept: application/json

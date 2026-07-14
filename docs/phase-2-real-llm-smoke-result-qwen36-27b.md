@@ -8,4 +8,4 @@
 - publish_report reach-rate: 0/1
 
 ## Outcomes
-- Run 1: missed — DeadLettered
+- Run 1: missed - DeadLettered
