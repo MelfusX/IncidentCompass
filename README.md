@@ -11,8 +11,8 @@ receiving authority over credentials, persistence or external side effects? The 
 work and propose tool calls. The backend owns tool grants, budgets, evidence checks, the audit ledger
 and the final report commit.
 
-The latest public release is `v0.1.1`. This branch prepares `v0.2.0`, including real-provider defaults,
-config validation, configurable redaction and file-backed memory synchronization.
+Version `v0.2.0` adds governed OTLP intake, memory synchronization, immutable report history,
+server-owned incident tenancy and operational hardening.
 
 ## One Investigation
 
@@ -44,7 +44,7 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 
 The script builds PostgreSQL, API, Worker and Tester containers, runs the local scenarios and prints
 URLs for the fault ledger and triage report. Use `scripts/demo.ps1 -Mock` only when you need the
-fully deterministic mock path. See [Quickstart](docs/quickstart.md) and
+fully deterministic mock path. The configurable ingestion payload limit must be between 1 KiB and 1 MiB. The upper bound caps per-request buffering; the 1 KiB lower bound prevents a misconfiguration that rejects ordinary small OTLP exports. `MaxAttributesBytes` must be positive and no greater than `MaxPayloadBytes`. The default limits are 64 KiB and 16 KiB. See [Quickstart](docs/quickstart.md) and
 [Local demo walkthrough](docs/local-demo.md) for provider settings, port overrides and manual steps.
 
 ## What The Demo Proves
@@ -70,7 +70,8 @@ complete the multi-turn trajectory or reach a correct conclusion.
   policy decisions.
 - PostgreSQL/pgvector incident memory with governed `memory_search`, file-backed seed identity and snapshotted per-service current-release markers for documentation fit.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
-- Docker Compose packaging and an HTTP-only Tester that does not reference application assemblies.
+- Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
+- Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
 
 ## Code Walkthrough
 
@@ -133,7 +134,8 @@ credentials, demo auth and Compose defaults must be replaced before any non-loca
 - [Observability](docs/observability.md)
 - [Code organization](docs/code-organization.md)
 - [Versioning and release flow](docs/versioning.md)
-- [Release notes](docs/release-notes-v0.1.1.md)
+- [Release candidate notes for v0.2.0](docs/release-notes-v0.2.0.md)
+- [Published v0.1.1 notes](docs/release-notes-v0.1.1.md)
 
 ## Relationship To dotnet-genai-starter
 

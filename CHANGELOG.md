@@ -2,12 +2,23 @@
 
 ## Unreleased
 
+- No unreleased changes.
+
+## 0.2.0 - 2026-07-14
+
 - Added a versioned triage-config JSON Schema and `config validate` command that reuses startup validation without starting a host or persisting a snapshot.
 - Added configurable attribute and pattern redaction plus host-secret HMAC pseudonymization for configured user identifiers; missing salt fails safe to redaction.
 - Replaced content-addressed sample seeding with concurrent-safe file sync: stable source identity, frontmatter metadata, re-embedding on edits and deactivation on removal.
 - Changed local/demo defaults to OpenAI-compatible model and embedding providers. Mock providers now require explicit test/mock configuration such as `compose.mock.yml` or test host overrides.
 - Added environment substitution for route-level model names in `config/incidentcompass.config.json` through `INCIDENTCOMPASS_LLM_MODEL` and `INCIDENTCOMPASS_EMBEDDINGS_MODEL`.
 - Replaced the opt-in `compose.real-llm.yml` with `compose.mock.yml`: `scripts/demo.ps1` now runs real providers by default and takes `-Mock` to select the deterministic mock override.
+- Added native OTLP/HTTP trace and log intake with a shipped OpenTelemetry SDK Tester and stock Collector route into the normal intake pipeline; duplicate deliveries are idempotent.
+- Hardened memory sync with owner-safe generations, divergent and partial scan protection, bounded runtime resync and Worker-persisted metadata-only health.
+- Added versioned grouping, suppression, transaction-safe recurrence escalation and exactly-once recurrence re-triage.
+- Made published reports immutable with supersession history, latest/history reads, compact keyset-paginated report lists and server-owned tenant scoping across fault, ledger and report reads.
+- Renewed Worker leases during processing, added durable provider-unavailable delay and bounded local claim backpressure with automatic recovery.
+- Added metadata-only runtime telemetry for triage, governed tools, migrations and memory sync with closed outcome tags and exporter-failure isolation.
+- Hardened release publication around exact event-SHA evidence, a Docker-backed full test gate, one tag publisher and idempotent main-only recovery dispatch.
 
 ## 0.1.1 - 2026-07-10
 

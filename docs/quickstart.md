@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 ~~~
 
 The script builds the API, Worker and Tester images, starts PostgreSQL/API/Worker, waits for
-GET http://localhost:5198/api/v1/health, then runs the Tester against the local scenarios. Compose
+the API health endpoint on its resolved host port, then runs the Tester against the local scenarios. Compose
 health checks also gate API readiness and Worker process startup before the Tester runs. The printed
 table includes FaultId, ReportId, is_mass_issue, Classification, ledger URL and report URL.
 

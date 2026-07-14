@@ -20,8 +20,16 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 ~~~
 
 The script builds the api, worker and tester images, starts postgres, api and worker, waits for
-GET http://localhost:5198/api/v1/health, then runs the Tester container from the demo profile. After
+the API health endpoint on its resolved host port, then runs the Tester container from the demo profile. After
 the table prints, services remain running so you can inspect the API.
+
+Use non-default host ports when needed:
+
+~~~powershell
+$env:IC_API_PORT = "5298"
+$env:IC_POSTGRES_PORT = "55432"
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
+~~~
 
 Use these variants when needed:
 
@@ -48,7 +56,7 @@ docker compose --profile demo down --volumes
 ## Service Layout
 
 - postgres: pgvector/pgvector:pg16, initialized from infra/postgres/init.
-- api: builds from src/IncidentCompass.Api/Dockerfile, exposes http://localhost:5198, runs as the
+- api: builds from src/IncidentCompass.Api/Dockerfile, exposes the configured host mapping (default http://localhost:5198), runs as the
   non-root incidentcompass user, copies config/ and samples/, and sets
   IncidentCompass__ConfigSource__Path=/app/config/incidentcompass.config.json plus
   IncidentCompass__Memory__Seed__SourceDirectory=/app/samples.
@@ -58,7 +66,8 @@ docker compose --profile demo down --volumes
 - otel-collector: runs the pinned stock OpenTelemetry Collector Contrib image under the demo profile,
   receives OTLP/HTTP on the internal `otel-collector:4318` address and forwards uncompressed traces and
   logs through its stock `otlphttp` exporter to the API's native OTLP routes. It does not transform or
-  synthesize IncidentCompass fields.- tester: builds from src/IncidentCompass.Tester/Dockerfile under the demo profile, uses the official
+  synthesize IncidentCompass fields.
+- tester: builds from src/IncidentCompass.Tester/Dockerfile under the demo profile, uses the official
   OpenTelemetry SDK to export an OTLP/HTTP protobuf error span to the API, and runs its remaining
   scenarios through the product HTTP API.
 
@@ -122,9 +131,9 @@ deterministic.
 
 Useful read endpoints after a run are:
 
-- GET http://localhost:5198/api/v1/faults/{id}
-- GET http://localhost:5198/api/v1/faults/{id}/ledger
-- GET http://localhost:5198/api/v1/triage-reports/{id}
+- GET http://localhost:<IC_API_PORT>/api/v1/faults/{id}
+- GET http://localhost:<IC_API_PORT>/api/v1/faults/{id}/ledger
+- GET http://localhost:<IC_API_PORT>/api/v1/triage-reports/{id}
 
 ## What The Demo Proves
 
