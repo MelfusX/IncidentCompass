@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Core.Text;
 using IncidentCompass.Application.Intake.Configuration;
@@ -10,7 +11,8 @@ internal sealed class TriageJobRunner(
     ITriageConfigurationRepository configurationRepository,
     IClaimedTriageJobProcessor processor,
     TimeProvider timeProvider,
-    IProviderOutageTracker? providerOutageTracker = null) : ITriageJobRunner
+    IProviderOutageTracker? providerOutageTracker = null,
+    IRuntimeTelemetry? telemetry = null) : ITriageJobRunner
 {
     private const int MaxStoredErrorMessageLength = 1000;
 
@@ -35,15 +37,18 @@ internal sealed class TriageJobRunner(
         CancellationToken cancellationToken)
     {
         var configurationLoaded = false;
+        using var attemptTelemetry = telemetry?.StartJobAttempt();
 
         try
         {
             var configuration = await configurationRepository.GetByHashAsync(job.ConfigHash, cancellationToken);
             configurationLoaded = true;
             await processor.ProcessAsync(job, configuration, workerId, cancellationToken);
+            telemetry?.RecordJobAttempt(RuntimeTelemetryOutcome.Succeeded);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            telemetry?.RecordJobAttempt(RuntimeTelemetryOutcome.Cancelled);
             throw;
         }
         catch (Exception exception)
@@ -51,7 +56,13 @@ internal sealed class TriageJobRunner(
             var providerOutage = ProviderOutageExceptionClassifier.IsProviderOutage(exception);
             if (providerOutage)
             {
+                telemetry?.RecordJobAttempt(RuntimeTelemetryOutcome.ProviderUnavailable);
                 providerOutageTracker?.RecordProviderFailure();
+            }
+
+            if (!providerOutage)
+            {
+                telemetry?.RecordJobAttempt(RuntimeTelemetryOutcome.Failed);
             }
 
             await runtimeRepository.RecordAttemptFailureAsync(

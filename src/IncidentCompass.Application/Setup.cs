@@ -4,6 +4,7 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.Health;
 using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Governance;
@@ -29,6 +30,7 @@ public static class Setup
         services.AddValidatorsFromAssembly(typeof(Setup).Assembly, includeInternalTypes: true);
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IRuntimeTelemetry, RuntimeTelemetry>();
         services
             .AddOptions<ProviderResilienceOptions>()
             .Bind(configuration.GetSection(ProviderResilienceOptions.SectionName))

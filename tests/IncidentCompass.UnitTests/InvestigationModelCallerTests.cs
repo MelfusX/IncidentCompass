@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
 using Microsoft.Extensions.Options;
 using IncidentCompass.Application.Governance.Ledger;
@@ -12,6 +14,59 @@ namespace IncidentCompass.UnitTests;
 
 public sealed class InvestigationModelCallerTests
 {
+    [Fact]
+    public async Task CompleteAsync_DoesNotAttachPromptContentToRuntimeActivity()
+    {
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "IncidentCompass.Runtime",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add
+        };
+        ActivitySource.AddActivityListener(listener);
+        var writer = new RecordingLedgerWriter();
+        var caller = CreateCaller(new StaticModelClient(new AiModelUsage(1, 1, 2)), writer, TimeProvider.System, telemetry: new RuntimeTelemetry());
+        var context = CreateContext(TimeProvider.System.GetUtcNow(), maxWallClockSeconds: 60);
+        const string secret = "prompt-body-must-not-export";
+
+        await caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, secret)],
+            tools: null,
+            CancellationToken.None);
+
+        var modelActivities = activities.Where(item => item.OperationName == "triage.model.call").ToArray();
+        Assert.NotEmpty(modelActivities);
+        Assert.All(modelActivities, activity =>
+            Assert.DoesNotContain(activity.TagObjects, tag => tag.Value?.ToString()?.Contains(secret, StringComparison.Ordinal) == true));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ContinuesWhenActivityExporterFails()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "IncidentCompass.Runtime",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = static _ => throw new InvalidOperationException("export unavailable")
+        };
+        ActivitySource.AddActivityListener(listener);
+        var writer = new RecordingLedgerWriter();
+        var caller = CreateCaller(new StaticModelClient(new AiModelUsage(1, 1, 2)), writer, TimeProvider.System, telemetry: new RuntimeTelemetry());
+        var context = CreateContext(TimeProvider.System.GetUtcNow(), maxWallClockSeconds: 60);
+
+        var response = await caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, "Complete despite telemetry exporter failure.")],
+            tools: null,
+            CancellationToken.None);
+
+        Assert.Equal("A concise response.", response.Content);
+        Assert.Contains(writer.Requests, request => request.EventType == TriageLedgerEventType.ModelCall);
+    }
     [Fact]
     public async Task CompleteAsync_AllZeroProviderUsageChargesEstimatedTokens()
     {
@@ -132,14 +187,16 @@ public sealed class InvestigationModelCallerTests
         IAiModelClient modelClient,
         RecordingLedgerWriter writer,
         TimeProvider timeProvider,
-        IProviderOutageTracker? providerOutageTracker = null)
+        IProviderOutageTracker? providerOutageTracker = null,
+        IRuntimeTelemetry? telemetry = null)
     {
         return new InvestigationModelCaller(
             modelClient,
             new StaticLedgerReader(),
             new TriageLedgerAppender(writer),
             timeProvider,
-            providerOutageTracker);
+            providerOutageTracker,
+            telemetry);
     }
 
     private static TriageJobCallContext CreateContext(DateTimeOffset attemptStartedAtUtc, int maxWallClockSeconds)

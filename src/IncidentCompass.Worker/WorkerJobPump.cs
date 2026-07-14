@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
@@ -10,7 +11,8 @@ public sealed partial class WorkerJobPump(
     IServiceScopeFactory serviceScopeFactory,
     WorkerJobLeaseRenewer leaseRenewer,
     ILogger<WorkerJobPump> logger,
-    IProviderOutageTracker? providerOutageTracker = null)
+    IProviderOutageTracker? providerOutageTracker = null,
+    IRuntimeTelemetry? telemetry = null)
 {
     private readonly WorkerJobTaskSet activeJobs = new(logger);
 
@@ -58,9 +60,15 @@ public sealed partial class WorkerJobPump(
         WorkerOptions options,
         CancellationToken cancellationToken)
     {
+        using var claimTelemetry = telemetry?.StartJobClaim();
         using var scope = serviceScopeFactory.CreateScope();
         var runner = scope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
-        return await runner.ClaimNextAsync(workerId, TimeSpan.FromSeconds(options.LeaseSeconds), cancellationToken);
+        var job = await runner.ClaimNextAsync(workerId, TimeSpan.FromSeconds(options.LeaseSeconds), cancellationToken);
+        if (job is not null)
+        {
+            telemetry?.RecordJobClaim();
+        }
+        return job;
     }
 
     private async Task ProcessClaimedAsync(

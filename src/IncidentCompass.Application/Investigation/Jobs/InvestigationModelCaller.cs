@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Configuration;
@@ -10,7 +11,8 @@ internal sealed class InvestigationModelCaller(
     ITriageLedgerReader ledgerReader,
     TriageLedgerAppender ledgerAppender,
     TimeProvider timeProvider,
-    IProviderOutageTracker? providerOutageTracker = null)
+    IProviderOutageTracker? providerOutageTracker = null,
+    IRuntimeTelemetry? telemetry = null)
 {
     public async Task<AiModelResponse> CompleteAsync(
         TriageJobCallContext context,
@@ -30,17 +32,20 @@ internal sealed class InvestigationModelCaller(
 
         var startedAtUtc = timeProvider.GetUtcNow();
         using var callCancellation = CreateCallCancellation(context, cancellationToken);
+        using var modelTelemetry = telemetry?.StartModelCall();
         try
         {
             callCancellation.Token.ThrowIfCancellationRequested();
             var response = await modelClient.CompleteAsync(request, callCancellation.Token);
             var duration = timeProvider.GetUtcNow() - startedAtUtc;
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Succeeded, duration.TotalMilliseconds);
             await RecordModelCallAsync(context, request, response, duration, usageBefore, cancellationToken);
             providerOutageTracker?.RecordProviderSuccess();
             return response;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Cancelled, (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds);
             await ledgerAppender.AppendBudgetEventAsync(
                 context.Job,
                 "wall_clock_limit_reached: model call exceeded remaining attempt wall-clock budget.",
@@ -48,6 +53,16 @@ internal sealed class InvestigationModelCaller(
                 workersDelta: null,
                 cancellationToken: CancellationToken.None);
             throw new InvalidOperationException("The triage attempt exceeded MaxWallClockSeconds during a model call.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Cancelled, (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds);
+            throw;
+        }
+        catch
+        {
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Failed, (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds);
+            throw;
         }
     }
 
