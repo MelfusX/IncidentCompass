@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Infrastructure.ModelGateway.Mock;
 using IncidentCompass.Worker;
@@ -108,6 +110,48 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         AssertLedger(delegated, 0, "Delegated", "analysis", "delegate", ingested.ConfigHash!);
     }
 
+    [DockerAvailableFact]
+    public async Task ProviderOutage_BackpressuresClaimsThenRecoversAndPublishes()
+    {
+        var modelClient = new ProviderOutageThenSuccessModelClient();
+        using var scope = await CreateScopeAsync(services =>
+        {
+            services.RemoveAll<IAiModelClient>();
+            services.AddSingleton(modelClient);
+            services.AddScoped<IAiModelClient>(serviceProvider => serviceProvider.GetRequiredService<ProviderOutageThenSuccessModelClient>());
+        });
+        var ingested = await PostIngestAsync(scope.Client, TesterEnvelope());
+        Assert.NotNull(ingested.JobId);
+
+        using (var serviceScope = scope.Factory.Services.CreateScope())
+        {
+            var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
+            var claimed = await runner.ClaimNextAsync("worker-provider-outage", TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
+            Assert.NotNull(claimed);
+            await runner.ProcessClaimedAsync(
+                claimed,
+                "worker-provider-outage",
+                new TriageJobProcessingSettings(MaxAttempts: 1, RetryDelay: TimeSpan.FromSeconds(1)),
+                TestContext.Current.CancellationToken);
+        }
+
+        var delayed = await ReadJobAsync(scope.ConnectionString, ingested.JobId.Value);
+        Assert.Equal("RetryPending", delayed.Status);
+        Assert.Equal("provider_unavailable", delayed.LastErrorCode);
+        Assert.Equal("Triage delayed: provider unavailable.", delayed.LastErrorMessage);
+        var pump = CreatePump(scope.Factory);
+        var options = new WorkerOptions { MaxConcurrentJobs = 1, LeaseSeconds = 3, MaxAttempts = 1, RetryDelaySeconds = 1 };
+        Assert.Equal(0, await pump.FillAvailableSlotsAsync("worker-provider-recover", options, TestContext.Current.CancellationToken));
+
+        await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-provider-recover", options, TestContext.Current.CancellationToken));
+        await WaitForPumpToDrainAsync(pump);
+
+        var recovered = await ReadJobAsync(scope.ConnectionString, ingested.JobId.Value);
+        Assert.Equal("Succeeded", recovered.Status);
+        Assert.False(scope.Factory.Services.GetRequiredService<IProviderOutageTracker>().IsBackpressured);
+        Assert.True(modelClient.RequestCount > 1);
+    }
     [DockerAvailableFact]
     public async Task WorkerPumps_RenewLongRunningLeaseBeforeAnotherWorkerCanReclaimTheJob()
     {
@@ -223,6 +267,8 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
             builder.UseExplicitMockProviders();
+            builder.UseSetting("IncidentCompass:ProviderResilience:FailureThreshold", "1");
+            builder.UseSetting("IncidentCompass:ProviderResilience:BackpressureSeconds", "1");
             if (configureServices is not null)
             {
                 builder.ConfigureTestServices(configureServices);
@@ -250,7 +296,8 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         return new WorkerJobPump(
             factory.Services.GetRequiredService<IServiceScopeFactory>(),
             new WorkerJobLeaseRenewer(),
-            factory.Services.GetRequiredService<ILogger<WorkerJobPump>>());
+            factory.Services.GetRequiredService<ILogger<WorkerJobPump>>(),
+            factory.Services.GetRequiredService<IProviderOutageTracker>());
     }
 
     private static async Task WaitForPumpToDrainAsync(WorkerJobPump pump)
@@ -275,12 +322,12 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
         await using var command = new NpgsqlCommand(
-            "SELECT status, locked_by FROM incidentcompass.triage_jobs WHERE id = @job_id;",
+            "SELECT status, locked_by, last_error_code, last_error_message FROM incidentcompass.triage_jobs WHERE id = @job_id;",
             connection);
         command.Parameters.AddWithValue("job_id", jobId);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
-        return new JobRow(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1));
+        return new JobRow(reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3));
     }
 
     private static async Task<ReportRow> ReadReportAsync(string connectionString, Guid faultId)
@@ -403,6 +450,24 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         }
     }
 
+    private sealed class ProviderOutageThenSuccessModelClient : IAiModelClient
+    {
+        private readonly MockAiModelClient inner = new();
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref requestCount);
+
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref requestCount) == 1)
+            {
+                throw new AiModelException("test-provider", "Service unavailable.");
+            }
+
+            return inner.CompleteAsync(request, cancellationToken);
+        }
+    }
+
     private sealed class BlockingFirstRequestModelClient : IAiModelClient
     {
         private readonly MockAiModelClient inner = new();
@@ -464,7 +529,7 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         Guid? JobId,
         string? ConfigHash);
 
-    private sealed record JobRow(string Status, string? LockedBy);
+    private sealed record JobRow(string Status, string? LockedBy, string? LastErrorCode, string? LastErrorMessage);
 
     private sealed record ReportRow(string Status, string Classification, string Confidence, string ConfigHash);
 

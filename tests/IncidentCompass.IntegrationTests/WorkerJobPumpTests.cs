@@ -1,4 +1,6 @@
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
+using Microsoft.Extensions.Options;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Worker;
 using Microsoft.Extensions.DependencyInjection;
@@ -49,6 +51,30 @@ public sealed class WorkerJobPumpTests
     }
 
 
+    [Fact]
+    public async Task FillAvailableSlotsAsync_DoesNotClaimWhileProviderIsBackpressured()
+    {
+        var runner = new BlockingTriageJobRunner(availableJobs: 1, Task.CompletedTask);
+        var tracker = new ProviderOutageTracker(
+            Options.Create(new ProviderResilienceOptions { FailureThreshold = 1, BackpressureSeconds = 60 }),
+            TimeProvider.System);
+        tracker.RecordProviderFailure();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ITriageJobRunner>(runner);
+        services.AddSingleton<IProviderOutageTracker>(tracker);
+        services.AddSingleton<WorkerJobLeaseRenewer>();
+        using var provider = services.BuildServiceProvider();
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+
+        var started = await pump.FillAvailableSlotsAsync(
+            "worker-provider-backpressure",
+            new WorkerOptions { MaxConcurrentJobs = 1, LeaseSeconds = 60, MaxAttempts = 3, RetryDelaySeconds = 1 },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, started);
+        Assert.Equal(0, runner.ClaimedCount);
+    }
     [Fact]
     public async Task FillAvailableSlotsAsync_OwnershipLossCancelsProcessing()
     {

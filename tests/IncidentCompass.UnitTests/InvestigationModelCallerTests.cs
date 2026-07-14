@@ -1,5 +1,7 @@
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Resilience;
+using Microsoft.Extensions.Options;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
@@ -34,6 +36,27 @@ public sealed class InvestigationModelCallerTests
         Assert.True(charge.TokensDelta > 0);
     }
 
+    [Fact]
+    public async Task CompleteAsync_SuccessClearsProviderBackpressure()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var tracker = new ProviderOutageTracker(
+            Options.Create(new ProviderResilienceOptions { FailureThreshold = 1, BackpressureSeconds = 60 }),
+            new ConstantTimeProvider(now));
+        tracker.RecordProviderFailure();
+        var writer = new RecordingLedgerWriter();
+        var caller = CreateCaller(new StaticModelClient(new AiModelUsage(1, 1, 2)), writer, new ConstantTimeProvider(now), tracker);
+        var context = CreateContext(now, maxWallClockSeconds: 60);
+
+        await caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, "Recover provider availability.")],
+            tools: null,
+            CancellationToken.None);
+
+        Assert.False(tracker.IsBackpressured);
+    }
     [Fact]
     public async Task CompleteAsync_WallClockReachedBeforeCallDoesNotInvokeModel()
     {
@@ -108,13 +131,15 @@ public sealed class InvestigationModelCallerTests
     private static InvestigationModelCaller CreateCaller(
         IAiModelClient modelClient,
         RecordingLedgerWriter writer,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IProviderOutageTracker? providerOutageTracker = null)
     {
         return new InvestigationModelCaller(
             modelClient,
             new StaticLedgerReader(),
             new TriageLedgerAppender(writer),
-            timeProvider);
+            timeProvider,
+            providerOutageTracker);
     }
 
     private static TriageJobCallContext CreateContext(DateTimeOffset attemptStartedAtUtc, int maxWallClockSeconds)

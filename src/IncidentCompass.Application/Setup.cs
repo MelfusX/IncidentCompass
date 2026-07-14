@@ -4,6 +4,7 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.Health;
 using IncidentCompass.Application.Core.ModelGateway;
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Core.Users;
 using IncidentCompass.Application.Governance;
 using IncidentCompass.Application.Intake;
@@ -28,6 +29,12 @@ public static class Setup
         services.AddValidatorsFromAssembly(typeof(Setup).Assembly, includeInternalTypes: true);
 
         services.TryAddSingleton(TimeProvider.System);
+        services
+            .AddOptions<ProviderResilienceOptions>()
+            .Bind(configuration.GetSection(ProviderResilienceOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ProviderResilienceOptions>, ProviderResilienceOptionsValidator>());
+        services.TryAddSingleton<IProviderOutageTracker, ProviderOutageTracker>();
         services.TryAddScoped<IApplicationDispatcher, ApplicationDispatcher>();
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(DispatchLoggingBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(RequestValidationBehavior<,>));

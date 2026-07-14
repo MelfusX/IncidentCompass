@@ -33,7 +33,7 @@ The ledger does not store rendered prompts, full provider responses, document te
 
 Model calls are part of the Worker investigation loop. Required durable side effects, including ledger budget/model-call events and final report commit events, are treated as part of the workflow state. The Worker does not expose foreground success to an API caller after a missing required durable write.
 
-Provider failures are normalized at the Application port boundary and recorded through job failure state and application logs rather than through a separate AI request-log table.
+Provider failures are normalized at the Application port boundary and recorded through job failure state and application logs rather than through a separate AI request-log table. Provider transport failures use the durable `provider_unavailable` delayed state instead of consuming the ordinary attempt limit. The per-process Worker outage tracker pauses claims after its configured threshold and clears on a successful model call; this state contains no prompt, credential or incident data.
 
 ## Later Audit Events
 

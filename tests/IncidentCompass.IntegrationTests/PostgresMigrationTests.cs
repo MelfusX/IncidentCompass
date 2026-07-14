@@ -37,8 +37,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
         Assert.Equal(
@@ -70,7 +70,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
     }
 
@@ -322,7 +322,9 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                  FROM information_schema.columns
                  WHERE table_schema = 'incidentcompass'
                    AND table_name = 'triage_jobs'
-                   AND column_name IN ('retriage_trigger_job_id', 'supersedes_report_id')) = 2
+                   AND column_name IN (
+                       'retriage_trigger_job_id', 'supersedes_report_id',
+                       'retry_without_consuming_attempt')) = 3
                 AND
                 (SELECT count(*)
                  FROM pg_indexes

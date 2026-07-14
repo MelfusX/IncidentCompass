@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Core.Text;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
@@ -8,7 +9,8 @@ internal sealed class TriageJobRunner(
     ITriageJobRuntimeRepository runtimeRepository,
     ITriageConfigurationRepository configurationRepository,
     IClaimedTriageJobProcessor processor,
-    TimeProvider timeProvider) : ITriageJobRunner
+    TimeProvider timeProvider,
+    IProviderOutageTracker? providerOutageTracker = null) : ITriageJobRunner
 {
     private const int MaxStoredErrorMessageLength = 1000;
 
@@ -46,10 +48,16 @@ internal sealed class TriageJobRunner(
         }
         catch (Exception exception)
         {
+            var providerOutage = ProviderOutageExceptionClassifier.IsProviderOutage(exception);
+            if (providerOutage)
+            {
+                providerOutageTracker?.RecordProviderFailure();
+            }
+
             await runtimeRepository.RecordAttemptFailureAsync(
                 job,
                 workerId,
-                CreateFailure(job, settings, exception, configurationLoaded),
+                CreateFailure(job, settings, exception, configurationLoaded, providerOutage),
                 CancellationToken.None);
         }
     }
@@ -58,8 +66,18 @@ internal sealed class TriageJobRunner(
         TriageJob job,
         TriageJobProcessingSettings settings,
         Exception exception,
-        bool configurationLoaded)
+        bool configurationLoaded,
+        bool providerOutage)
     {
+        if (providerOutage)
+        {
+            return new TriageJobAttemptFailure(
+                TriageJobStatus.RetryPending,
+                "provider_unavailable",
+                "Triage delayed: provider unavailable.",
+                timeProvider.GetUtcNow().Add(providerOutageTracker?.RetryDelay ?? settings.RetryDelay),
+                TriageJobRetryBudgetDisposition.DoNotConsumeAttempt);
+        }
         var maxAttempts = Math.Max(1, settings.MaxAttempts);
         var errorCode = configurationLoaded ? "triage_job_attempt_failed" : "config_snapshot_unavailable";
         if (job.Attempt >= maxAttempts)

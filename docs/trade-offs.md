@@ -107,6 +107,9 @@ correlation remains a later capability rather than an implicit effect of groupin
 
 Recurrence escalation is deterministic database state, but the prior report copied into a new investigation is model output and incident-derived context, not authority. The prompt labels it as an untrusted hypothesis; the worker must independently ground its result and cite the new `RecurrenceState` artifact before publishing a successor. This prevents historical text from becoming sticky fact, but it does not make model reasoning a security boundary. There is no manual re-triage endpoint or mass-issue-flip trigger in v0.2.0; the latter is an explicit scope cut.
 
+## Provider Backpressure Is Process-Local
+
+Provider-outage backpressure is deliberately held in each Worker process. It prevents a local outage from rapidly consuming retries and clears after a successful model call, but multiple Worker hosts do not share breaker state. A future distributed deployment needs coordinated provider health if a global circuit is required; v0.2.0 remains a local/reference deployment and does not claim that property.
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.

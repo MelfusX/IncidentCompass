@@ -24,6 +24,7 @@ internal static class PostgresMigrationCatalog
         new(9, "v0.2-report-lifecycle", ["018-report-lifecycle.sql"]),
         new(10, "v0.2-retriage-jobs", ["019-retriage-jobs.sql"]),
         new(11, "v0.2-report-listing", ["020-report-listing.sql"]),
-        new(12, "v0.2-memory-seed-sync-status", ["021-memory-seed-sync-status.sql"])
+        new(12, "v0.2-memory-seed-sync-status", ["021-memory-seed-sync-status.sql"]),
+        new(13, "v0.2-triage-job-retry-budget", ["022-triage-job-retry-budget.sql"])
     ];
 }

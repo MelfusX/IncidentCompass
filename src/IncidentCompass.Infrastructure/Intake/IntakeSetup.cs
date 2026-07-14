@@ -31,6 +31,7 @@ internal static class IntakeSetup
             serviceProvider => serviceProvider.GetRequiredService<FileTriageConfigurationRepository>());
 
         services.TryAddSingleton<PostgresTriageJobLeaseStore>();
+        services.TryAddScoped<PostgresTriageJobAttemptFailureStore>();
         services.TryAddScoped<PostgresIntakeTransactionContext>();
         services.TryAddScoped<IIntakeUnitOfWork, PostgresIntakeUnitOfWork>();
         services.TryAddScoped<ISignalRepository, PostgresSignalRepository>();

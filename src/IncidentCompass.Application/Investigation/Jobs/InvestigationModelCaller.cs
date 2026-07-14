@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Configuration;
 
@@ -8,7 +9,8 @@ internal sealed class InvestigationModelCaller(
     IAiModelClient modelClient,
     ITriageLedgerReader ledgerReader,
     TriageLedgerAppender ledgerAppender,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IProviderOutageTracker? providerOutageTracker = null)
 {
     public async Task<AiModelResponse> CompleteAsync(
         TriageJobCallContext context,
@@ -34,6 +36,7 @@ internal sealed class InvestigationModelCaller(
             var response = await modelClient.CompleteAsync(request, callCancellation.Token);
             var duration = timeProvider.GetUtcNow() - startedAtUtc;
             await RecordModelCallAsync(context, request, response, duration, usageBefore, cancellationToken);
+            providerOutageTracker?.RecordProviderSuccess();
             return response;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

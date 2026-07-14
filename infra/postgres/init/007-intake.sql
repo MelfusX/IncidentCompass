@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS incidentcompass.triage_jobs (
     locked_by text NULL,
     locked_until_utc timestamptz NULL,
     next_attempt_at_utc timestamptz NULL,
+    retry_without_consuming_attempt boolean NOT NULL DEFAULT false,
     last_error_code text NULL,
     last_error_message text NULL,
     config_hash text NOT NULL REFERENCES incidentcompass.triage_config_snapshots (config_hash),

@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,7 +9,8 @@ namespace IncidentCompass.Worker;
 public sealed partial class WorkerJobPump(
     IServiceScopeFactory serviceScopeFactory,
     WorkerJobLeaseRenewer leaseRenewer,
-    ILogger<WorkerJobPump> logger)
+    ILogger<WorkerJobPump> logger,
+    IProviderOutageTracker? providerOutageTracker = null)
 {
     private readonly WorkerJobTaskSet activeJobs = new(logger);
 
@@ -24,7 +26,7 @@ public sealed partial class WorkerJobPump(
         CancellationToken cancellationToken)
     {
         var started = 0;
-        while (activeJobs.Count < options.MaxConcurrentJobs)
+        while (providerOutageTracker?.IsBackpressured != true && activeJobs.Count < options.MaxConcurrentJobs)
         {
             var job = await ClaimNextAsync(workerId, options, cancellationToken);
             if (job is null)
