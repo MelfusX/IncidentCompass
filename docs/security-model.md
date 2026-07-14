@@ -18,6 +18,12 @@ The API registers the demo header-based `IUserContext` only for `Development` by
 
 Demo headers such as `X-Demo-User-Id`, `X-Demo-Tenant-Id` and `X-Demo-Roles` are caller-controlled sample inputs. They are useful for local walkthroughs, but they are not authentication and must not be trusted in deployed environments.
 
+## Incident Data Tenant Scope
+
+`IIncidentTenantContext` is separate from `IUserContext`. In v0.2.0 it reads `Ingestion.DefaultTenant` from the server-loaded triage configuration, which is the only tenant source for both manual API intake and OTLP intake. `X-Demo-Tenant-Id`, incident-envelope fields, OTLP resource attributes and other sender-controlled data never select the incident-data tenant.
+
+Fault, ledger and report read paths resolve this server-owned scope before querying. An object outside the scope is indistinguishable from a missing object and returns `404`; compact report lists only return scoped rows. This is a local/single-tenant partition, not authentication or authorization. IC-BL-024 is expected to replace this context implementation with server-side API-key-to-tenant mapping without changing intake or read use cases.
+
 ## Logging
 
 - Full rendered prompt logging is disabled by default.

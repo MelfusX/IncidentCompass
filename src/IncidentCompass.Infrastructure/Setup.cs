@@ -5,6 +5,7 @@ using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Application.Investigation.Reports.List;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Embeddings.Mock;
 using IncidentCompass.Infrastructure.Embeddings.OpenAi;
@@ -180,6 +181,7 @@ public static class Setup
         services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
         services.TryAddScoped<ITriageReportRepository, PostgresTriageReportRepository>();
         services.TryAddScoped<ITriageReportReadRepository, PostgresTriageReportReadRepository>();
+        services.TryAddScoped<ITriageReportListRepository, PostgresTriageReportListRepository>();
         services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
 
         return services;

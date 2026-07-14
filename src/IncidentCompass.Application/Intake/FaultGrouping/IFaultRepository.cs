@@ -38,5 +38,5 @@ public interface IFaultRepository
     // terminalization so callers can re-resolve when the candidate is no longer open.
     Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken);
 
-    Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken);
+    Task<Fault?> FindByIdAsync(Guid id, string tenantId, CancellationToken cancellationToken);
 }

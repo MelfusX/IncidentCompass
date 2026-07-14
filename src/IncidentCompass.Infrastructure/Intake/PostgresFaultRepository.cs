@@ -102,18 +102,17 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
             throw new InvalidOperationException("A fault row can only be locked inside an intake unit of work.");
         }
 
-        return FindByIdAsync(id, lockForUpdate: true, cancellationToken);
+        return FindByIdAsync(id, tenantId: null, lockForUpdate: true, cancellationToken);
     }
 
-    public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken)
-    {
-        return PostgresOperation.ExecuteAsync(
-            "find fault",
-            () => FindByIdAsync(id, lockForUpdate: false, cancellationToken));
-    }
+    public Task<Fault?> FindByIdAsync(Guid id, string tenantId, CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "find tenant-scoped fault",
+            () => FindByIdAsync(id, tenantId, lockForUpdate: false, cancellationToken));
 
     private async Task<Fault?> FindByIdAsync(
         Guid id,
+        string? tenantId,
         bool lockForUpdate,
         CancellationToken cancellationToken)
     {
@@ -123,10 +122,12 @@ internal sealed class PostgresFaultRepository(PostgresDataSourceProvider dataSou
             SELECT {PostgresFaultRowMapper.SelectColumns}
             FROM incidentcompass.faults
             WHERE id = @id
+              AND (@tenant_id::text IS NULL OR tenant_id = @tenant_id)
             {lockingClause};
             """, lease.Connection, lease.Transaction);
 
         command.AddParameter("id", id);
+        command.AddParameter("tenant_id", tenantId);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? PostgresFaultRowMapper.Map(reader) : null;

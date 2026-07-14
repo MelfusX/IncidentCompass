@@ -589,11 +589,11 @@ public sealed class FaultGroupingCoordinatorTests
                 _closeOnNextLockFaultId = null;
             }
 
-            return FindByIdAsync(id, cancellationToken);
+            return Task.FromResult(_faults.FirstOrDefault(f => f.Id == id));
         }
 
-        public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) =>
-            Task.FromResult(_faults.FirstOrDefault(f => f.Id == id));
+        public Task<Fault?> FindByIdAsync(Guid id, string tenantId, CancellationToken cancellationToken) =>
+            Task.FromResult(_faults.FirstOrDefault(f => f.Id == id && f.TenantId == tenantId));
 
         public void CloseOnNextLock(Guid faultId, DateTimeOffset completedAtUtc)
         {

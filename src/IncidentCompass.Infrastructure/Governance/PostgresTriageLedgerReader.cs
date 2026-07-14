@@ -104,27 +104,31 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
     }
 
 
+
     public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
         Guid faultId,
+        string tenantId,
         CancellationToken cancellationToken) =>
         PostgresOperation.ExecuteAsync(
-            "read fault ledger",
-            () => ReadByFaultIdCoreAsync(faultId, cancellationToken));
-
-    private async Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdCoreAsync(Guid faultId, CancellationToken cancellationToken)
+            "read tenant-scoped fault ledger",
+            () => ReadByFaultIdCoreAsync(faultId, tenantId, cancellationToken));
+    private async Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdCoreAsync(Guid faultId, string tenantId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
             """
-            SELECT id, fault_id, job_id, attempt, event_type, role, tool_name, rationale,
-                   decision, decision_reason, payload_ref, config_hash, created_at_utc,
-                   tool_status, tokens_delta, workers_delta
-            FROM incidentcompass.triage_ledger
-            WHERE fault_id = @fault_id
-            ORDER BY id;
+            SELECT ledger.id, ledger.fault_id, ledger.job_id, ledger.attempt, ledger.event_type, ledger.role, ledger.tool_name, ledger.rationale,
+                   ledger.decision, ledger.decision_reason, ledger.payload_ref, ledger.config_hash, ledger.created_at_utc,
+                   ledger.tool_status, ledger.tokens_delta, ledger.workers_delta
+            FROM incidentcompass.triage_ledger ledger
+            JOIN incidentcompass.faults fault ON fault.id = ledger.fault_id
+            WHERE ledger.fault_id = @fault_id
+              AND fault.tenant_id = @tenant_id
+            ORDER BY ledger.id;
             """,
             connection);
         command.AddParameter("fault_id", faultId);
+        command.AddParameter("tenant_id", tenantId);
 
         var entries = new List<TriageLedgerEntry>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

@@ -8,6 +8,7 @@ using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.Get;
+using IncidentCompass.Application.Investigation.Reports.List;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
@@ -48,6 +49,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
+        services.AddSingleton<ITriageReportListRepository, InMemoryTriageReportListRepository>();
         services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
@@ -173,7 +175,7 @@ public sealed class MemoryOnlyCompositionTests
         public Task<Fault?> FindByIdForUpdateAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult<Fault?>(null);
 
-        public Task<Fault?> FindByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
+        public Task<Fault?> FindByIdAsync(Guid id, string tenantId, CancellationToken cancellationToken) => Task.FromResult<Fault?>(null);
     }
 
     private sealed class InMemoryTriageJobRepository : ITriageJobRepository
@@ -274,17 +276,25 @@ public sealed class MemoryOnlyCompositionTests
 
         public Task<IReadOnlyList<TriageLedgerEntry>> ReadByFaultIdAsync(
             Guid faultId,
+            string tenantId,
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
     }
     private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
     {
-        public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>
+        public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, string tenantId, CancellationToken cancellationToken) =>
             Task.FromResult<TriageReportDetailsResponse?>(null);
 
-        public Task<TriageReportDetailsResponse?> FindLatestByFaultIdAsync(Guid faultId, CancellationToken cancellationToken) =>
+        public Task<TriageReportDetailsResponse?> FindLatestByFaultIdAsync(Guid faultId, string tenantId, CancellationToken cancellationToken) =>
             Task.FromResult<TriageReportDetailsResponse?>(null);
     }
 
+    private sealed class InMemoryTriageReportListRepository : ITriageReportListRepository
+    {
+        public Task<IReadOnlyList<TriageReportListItemResponse>> ListAsync(
+            TriageReportListFilter filter,
+            string tenantId,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageReportListItemResponse>>([]);
+    }
     private sealed class InMemoryPriorReportSummaryProvider : IPriorReportSummaryProvider
     {
         public Task<PriorReportSummary?> FindLatestAsync(Guid faultId, CancellationToken cancellationToken) =>

@@ -62,6 +62,10 @@ The MediatR decision remains separate. This project still uses its internal disp
 
 Identifiers like `TenantId`, `UserId`, `CorrelationId` are passed as `string` and `Guid` throughout the codebase rather than as strongly-typed value objects (e.g. `readonly record struct TenantId`). Value objects offer compile-time safety against argument-mix-ups and centralized validation, but introduce friction with `System.Text.Json`, `Npgsql` parameter binding, and `IOptions<T>` binding at this project's current scope. The current implementation accepts the small risk of string mix-ups in exchange for transport simplicity. A future scope that grows multi-context handler signatures (tenant + user + correlation + ...) may revisit this.
 
+## Local Incident Tenant Partition Is Not Authentication
+
+v0.2.0 keeps one server-configured incident-data tenant through `IIncidentTenantContext`. It prevents accidental cross-tenant reads and makes the future auth boundary explicit, but it does not authenticate callers or make demo headers trustworthy. Production multi-tenant use requires IC-BL-024 to authenticate an API key and map it server-side to exactly one tenant before replacing the config-backed context.
+
 ## Sequential Ledger-Backed Governance
 
 Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the append-only ledger. This is simple and inspectable for the MVP because worker delegation is sequential. It is not a parallel-safe counter mechanism; future parallel fan-out would need serialized policy evaluation or atomic counters to avoid two workers passing a cap at the same time.

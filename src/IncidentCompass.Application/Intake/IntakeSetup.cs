@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Core.Dispatching;
+using IncidentCompass.Application.Core.Tenancy;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Intake.GetFault;
@@ -20,6 +21,7 @@ internal static class IntakeSetup
         services.TryAddSingleton<SignalNormalizerRegistry>();
         services.TryAddSingleton<UserIdentifierPseudonymizer>();
 
+        services.TryAddScoped<IIncidentTenantContext, ConfigIncidentTenantContext>();
         services.TryAddScoped<GroundedFactsAssembler>();
         services.TryAddScoped<OpenFaultNeighborSetRefresher>();
         services.TryAddScoped<RecurrenceTracker>();

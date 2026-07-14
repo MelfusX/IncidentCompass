@@ -4,6 +4,7 @@ using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Application.Investigation.Reports.List;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -165,13 +166,94 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         using (var readScope = scope.Factory.Services.CreateScope())
         {
             var repository = readScope.ServiceProvider.GetRequiredService<ITriageReportReadRepository>();
-            var directLatest = await repository.FindLatestByFaultIdAsync(signal.FaultId, TestContext.Current.CancellationToken);
+            var directLatest = await repository.FindLatestByFaultIdAsync(signal.FaultId, "local", TestContext.Current.CancellationToken);
             Assert.NotNull(directLatest);
             Assert.Equal(successorReportId, directLatest.Id);
         }
         var latest = await GetReportAsync(scope.Client, "/api/v1/faults/" + signal.FaultId + "/triage-report");
         Assert.Equal(successorReportId, latest.Id);
         Assert.True(latest.IsLatestForFault);
+    }
+    [DockerAvailableFact]
+    public async Task TenantScopedReadPaths_HideForeignDataAndListUsesKeysetPagination()
+    {
+        using var scope = await CreateScopeAsync();
+        var sharedService = "tenant-scope-svc-" + Guid.NewGuid().ToString("N");
+        var local = await PostIngestAsync(scope.Client, sharedService);
+        await RunClaimedJobAsync(scope, local.JobId!.Value, "worker-tenant-local");
+        var foreign = await PostIngestAsync(scope.Client, sharedService, "ForeignException");
+        await RunClaimedJobAsync(scope, foreign.JobId!.Value, "worker-tenant-foreign");
+        var foreignReportId = await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT id FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            ("fault_id", foreign.FaultId));
+        await ExecuteAsync(
+            scope.ConnectionString,
+            "UPDATE incidentcompass.faults SET tenant_id = 'other-tenant' WHERE id = @fault_id;",
+            ("fault_id", foreign.FaultId));
+
+        foreach (var path in new[]
+        {
+            "/api/v1/triage-reports/" + foreignReportId,
+            "/api/v1/faults/" + foreign.FaultId + "/triage-report",
+            "/api/v1/faults/" + foreign.FaultId,
+            "/api/v1/faults/" + foreign.FaultId + "/ledger"
+        })
+        {
+            var response = await scope.Client.GetAsync(path, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+
+        using (var readScope = scope.Factory.Services.CreateScope())
+        {
+            var repository = readScope.ServiceProvider.GetRequiredService<ITriageReportListRepository>();
+            var direct = await repository.ListAsync(
+                new TriageReportListFilter(null, sharedService, null, null, null, null, null, 10),
+                "local",
+                TestContext.Current.CancellationToken);
+            Assert.Single(direct);
+        }
+        var filtered = await GetReportListAsync(scope.Client, $"/api/v1/triage-reports?serviceName={sharedService}&limit=10");
+        var localReportId = await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT id FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            ("fault_id", local.FaultId));
+        Assert.Equal([localReportId], filtered.Reports.Select(report => report.Id));
+        Assert.Null(filtered.NextCursor);
+
+        var keysetService = "keyset-svc-" + Guid.NewGuid().ToString("N");
+        for (var index = 0; index < 3; index++)
+        {
+            var signal = await PostIngestAsync(scope.Client, keysetService, "KeysetException" + index);
+            await RunClaimedJobAsync(scope, signal.JobId!.Value, "worker-keyset-" + index);
+        }
+
+        var firstPage = await GetReportListAsync(scope.Client, $"/api/v1/triage-reports?serviceName={keysetService}&limit=1");
+        Assert.Single(firstPage.Reports);
+        Assert.NotNull(firstPage.NextCursor);
+        var secondPage = await GetReportListAsync(scope.Client, $"/api/v1/triage-reports?serviceName={keysetService}&limit=1&cursor={firstPage.NextCursor}");
+        Assert.Single(secondPage.Reports);
+        Assert.NotEqual(firstPage.Reports[0].Id, secondPage.Reports[0].Id);
+        var filterResponse = await GetReportListAsync(
+            scope.Client,
+            $"/api/v1/triage-reports?faultId={local.FaultId}&environment=prod&status=Completed&classification=SimpleKnownError&limit=10");
+        Assert.Equal([localReportId], filterResponse.Reports.Select(report => report.Id));
+        Assert.Equal(HttpStatusCode.BadRequest, (await scope.Client.GetAsync("/api/v1/triage-reports?limit=101", TestContext.Current.CancellationToken)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await scope.Client.GetAsync("/api/v1/triage-reports?cursor=invalid", TestContext.Current.CancellationToken)).StatusCode);
+        var malformedCursorBytes = new byte[24];
+        Array.Fill(malformedCursorBytes, byte.MaxValue);
+        var malformedCursor = Convert.ToBase64String(malformedCursorBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        Assert.Equal(HttpStatusCode.BadRequest, (await scope.Client.GetAsync("/api/v1/triage-reports?cursor=" + malformedCursor, TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    private static async Task<TriageReportListDto> GetReportListAsync(HttpClient client, string path)
+    {
+        var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+        var content = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(response.IsSuccessStatusCode, $"Expected a successful report list response for '{path}', received {(int)response.StatusCode}: {content}");
+        using var document = JsonDocument.Parse(content);
+        Assert.All(document.RootElement.GetProperty("reports").EnumerateArray(), report => Assert.False(report.TryGetProperty("evidence", out _)));
+        return JsonSerializer.Deserialize<TriageReportListDto>(content, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
     }
     private async Task<TestScope> CreateScopeAsync(bool citeRecurrenceState = false, bool useReTriageConfig = false)
     {
@@ -223,7 +305,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
             TestContext.Current.CancellationToken);
     }
 
-    private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, string serviceName)
+    private static async Task<IngestSignalResponseDto> PostIngestAsync(HttpClient client, string serviceName, string errorType = "TimeoutException")
     {
         var unique = Guid.NewGuid().ToString("N");
         var response = await client.PostAsJsonAsync(
@@ -233,7 +315,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
                 serviceName,
                 "prod",
                 DateTimeOffset.UtcNow,
-                new TesterAttributesDto("TimeoutException", "prior report timeout " + unique, "/prior")),
+                new TesterAttributesDto(errorType, "prior report timeout " + unique, "/prior")),
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<IngestSignalResponseDto>(TestContext.Current.CancellationToken);
@@ -397,6 +479,9 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Guid? JobId,
         string? ConfigHash);
 
+    private sealed record TriageReportListDto(IReadOnlyList<TriageReportListItemDto> Reports, string? NextCursor);
+
+    private sealed record TriageReportListItemDto(Guid Id);
     private sealed record TriageReportDetailsDto(
         Guid Id,
         string Classification,

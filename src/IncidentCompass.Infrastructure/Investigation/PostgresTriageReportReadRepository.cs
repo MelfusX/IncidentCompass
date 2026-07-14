@@ -10,26 +10,32 @@ namespace IncidentCompass.Infrastructure.Investigation;
 internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvider dataSourceProvider)
     : ITriageReportReadRepository
 {
-    public Task<TriageReportDetailsResponse?> FindByIdAsync(Guid reportId, CancellationToken cancellationToken) =>
-        PostgresOperation.ExecuteAsync(
-            "read triage report",
-            () => FindByIdCoreAsync(reportId, cancellationToken));
 
-    public Task<TriageReportDetailsResponse?> FindLatestByFaultIdAsync(Guid faultId, CancellationToken cancellationToken) =>
+    public Task<TriageReportDetailsResponse?> FindByIdAsync(
+        Guid reportId,
+        string tenantId,
+        CancellationToken cancellationToken) =>
         PostgresOperation.ExecuteAsync(
-            "read latest triage report",
-            () => FindLatestCoreAsync(faultId, cancellationToken));
+            "read tenant-scoped triage report",
+            () => FindByIdCoreAsync(reportId, tenantId, cancellationToken));
 
-    private async Task<TriageReportDetailsResponse?> FindByIdCoreAsync(Guid reportId, CancellationToken cancellationToken)
+    public Task<TriageReportDetailsResponse?> FindLatestByFaultIdAsync(
+        Guid faultId,
+        string tenantId,
+        CancellationToken cancellationToken) =>
+        PostgresOperation.ExecuteAsync(
+            "read tenant-scoped latest triage report",
+            () => FindLatestCoreAsync(faultId, tenantId, cancellationToken));
+    private async Task<TriageReportDetailsResponse?> FindByIdCoreAsync(Guid reportId, string tenantId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
-        return await LoadDetailsAsync(connection, () => LoadByIdAsync(connection, reportId, cancellationToken), cancellationToken);
+        return await LoadDetailsAsync(connection, () => LoadByIdAsync(connection, reportId, tenantId, cancellationToken), cancellationToken);
     }
 
-    private async Task<TriageReportDetailsResponse?> FindLatestCoreAsync(Guid faultId, CancellationToken cancellationToken)
+    private async Task<TriageReportDetailsResponse?> FindLatestCoreAsync(Guid faultId, string tenantId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
-        return await LoadDetailsAsync(connection, () => LoadLatestAsync(connection, faultId, cancellationToken), cancellationToken);
+        return await LoadDetailsAsync(connection, () => LoadLatestAsync(connection, faultId, tenantId, cancellationToken), cancellationToken);
     }
 
     private static async Task<TriageReportDetailsResponse?> LoadDetailsAsync(
@@ -50,20 +56,24 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
     private static async Task<TriageReportDetailsResponse?> LoadByIdAsync(
         NpgsqlConnection connection,
         Guid reportId,
+        string? tenantId,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(ReportSelect + " WHERE r.id = @report_id;", connection);
+        await using var command = new NpgsqlCommand(ReportSelect + " WHERE r.id = @report_id AND fault.tenant_id = @tenant_id;", connection);
         command.AddParameter("report_id", reportId);
+        command.AddParameter("tenant_id", tenantId);
         return await ReadReportAsync(command, cancellationToken);
     }
 
     private static async Task<TriageReportDetailsResponse?> LoadLatestAsync(
         NpgsqlConnection connection,
         Guid faultId,
+        string? tenantId,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(ReportSelect + "\n" + """
             WHERE r.fault_id = @fault_id
+              AND fault.tenant_id = @tenant_id
               AND NOT EXISTS (
                   SELECT 1
                   FROM incidentcompass.triage_reports successor
@@ -72,6 +82,7 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
             LIMIT 1;
             """, connection);
         command.AddParameter("fault_id", faultId);
+        command.AddParameter("tenant_id", tenantId);
         return await ReadReportAsync(command, cancellationToken);
     }
 
@@ -128,6 +139,7 @@ internal sealed class PostgresTriageReportReadRepository(PostgresDataSourceProvi
                r.is_mass_issue, r.recommended_next_action, r.limitations, r.config_hash, r.created_at_utc,
                r.supersedes_report_id, successor.id
         FROM incidentcompass.triage_reports r
+        JOIN incidentcompass.faults fault ON fault.id = r.fault_id
         LEFT JOIN LATERAL (
             SELECT candidate.id
             FROM incidentcompass.triage_reports candidate

@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Core.Tenancy;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Intake.Fingerprinting;
@@ -16,7 +17,8 @@ public sealed class IngestSignalCommandHandler(
     UserIdentifierPseudonymizer pseudonymizer,
     FaultGroupingCoordinator faultGroupingCoordinator,
     ISignalRepository signalRepository,
-    TimeProvider timeProvider) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
+    TimeProvider timeProvider,
+    IIncidentTenantContext incidentTenantContext) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
 {
     public async Task<IngestSignalResponse> HandleAsync(IngestSignalCommand command, CancellationToken cancellationToken)
     {
@@ -30,10 +32,11 @@ public sealed class IngestSignalCommandHandler(
             configuration.Redaction,
             pseudonymizer.IsCanonicalPseudonym);
         var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping);
+        var tenantId = await incidentTenantContext.GetTenantIdAsync(cancellationToken);
         var draftSignal = BuildSignal(
             redacted,
             fingerprint,
-            configuration.Ingestion.DefaultTenant,
+            tenantId,
             receivedAtUtc);
 
         ExistingSignalDelivery? existingDelivery = null;
