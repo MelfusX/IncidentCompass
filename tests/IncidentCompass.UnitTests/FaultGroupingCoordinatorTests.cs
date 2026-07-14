@@ -348,7 +348,8 @@ public sealed class FaultGroupingCoordinatorTests
         var assembler = new GroundedFactsAssembler(artifacts, new AlwaysNullPriorReportSummaryProvider(), clock);
         var neighborSetRefresher = new OpenFaultNeighborSetRefresher(signals, jobs, assembler);
         var coordinator = new FaultGroupingCoordinator(
-            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), new RecurrenceTracker(recurrenceStates), assembler, neighborSetRefresher, clock);
+            signals, faults, jobs, new PassThroughIntakeUnitOfWork(), new RecurrenceTracker(recurrenceStates),
+            new RecurrenceEscalationScheduler(new NoOpReTriageScheduler()), assembler, neighborSetRefresher, clock);
         return (coordinator, signals, faults, jobs, artifacts);
     }
 
@@ -426,6 +427,15 @@ public sealed class FaultGroupingCoordinatorTests
             Func<CancellationToken, Task<TResult>> operation,
             CancellationToken cancellationToken) => operation(cancellationToken);
     }
+    private sealed class NoOpReTriageScheduler : IRecurrenceEscalationReTriageScheduler
+    {
+        public Task ScheduleAsync(
+            TriageJob recurrenceJob,
+            Fault recurrenceFault,
+            RecurrenceState recurrenceState,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     private sealed class FakeRecurrenceStateRepository : IRecurrenceStateRepository
     {
         private int count;

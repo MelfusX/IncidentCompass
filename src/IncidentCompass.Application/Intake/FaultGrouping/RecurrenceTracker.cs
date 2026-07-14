@@ -33,7 +33,7 @@ public sealed class RecurrenceTracker(IRecurrenceStateRepository recurrenceState
         return RecordAsync(recurrence, cancellationToken);
     }
 
-    public async Task TrackAttachmentAsync(
+    public async Task<RecurrenceAttachmentResult?> TrackAttachmentAsync(
         Fault fault,
         Signal signal,
         ITriageJobRepository triageJobRepository,
@@ -43,16 +43,19 @@ public sealed class RecurrenceTracker(IRecurrenceStateRepository recurrenceState
     {
         if (fault.RecurrenceOf is null)
         {
-            return;
+            return null;
         }
 
         var job = await triageJobRepository.FindByFaultIdAsync(fault.Id, cancellationToken)
             ?? throw new InvalidOperationException("An open recurrence fault must have a triage job.");
         var recurrenceState = await TrackAsync(fault, signal, job, settings, cancellationToken);
-        if (recurrenceState is not null)
+        if (recurrenceState is null)
         {
-            await groundedFactsAssembler.ReplaceRecurrenceStateAsync(job, recurrenceState, cancellationToken);
+            return null;
         }
+
+        await groundedFactsAssembler.ReplaceRecurrenceStateAsync(job, recurrenceState, cancellationToken);
+        return new RecurrenceAttachmentResult(job, recurrenceState);
     }
     private async Task<RecurrenceState?> RecordAsync(
         RecurrenceOccurrence recurrence,

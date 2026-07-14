@@ -11,6 +11,7 @@ public sealed class FaultGroupingCoordinator(
     ITriageJobRepository triageJobRepository,
     IIntakeUnitOfWork intakeUnitOfWork,
     RecurrenceTracker recurrenceTracker,
+    RecurrenceEscalationScheduler recurrenceEscalationScheduler,
     GroundedFactsAssembler groundedFactsAssembler,
     OpenFaultNeighborSetRefresher neighborSetRefresher,
     TimeProvider timeProvider)
@@ -92,20 +93,16 @@ public sealed class FaultGroupingCoordinator(
                 var finalSignal = draftSignal with { FaultId = currentFault.Id };
                 await signalRepository.InsertAsync(finalSignal, currentCancellationToken);
                 await neighborSetRefresher.RefreshAsync(currentFault, finalSignal, configuration, currentCancellationToken);
-                await recurrenceTracker.TrackAttachmentAsync(currentFault, finalSignal, triageJobRepository,
+                var recurrenceAttachment = await recurrenceTracker.TrackAttachmentAsync(currentFault, finalSignal, triageJobRepository,
                     groundedFactsAssembler, configuration.FaultGrouping, currentCancellationToken);
+                await recurrenceEscalationScheduler.ScheduleIfEscalatedAsync(recurrenceAttachment, currentFault, currentCancellationToken);
                 return new FaultGroupingOutcome(currentFault, Job: null, IsNewFault: false, IsNewJob: false, IsSuppressed: false);
             },
             cancellationToken);
     }
-
-    private async Task<Fault> LockOpenFaultAsync(Guid faultId, CancellationToken cancellationToken)
-    {
-        var currentFault = await faultRepository.FindByIdForUpdateAsync(faultId, cancellationToken);
-        return currentFault is { Status: FaultStatus.Queued or FaultStatus.Analyzing }
-            ? currentFault
-            : throw new FaultGroupingStateChangedException(faultId);
-    }
+    private async Task<Fault> LockOpenFaultAsync(Guid faultId, CancellationToken cancellationToken) =>
+        (await faultRepository.FindByIdForUpdateAsync(faultId, cancellationToken)) is { Status: FaultStatus.Queued or FaultStatus.Analyzing } currentFault
+            ? currentFault : throw new FaultGroupingStateChangedException(faultId);
     private async Task<FaultGroupingOutcome> CreateNewFaultAsync(
         Signal draftSignal,
         Guid? recurrenceOfFaultId,
@@ -173,6 +170,10 @@ public sealed class FaultGroupingCoordinator(
         var isMassIssue = FaultGroupingMetrics.DetermineIsMassIssue(draftSignal, neighborCount, configuration.FaultGrouping);
 
         await groundedFactsAssembler.AssembleAsync(job, finalSignal, fault, neighborCount, isMassIssue, configuration.FaultGrouping, cancellationToken, recurrenceState);
+        await recurrenceEscalationScheduler.ScheduleIfEscalatedAsync(
+            recurrenceState is null ? null : new RecurrenceAttachmentResult(job, recurrenceState),
+            fault,
+            cancellationToken);
 
         return new FaultGroupingOutcome(fault, job, IsNewFault: true, IsNewJob: true, IsSuppressed: false);
     }
@@ -190,7 +191,9 @@ public sealed class FaultGroupingCoordinator(
         await signalRepository.AttachToFaultAsync(draftSignal.Id, winningFault.Id, cancellationToken);
         var finalSignal = draftSignal with { FaultId = winningFault.Id };
         await neighborSetRefresher.RefreshAsync(winningFault, finalSignal, configuration, cancellationToken);
-        await recurrenceTracker.TrackAttachmentAsync(winningFault, finalSignal, triageJobRepository, groundedFactsAssembler, configuration.FaultGrouping, cancellationToken);
+        var recurrenceAttachment = await recurrenceTracker.TrackAttachmentAsync(
+            winningFault, finalSignal, triageJobRepository, groundedFactsAssembler, configuration.FaultGrouping, cancellationToken);
+        await recurrenceEscalationScheduler.ScheduleIfEscalatedAsync(recurrenceAttachment, winningFault, cancellationToken);
         return winningFault;
     }
 }

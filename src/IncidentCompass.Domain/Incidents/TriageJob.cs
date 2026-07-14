@@ -12,4 +12,11 @@ public sealed record TriageJob(
     string? LastErrorMessage,
     string ConfigHash,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset UpdatedAtUtc);
+    DateTimeOffset UpdatedAtUtc)
+{
+    public Guid? ReTriageTriggerJobId { get; init; }
+
+    public Guid? SupersedesReportId { get; init; }
+
+    public bool IsReTriage => ReTriageTriggerJobId is not null;
+}

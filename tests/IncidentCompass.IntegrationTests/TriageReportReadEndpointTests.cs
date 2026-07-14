@@ -68,6 +68,48 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Assert.False(recurrenceEvidence.ArtifactPayload.GetProperty("escalationIntentCreated").GetBoolean());
     }
     [DockerAvailableFact]
+    public async Task RecurrenceEscalation_SchedulesReTriageAndSupersedesPriorReport()
+    {
+        using var scope = await CreateScopeAsync(useReTriageConfig: true);
+        var serviceName = "retriage-svc-" + Guid.NewGuid().ToString("N");
+        var first = await PostIngestAsync(scope.Client, serviceName);
+        await RunClaimedJobAsync(scope, first.JobId!.Value, "worker-retriage-prior");
+
+        var firstReportId = await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT id FROM incidentcompass.triage_reports WHERE job_id = @job_id;",
+            ("job_id", first.JobId!.Value));
+        await ExecuteAsync(scope.ConnectionString, "UPDATE incidentcompass.faults SET created_at_utc = now() - interval '3 hours', completed_at_utc = now() - interval '2 hours' WHERE id = @fault_id;", ("fault_id", first.FaultId));
+
+        var recurrence = await PostIngestAsync(scope.Client, serviceName);
+        var reTriageJobId = await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT id FROM incidentcompass.triage_jobs WHERE retriage_trigger_job_id = @trigger_job_id;",
+            ("trigger_job_id", recurrence.JobId!.Value));
+        Assert.Equal(first.FaultId, await ScalarAsync<Guid>(scope.ConnectionString, "SELECT fault_id FROM incidentcompass.triage_jobs WHERE id = @job_id;", ("job_id", reTriageJobId)));
+        Assert.Equal(firstReportId, await ScalarAsync<Guid>(scope.ConnectionString, "SELECT supersedes_report_id FROM incidentcompass.triage_jobs WHERE id = @job_id;", ("job_id", reTriageJobId)));
+        Assert.Equal(1, await ScalarAsync<long>(scope.ConnectionString, "SELECT count(*) FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'PriorReport';", ("job_id", reTriageJobId)));
+
+        await RunClaimedJobAsync(scope, reTriageJobId, "worker-retriage-successor");
+
+        var successorReportId = await ScalarAsync<Guid>(
+            scope.ConnectionString,
+            "SELECT id FROM incidentcompass.triage_reports WHERE job_id = @job_id;",
+            ("job_id", reTriageJobId));
+        Assert.Equal(firstReportId, await ScalarAsync<Guid>(scope.ConnectionString, "SELECT supersedes_report_id FROM incidentcompass.triage_reports WHERE id = @report_id;", ("report_id", successorReportId)));
+        Assert.Equal("Completed", await ScalarAsync<string>(scope.ConnectionString, "SELECT status FROM incidentcompass.faults WHERE id = @fault_id;", ("fault_id", first.FaultId)));
+
+        var prior = await GetReportAsync(scope.Client, "/api/v1/triage-reports/" + firstReportId);
+        Assert.Equal(successorReportId, prior.SupersededByReportId);
+        Assert.False(prior.IsLatestForFault);
+        var successor = await GetReportAsync(scope.Client, "/api/v1/triage-reports/" + successorReportId);
+        Assert.Equal("LikelyRegression", successor.Classification);
+        Assert.Contains(successor.Evidence, evidence => evidence.Kind == "RecurrenceState");
+        var latest = await GetReportAsync(scope.Client, "/api/v1/faults/" + first.FaultId + "/triage-report");
+        Assert.Equal(successorReportId, latest.Id);
+    }
+
+    [DockerAvailableFact]
     public async Task GetTriageReportHistory_ExposesImmutableSupersessionAndLatestFaultReport()
     {
         using var scope = await CreateScopeAsync();
@@ -131,7 +173,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Assert.Equal(successorReportId, latest.Id);
         Assert.True(latest.IsLatestForFault);
     }
-    private async Task<TestScope> CreateScopeAsync(bool citeRecurrenceState = false)
+    private async Task<TestScope> CreateScopeAsync(bool citeRecurrenceState = false, bool useReTriageConfig = false)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
@@ -140,17 +182,26 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         {
             builder.UseSetting("ConnectionStrings:IncidentCompass", connectionString);
             builder.UseExplicitMockProviders();
+            if (useReTriageConfig)
+            {
+                builder.UseSetting("IncidentCompass:ConfigSource:Path", ReTriageFixtureConfigPath());
+            }
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IAiModelClient>();
-                services.AddScoped<IAiModelClient>(_ => citeRecurrenceState
-                    ? new RecurrenceStateCitingModelClient()
-                    : new PriorReportCitingModelClient());
+                services.AddScoped<IAiModelClient>(_ => useReTriageConfig
+                    ? new ReTriageModelClient()
+                    : citeRecurrenceState
+                        ? new RecurrenceStateCitingModelClient()
+                        : new PriorReportCitingModelClient());
             });
         });
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         return new TestScope(factory, client, connectionString);
     }
+
+    private static string ReTriageFixtureConfigPath() =>
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "retriage-triage-config", "incidentcompass.config.json");
 
     private static async Task RunClaimedJobAsync(TestScope scope, Guid expectedJobId, string workerId)
     {
@@ -289,6 +340,36 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
             return line[(start + "artifact:".Length)..].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
         }
     }
+    private sealed class ReTriageModelClient : IAiModelClient
+    {
+        public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
+        {
+            var recurrence = FindArtifactId(request, "RecurrenceState");
+            var hasPriorReport = FindArtifactId(request, "PriorReport") is not null;
+            var referenceId = recurrence ?? FindArtifactId(request, "TriggerSignal")
+                ?? throw new InvalidOperationException("No citable prompt artifact was found.");
+            var classification = hasPriorReport ? "LikelyRegression" : "SimpleKnownError";
+            var summary = hasPriorReport ? "Recurrence escalated re-triage." : "Initial triage report.";
+            using var arguments = JsonDocument.Parse("{\"report_json\":{\"status\":\"Completed\",\"summary\":\"" + summary + "\",\"classification\":\"" + classification + "\",\"confidence\":\"Medium\",\"documentationFit\":\"Missing\",\"evidence\":[{\"referenceId\":\"" + referenceId + "\"}],\"limitations\":[],\"recommendedNextAction\":\"Review recurrence facts.\"}}");
+            return Task.FromResult(new AiModelResponse(
+                "publish", request.Model, "retriage-test", new AiModelUsage(10, 5, 15), request.CorrelationId,
+                [new AiToolCall("publish-retriage", "publish_report", "v1", arguments.RootElement.Clone())]));
+        }
+
+        private static string? FindArtifactId(AiModelRequest request, string kind)
+        {
+            var prompt = request.Messages.First(message => message.Role == AiMessageRole.User).Content;
+            var line = prompt.Split('\n').FirstOrDefault(value => value.Contains("kind=" + kind, StringComparison.Ordinal));
+            if (line is null)
+            {
+                return null;
+            }
+
+            var start = line.IndexOf("artifact:", StringComparison.Ordinal);
+            return line[(start + "artifact:".Length)..].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+        }
+    }
+
     private sealed record TestScope(WebApplicationFactory<Program> Factory, HttpClient Client, string ConnectionString) : IDisposable
     {
         public void Dispose()

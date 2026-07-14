@@ -44,6 +44,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<IIntakeUnitOfWork, InMemoryIntakeUnitOfWork>();
         services.AddSingleton<ITriageJobRepository, InMemoryTriageJobRepository>();
         services.AddSingleton<ITriageArtifactRepository, InMemoryTriageArtifactRepository>();
+        services.AddSingleton<IRecurrenceStateRepository, InMemoryRecurrenceStateRepository>();
         services.AddSingleton<ITriageJobRuntimeRepository, InMemoryTriageJobRuntimeRepository>();
         services.AddSingleton<IPriorReportSummaryProvider, InMemoryPriorReportSummaryProvider>();
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
@@ -203,6 +204,14 @@ public sealed class MemoryOnlyCompositionTests
         public Task InsertAsync(TriageArtifact artifact, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task ReplaceJobLevelAsync(TriageArtifact artifact, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class InMemoryRecurrenceStateRepository : IRecurrenceStateRepository
+    {
+        public Task<RecurrenceState> RecordAsync(
+            RecurrenceOccurrence occurrence,
+            CancellationToken cancellationToken) => Task.FromResult(
+                new RecurrenceState(0, occurrence.OccurredAtUtc, occurrence.OccurredAtUtc, null, null));
     }
 
     private sealed class InMemoryTriageJobRuntimeRepository : ITriageJobRuntimeRepository

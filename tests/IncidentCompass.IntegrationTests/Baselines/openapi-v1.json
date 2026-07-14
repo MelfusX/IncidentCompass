@@ -263,6 +263,48 @@
           }
         }
       }
+    },
+    "/api/v1/faults/{faultId}/triage-report": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Return the latest triage report for a fault.",
+        "operationId": "GetLatestTriageReportForFault",
+        "parameters": [
+          {
+            "name": "faultId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriageReportDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -857,6 +899,9 @@
           "limitations",
           "configHash",
           "createdAtUtc",
+          "supersedesReportId",
+          "supersededByReportId",
+          "isLatestForFault",
           "evidence"
         ],
         "type": "object",
@@ -905,6 +950,23 @@
           "createdAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "supersedesReportId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "supersededByReportId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "isLatestForFault": {
+            "type": "boolean"
           },
           "evidence": {
             "type": "array",

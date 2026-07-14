@@ -80,7 +80,7 @@ service/severity window, or can open a recurrence fault and one pending job afte
 counter. Every distinct accepted signal attached to the open recurrence advances that counter in the same
 PostgreSQL transaction; the threshold stores at most one escalation intent linked to the recurrence job.
 The job-level `RecurrenceState` artifact exposes the count, timestamps and intent to a grounded report.
-This is deterministic intake behavior, not automatic external notification or report supersession.
+When that one escalation can find a published report in the recurrence chain, intake atomically creates one pending re-triage job for the reported fault. The job carries copied `RecurrenceState` facts and an explicitly untrusted `PriorReport` artifact. Its new report must cite the recurrence facts, may classify the incident differently, and supersedes the prior immutable report. This does not send external notifications; a later notification feature must treat a superseding report as an update.
 
 ## File-Backed Memory Sync
 

@@ -107,7 +107,8 @@ internal sealed class PostgresTriageJobRuntimeRepository(
             WHERE job.id = candidate.id
             RETURNING job.id, job.fault_id, job.status, job.attempt, job.locked_by,
                       job.locked_until_utc, job.next_attempt_at_utc, job.last_error_code,
-                      job.last_error_message, job.config_hash, job.created_at_utc, job.updated_at_utc;
+                      job.last_error_message, job.config_hash, job.created_at_utc, job.updated_at_utc,
+                      job.retriage_trigger_job_id, job.supersedes_report_id;
             """, connection, transaction);
         command.AddParameter("worker_id", workerId);
         command.AddParameter("locked_until_utc", lockedUntilUtc);

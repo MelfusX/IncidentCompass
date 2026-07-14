@@ -23,6 +23,8 @@ internal static class IntakeSetup
         services.TryAddScoped<GroundedFactsAssembler>();
         services.TryAddScoped<OpenFaultNeighborSetRefresher>();
         services.TryAddScoped<RecurrenceTracker>();
+        services.TryAddScoped<IRecurrenceEscalationReTriageScheduler, DeferredRecurrenceEscalationReTriageScheduler>();
+        services.TryAddScoped<RecurrenceEscalationScheduler>();
         services.TryAddScoped<FaultGroupingCoordinator>();
 
         services.TryAddScoped<IRequestHandler<IngestSignalCommand, IngestSignalResponse>, IngestSignalCommandHandler>();

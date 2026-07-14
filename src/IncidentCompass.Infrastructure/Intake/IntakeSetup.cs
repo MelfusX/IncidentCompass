@@ -37,6 +37,7 @@ internal static class IntakeSetup
         services.TryAddScoped<IFaultRepository, PostgresFaultRepository>();
         services.TryAddScoped<ITriageJobRepository, PostgresTriageJobRepository>();
         services.TryAddScoped<IRecurrenceStateRepository, PostgresRecurrenceStateRepository>();
+        services.Replace(ServiceDescriptor.Scoped<IRecurrenceEscalationReTriageScheduler, PostgresRecurrenceEscalationReTriageScheduler>());
         services.TryAddScoped<ITriageJobRuntimeRepository, PostgresTriageJobRuntimeRepository>();
         services.TryAddScoped<ITriageArtifactRepository, PostgresTriageArtifactRepository>();
         services.TryAddScoped<IPriorReportSummaryProvider, PostgresPriorReportSummaryProvider>();

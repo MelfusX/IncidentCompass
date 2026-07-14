@@ -51,7 +51,8 @@ internal sealed class PostgresTriageJobRepository(PostgresDataSourceProvider dat
         await using var lease = await transactionContext.OpenConnectionAsync(dataSourceProvider, cancellationToken);
         await using var command = new NpgsqlCommand("""
             SELECT id, fault_id, status, attempt, locked_by, locked_until_utc, next_attempt_at_utc,
-                   last_error_code, last_error_message, config_hash, created_at_utc, updated_at_utc
+                   last_error_code, last_error_message, config_hash, created_at_utc, updated_at_utc,
+                   retriage_trigger_job_id, supersedes_report_id
             FROM incidentcompass.triage_jobs
             WHERE fault_id = @fault_id
             ORDER BY created_at_utc DESC

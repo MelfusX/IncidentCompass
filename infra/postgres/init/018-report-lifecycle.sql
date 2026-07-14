@@ -1,3 +1,6 @@
+ALTER TABLE incidentcompass.triage_jobs
+    DROP CONSTRAINT IF EXISTS fk_triage_jobs_superseded_same_fault;
+
 ALTER TABLE incidentcompass.triage_reports
     DROP CONSTRAINT IF EXISTS triage_reports_fault_id_key;
 
