@@ -38,10 +38,10 @@ jobs:
         run: ./scripts/package-vulnerability-gate.ps1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@1ad29ea4a422cce9a242a9fae469541dcd08addc # v4
+        uses: github/codeql-action/init@v4
         with:
           languages: csharp
           build-mode: none
 
       - name: Analyze
-        uses: github/codeql-action/analyze@1ad29ea4a422cce9a242a9fae469541dcd08addc # v4
+        uses: github/codeql-action/analyze@v4

@@ -6,9 +6,18 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      nuget-dependencies:
+      dotnet-patches:
         patterns:
-          - "*"
+          - "Microsoft.AspNetCore.*"
+          - "Microsoft.Extensions.*"
+        update-types:
+          - "patch"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry*"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
       - dependency-name: "Microsoft.OpenApi"
         update-types:
@@ -19,3 +28,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      codeql:
+        patterns:
+          - "github/codeql-action/*"
