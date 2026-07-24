@@ -10,9 +10,9 @@
       },
       "Grpc.Tools": {
         "type": "Direct",
-        "requested": "[2.82.0, )",
-        "resolved": "2.82.0",
-        "contentHash": "jqD/u8PHvZLCwSu+kxYMjq+wlMYp6qN9Gk1FAjTvS/SDYafPgRwB2wQiKD0yDwX/5BWQnUG3IIOsNPcqgCLVtg=="
+        "requested": "[2.83.0, )",
+        "resolved": "2.83.0",
+        "contentHash": "vK2Go/83W0v2Nn7tTP9fGrX4IjmOa93s3M0SZeFimU1vIIr2wL9yNJlIyK21y85SGm3++JncB8IF751cjoLHuQ=="
       },
       "Microsoft.AspNetCore.OpenApi": {
         "type": "Direct",
