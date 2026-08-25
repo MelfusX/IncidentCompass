@@ -12,6 +12,7 @@ using IncidentCompass.Domain.Incidents.Statuses;
 
 namespace IncidentCompass.UnitTests;
 
+[Collection("Runtime telemetry")]
 public sealed class InvestigationModelCallerTests
 {
     [Fact]
