@@ -4,6 +4,7 @@ using IncidentCompass.Application.Core.Observability;
 
 namespace IncidentCompass.UnitTests;
 
+[Collection("Runtime telemetry")]
 public sealed class RuntimeTelemetryTests
 {
     [Fact]
