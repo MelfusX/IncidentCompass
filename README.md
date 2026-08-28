@@ -1,8 +1,8 @@
 # IncidentCompass
 
-[![CI](https://github.com/MelfusX/IncidentCompass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MelfusX/IncidentCompass/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/MelfusX/IncidentCompass)](https://github.com/MelfusX/IncidentCompass/releases/latest)
-[![License](https://img.shields.io/github/license/MelfusX/IncidentCompass)](LICENSE)
+[![CI](https://github.com/ilagutin/IncidentCompass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ilagutin/IncidentCompass/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/ilagutin/IncidentCompass)](https://github.com/ilagutin/IncidentCompass/releases/latest)
+[![License](https://img.shields.io/github/license/ilagutin/IncidentCompass)](LICENSE)
 
 A .NET 10 backend that turns an incident signal into a reviewable, evidence-backed triage report.
 
@@ -140,7 +140,7 @@ credentials, demo auth and Compose defaults must be replaced before any non-loca
 ## Relationship To dotnet-genai-starter
 
 IncidentCompass was bootstrapped from the
-[dotnet-genai-starter](https://github.com/MelfusX/dotnet-genai-starter) repository's layered .NET
+[dotnet-genai-starter](https://github.com/ilagutin/dotnet-genai-starter) repository's layered .NET
 structure and model/embedding gateway boundaries. It was then specialized into one incident-triage
 workflow. Chat, general RAG document ingestion, evaluations, usage dashboards and MCP product
 surfaces were removed because they do not belong to this project's scope.
