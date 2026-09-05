@@ -8,6 +8,7 @@ internal sealed class ApiUserContextStartupFilter : IStartupFilter
     {
         return applicationBuilder =>
         {
+            _ = applicationBuilder.ApplicationServices.GetRequiredService<ApiKeyCredentialResolver>();
             using var scope = applicationBuilder.ApplicationServices.CreateScope();
             var userContext = scope.ServiceProvider.GetService<IUserContext>();
             if (userContext is null or IBackgroundUserContext)

@@ -1,4 +1,5 @@
 @IncidentCompass.Api_HostAddress = http://localhost:5198
+@IncidentCompass.Api_Key = replace-with-a-32-character-base64url-key
 
 GET {{IncidentCompass.Api_HostAddress}}/api/v1/health
 Accept: application/json
@@ -7,6 +8,7 @@ Accept: application/json
 
 GET {{IncidentCompass.Api_HostAddress}}/api/v1/users/me
 Accept: application/json
+X-IncidentCompass-Key: {{IncidentCompass.Api_Key}}
 X-Demo-User-Id: alice
 X-Demo-Tenant-Id: local
 X-Demo-Roles: developer,admin

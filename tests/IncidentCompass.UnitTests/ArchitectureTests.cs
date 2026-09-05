@@ -172,6 +172,35 @@ public sealed class ArchitectureTests
         Assert.Empty(failures);
     }
 
+    [Fact]
+    public void ApiAuthenticationDetails_DoNotLeakIntoApplicationOrDomain()
+    {
+        var forbiddenMarkers = new[]
+        {
+            "X-IncidentCompass-Key",
+            "ApiKeyAuthOptions",
+            "ApiKeyCredential",
+            "FixedWindowRateLimiter",
+            "Microsoft.AspNetCore.Authentication"
+        };
+        var failures = new List<string>();
+
+        foreach (var projectName in new[] { "IncidentCompass.Application", "IncidentCompass.Domain" })
+        {
+            var projectDirectory = Path.Combine(RepositoryRoot(), "src", projectName);
+            foreach (var sourcePath in EnumerateSourceFiles(projectDirectory))
+            {
+                AddForbiddenMarkers(
+                    failures,
+                    Path.GetRelativePath(RepositoryRoot(), sourcePath),
+                    File.ReadAllText(sourcePath),
+                    forbiddenMarkers);
+            }
+        }
+
+        Assert.Empty(failures);
+    }
+
     private static Dictionary<string, SourceProject> LoadSourceProjects()
     {
         var sourceDirectory = Path.Combine(RepositoryRoot(), "src");

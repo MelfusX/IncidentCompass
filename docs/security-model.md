@@ -18,11 +18,54 @@ The API registers the demo header-based `IUserContext` only for `Development` by
 
 Demo headers such as `X-Demo-User-Id`, `X-Demo-Tenant-Id` and `X-Demo-Roles` are caller-controlled sample inputs. They are useful for local walkthroughs, but they are not authentication and must not be trusted in deployed environments.
 
+## API-key boundary
+
+The API host supports a minimal shared-key boundary through host-only
+`IncidentCompass:ApiKeyAuth` settings. When `Enabled` is true, a fallback authorization policy
+protects all current and future endpoints unless they are explicitly anonymous. The complete
+anonymous allowlist is `/health`, `/api/v1/health`, `/api/v1/health/memory-sync` and the
+Development-only OpenAPI document. Manual intake, incident-data reads, `users/me` and native OTLP
+trace/log ingestion all use the same boundary.
+
+Clients send exactly one `X-IncidentCompass-Key` value. It must be 32-128 ASCII base64url
+characters with no padding, commas or whitespace. The host stores only its SHA-256 hex digest and
+compares the digest in fixed time. A credential also has a non-secret stable key id and exactly one
+tenant id. Successful authentication supplies both `IUserContext` and `IIncidentTenantContext`
+from that server-owned mapping, so request bodies, OTLP attributes and demo headers cannot choose
+the tenant. Missing, malformed and invalid credentials return `401` before endpoint binding or
+Application dispatch.
+
+`Enabled`, `PermitLimit` and `WindowSeconds` are startup-static. Protected requests share a
+queue-free fixed-window limiter partitioned only by authenticated key id; anonymous health and
+OpenAPI requests are not limited. A valid configuration reload atomically rotates the immutable
+credential map. An invalid reload, or an attempted live change to a startup-static field, installs
+a deny-all map until a fully valid configuration with the original static fields arrives or the
+process restarts. This avoids retaining a potentially revoked credential during a broken reload.
+
+Rejects increment `incidentcompass.api.authentication.rejections` with only the bounded outcome
+`missing`, `malformed` or `invalid`. Raw keys, configured digests and request bodies are excluded
+from auth logs, metrics, errors, the triage ledger and configuration snapshots. Host transport may
+return `431` before application code for a header block above its own size limit.
+
+Credentials are injected through host configuration or environment variables. They are not public
+triage configuration and no raw key belongs in tracked files. For example, credential fields use
+`IncidentCompass__ApiKeyAuth__Credentials__0__KeyId`, `__TenantId` and `__Sha256Digest` suffixes.
+This is minimal authentication, not RBAC, key distribution, a secret store, OAuth or a production
+identity platform.
+
 ## Incident Data Tenant Scope
 
-`IIncidentTenantContext` is separate from `IUserContext`. In v0.2.0 it reads `Ingestion.DefaultTenant` from the server-loaded triage configuration, which is the only tenant source for both manual API intake and OTLP intake. `X-Demo-Tenant-Id`, incident-envelope fields, OTLP resource attributes and other sender-controlled data never select the incident-data tenant.
+`IIncidentTenantContext` is separate from `IUserContext`. With API-key authentication enabled it
+reads the tenant mapped to the authenticated key. In explicitly auth-disabled local/demo mode it
+reads `Ingestion.DefaultTenant` from the server-loaded triage configuration. `X-Demo-Tenant-Id`,
+incident-envelope fields, OTLP resource attributes and other sender-controlled data never select
+the incident-data tenant.
 
-Fault, ledger and report read paths resolve this server-owned scope before querying. An object outside the scope is indistinguishable from a missing object and returns `404`; compact report lists only return scoped rows. This is a local/single-tenant partition, not authentication or authorization. IC-BL-024 is expected to replace this context implementation with server-side API-key-to-tenant mapping without changing intake or read use cases.
+Fault, ledger and report read paths resolve this server-owned scope before querying. An object
+outside the scope is indistinguishable from a missing object and returns `404`; compact report
+lists only return scoped rows. API-key authentication changes only the API composition adapter,
+not the intake or read use cases. Worker/system jobs continue to use their background identity and
+the server-loaded job/configuration tenant context.
 
 ## Logging
 

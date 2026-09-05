@@ -13,9 +13,15 @@ internal static class OtlpEndpoints
     public static IEndpointRouteBuilder MapOtlpEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/v1/traces", IngestTracesAsync)
-            .WithDisplayName("OTLP trace ingestion");
+            .WithDisplayName("OTLP trace ingestion")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
         endpoints.MapPost("/v1/logs", IngestLogsAsync)
-            .WithDisplayName("OTLP log ingestion");
+            .WithDisplayName("OTLP log ingestion")
+            .Produces(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
         return endpoints;
     }
 

@@ -105,6 +105,21 @@ Phase 5 makes `publish_report` a backend-grounded closeout instead of a model-au
 ## Phase 6 Report Lifecycle
 
 `infra/postgres/init/018-report-lifecycle.sql` makes published report rows immutable. Publication serializes on the fault row, inserts a new row with the producing job and an explicit `supersedes_report_id`, and never rewrites prior report content or evidence. `019-retriage-jobs.sql` adds an exactly-once recurrence trigger per source job and constrains its predecessor report to the same fault. When a recurrence escalation finds a prior report anywhere in its recurrence chain, intake creates a pending re-triage job for that reported fault in the same transaction, copies citable recurrence facts, and adds the prior report as an explicitly untrusted `PriorReport` artifact. A re-triage publication must cite `RecurrenceState`; it may independently classify the incident differently. The report detail response exposes predecessor, successor and latest-chain state. `GET /api/v1/faults/{faultId}/triage-report` returns the newest chain head while `GET /api/v1/triage-reports/{id}` continues to retrieve any historical report. `GET /api/v1/triage-reports` returns compact report summaries only, ordered by `(createdAtUtc DESC, reportId DESC)` with a bounded opaque keyset cursor. It supports fault, service, environment, status and classification filters and exposes predecessor, successor and latest-chain fields without evidence payloads. All fault, ledger and report reads are tenant-scoped; out-of-scope objects return `404`.
+
+## API authentication boundary
+
+API-key parsing, digest matching, credential reload, authorization metadata and rate limiting live
+only in `IncidentCompass.Api`. The Application contracts remain provider-neutral: an authenticated
+API request is projected into the existing `IUserContext` plus `IIncidentTenantContext` ports. One
+host-only credential maps a stable key id to exactly one tenant. The API composition replaces the
+config-default incident tenant adapter only when API-key authentication is enabled; Worker
+composition and background identity are unchanged.
+
+The API installs a fallback policy so new routes are protected unless they explicitly opt into the
+small metadata-only anonymous allowlist. Authentication precedes the zero-queue global limiter,
+which partitions protected traffic by backend-resolved key id. Credential digests and limiter
+settings are host configuration, not triage configuration, Domain state or persistence schema.
+
 ## Rules
 
 - Domain must not depend on Application, Infrastructure, Api, Worker, provider SDKs or persistence libraries.

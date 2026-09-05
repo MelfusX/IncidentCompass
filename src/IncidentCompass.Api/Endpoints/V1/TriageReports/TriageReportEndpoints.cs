@@ -29,6 +29,8 @@ internal static class TriageReportEndpoints
             .WithName("ListTriageReports")
             .WithSummary("List compact tenant-scoped triage report summaries with stable keyset pagination.")
             .Produces<TriageReportListResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         api.MapGet("/triage-reports/{id:guid}", async (
@@ -45,6 +47,8 @@ internal static class TriageReportEndpoints
             .WithName("GetTriageReportById")
             .WithSummary("Return a triage report with backend-grounded evidence.")
             .Produces<TriageReportDetailsResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         api.MapGet("/faults/{faultId:guid}/triage-report", async (
@@ -61,6 +65,8 @@ internal static class TriageReportEndpoints
             .WithName("GetLatestTriageReportForFault")
             .WithSummary("Return the latest triage report for a fault.")
             .Produces<TriageReportDetailsResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         return api;

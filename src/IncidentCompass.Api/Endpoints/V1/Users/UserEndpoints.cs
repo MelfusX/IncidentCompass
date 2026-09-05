@@ -19,7 +19,9 @@ internal static class UserEndpoints
             })
             .WithName("GetCurrentUser")
             .WithSummary("Return the authenticated caller's identity (user id, tenant, roles, groups).")
-            .Produces<CurrentUserDto>(StatusCodes.Status200OK);
+            .Produces<CurrentUserDto>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         return api;
     }

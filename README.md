@@ -75,6 +75,9 @@ complete the multi-turn trajectory or reach a correct conclusion.
 - Governed read-only `ticket_search` through a system-neutral Application port and a GitHub Issues
   adapter with a fixed API authority, configured repository, deterministic bounded ranking and
   grounded `ExistingTicket` citations.
+- Optional host-configured API-key authentication for API-v1 data and native OTLP routes, with
+  server-side key-to-tenant binding, deny-by-default endpoint coverage and queue-free per-key
+  fixed-window limits. Auth-disabled demo mode remains local-only.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -134,15 +137,24 @@ public triage configuration or its snapshots. Requests always target `https://ap
 redirects disabled. Removing the `tickets` role or its `ticket_search` grant removes the tool from
 the model surface. Ticket create/update is not part of this read-only integration.
 
+API-key authentication is disabled by default for the local walkthrough. A non-local API host must
+enable `IncidentCompass__ApiKeyAuth__Enabled`, set startup-static `PermitLimit` and `WindowSeconds`,
+and inject one or more credential entries containing only a stable key id, tenant id and SHA-256
+hex digest. Clients send the corresponding 32-128 character base64url secret in exactly one
+`X-IncidentCompass-Key` header. See [Security model](docs/security-model.md) for reload, tenant and
+rate-limit behavior. Do not place a raw key in tracked configuration.
+
 Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).
 
 ## Scope And Limits
 
 IncidentCompass is reference-quality software for local review, not a production incident platform.
-The current scope does not provide enterprise authentication, a stable extension framework, a UI,
-external actions, an MCP surface, a usage dashboard or a general document-ingestion system. Local
-credentials, demo auth and Compose defaults must be replaced before any non-local deployment.
+The current scope provides a minimal host-managed API-key boundary, not enterprise identity, RBAC,
+managed key distribution or a secret store. It also does not provide a stable extension framework,
+a UI, external actions, an MCP surface, a usage dashboard or a general document-ingestion system.
+Demo auth and Compose defaults remain local-only; non-local operators must inject high-entropy key
+digests through protected host configuration and apply the usual transport and deployment controls.
 
 ## Documentation
 
