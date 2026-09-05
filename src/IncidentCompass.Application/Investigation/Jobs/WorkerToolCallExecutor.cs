@@ -86,7 +86,11 @@ internal sealed class WorkerToolCallExecutor(
                 roleName,
                 toolCall.Name,
                 investigationContext.Fault.TenantId,
-                investigationContext.Fault.ServiceName),
+                investigationContext.Fault.ServiceName)
+            {
+                TriggerSignal = investigationContext.TriggerSignal,
+                FaultFingerprint = investigationContext.Fault.Fingerprint
+            },
             validation.SanitizedArguments,
             cancellationToken);
         if (execution.Status == ToolExecutionStatus.Succeeded)

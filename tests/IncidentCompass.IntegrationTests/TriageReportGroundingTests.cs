@@ -340,6 +340,97 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
         Assert.Equal("NeighborSet", evidence.Kind);
     }
 
+    [DockerAvailableFact]
+    public async Task PublishAsync_CitesClosedSourceCodePayloadUsingExistingRetrievedItemKind()
+    {
+        using var scope = await CreateScopeAsync();
+        var serviceName = "source-grounding-" + Guid.NewGuid().ToString("N");
+        var ingested = await PostIngestAsync(scope.Client, new TesterEnvelopeDto(
+            "tester", serviceName, "prod", DateTimeOffset.UtcNow,
+            new TesterAttributesDto("ExampleException", "source grounding", "/source")));
+        var claimed = await ClaimAsync(scope, ingested.JobId!.Value, "worker-source-grounding");
+        await SetCurrentReleaseAsync(scope.ConnectionString, claimed.ConfigHash, serviceName, "r1");
+        var artifactId = await InsertSourceArtifactAsync(scope.ConnectionString, claimed.Id, claimed.Attempt, "r1");
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<ITriageReportRepository>();
+        await repository.PublishAsync(
+            claimed,
+            "worker-source-grounding",
+            CreateReport(artifactId),
+            TestContext.Current.CancellationToken);
+
+        var evidence = await ReadSingleEvidenceAsync(scope.ConnectionString, ingested.FaultId);
+        Assert.Equal("RetrievedItem", evidence.Kind);
+        var evidenceKind = await ScalarAsync<string>(scope.ConnectionString, """
+            SELECT a.redacted_payload->>'evidenceKind'
+            FROM incidentcompass.triage_evidence e
+            JOIN incidentcompass.triage_artifacts a ON a.id = e.artifact_id
+            JOIN incidentcompass.triage_reports r ON r.id = e.report_id
+            WHERE r.fault_id = @fault_id;
+            """, ("fault_id", ingested.FaultId));
+        Assert.Equal("SourceCode", evidenceKind);
+    }
+
+    [DockerAvailableFact]
+    public async Task PublishAsync_RejectsSourceArtifactForDifferentRelease()
+    {
+        using var scope = await CreateScopeAsync();
+        var serviceName = "source-stale-" + Guid.NewGuid().ToString("N");
+        var ingested = await PostIngestAsync(scope.Client, new TesterEnvelopeDto(
+            "tester", serviceName, "prod", DateTimeOffset.UtcNow,
+            new TesterAttributesDto("ExampleException", "stale source", "/source")));
+        var claimed = await ClaimAsync(scope, ingested.JobId!.Value, "worker-source-stale");
+        await SetCurrentReleaseAsync(scope.ConnectionString, claimed.ConfigHash, serviceName, "r2");
+        var artifactId = await InsertSourceArtifactAsync(scope.ConnectionString, claimed.Id, claimed.Attempt, "r1");
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<ITriageReportRepository>();
+        await Assert.ThrowsAsync<TriageReportValidationException>(() => repository.PublishAsync(
+            claimed,
+            "worker-source-stale",
+            CreateReport(artifactId),
+            TestContext.Current.CancellationToken));
+    }
+
+    [DockerAvailableFact]
+    public async Task TriageReportPublisher_AppendsDurableSourceNoMatchLimitation()
+    {
+        using var scope = await CreateScopeAsync();
+        var ingested = await PostIngestAsync(scope.Client, "source-no-match-policy");
+        var claimed = await ClaimAsync(scope, ingested.JobId!.Value, "worker-source-no-match");
+        await InsertToolOutcomeAsync(scope.ConnectionString, claimed.Id, claimed.Attempt);
+        var triggerId = await ReadArtifactIdAsync(scope.ConnectionString, claimed.Id, "TriggerSignal");
+        var arguments = JsonSerializer.SerializeToElement(new
+        {
+            report_json = new
+            {
+                status = "Completed",
+                summary = "Grounded report.",
+                classification = "SimpleKnownError",
+                confidence = "Medium",
+                documentationFit = "Missing",
+                evidence = new[] { new { referenceId = triggerId.ToString() } },
+                limitations = Array.Empty<string>(),
+                recommendedNextAction = "Review the signal."
+            }
+        });
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var publisher = serviceScope.ServiceProvider.GetRequiredService<TriageReportPublisher>();
+        await publisher.PublishAsync(
+            claimed,
+            "worker-source-no-match",
+            new AiToolCall("publish-source-no-match", "publish_report", "v1", arguments),
+            TestContext.Current.CancellationToken);
+
+        var limitation = await ScalarAsync<string>(
+            scope.ConnectionString,
+            "SELECT limitations[1] FROM incidentcompass.triage_reports WHERE fault_id = @fault_id;",
+            ("fault_id", ingested.FaultId));
+        Assert.Equal("Read-only context source_lookup returned no matches (source_no_match).", limitation);
+    }
+
     private async Task<TestScope> CreateScopeAsync(Action<IServiceCollection>? configureServices = null)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
@@ -502,6 +593,69 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
             ("content_hash", unique));
         return artifactId;
     }
+
+    private static async Task<Guid> InsertSourceArtifactAsync(
+        string connectionString,
+        Guid jobId,
+        int attempt,
+        string release)
+    {
+        var artifactId = Guid.NewGuid();
+        await ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES (
+                @id, @job_id, @attempt, 'RetrievedItem', @domain_ref, @payload::jsonb, @content_hash, now());
+            """,
+            ("id", artifactId),
+            ("job_id", jobId),
+            ("attempt", attempt),
+            ("domain_ref", $"source:{release}:src/Checkout.cs"),
+            ("payload", JsonSerializer.Serialize(new
+            {
+                evidenceKind = "SourceCode",
+                relativePath = "src/Checkout.cs",
+                lineStart = 10,
+                lineEnd = 12,
+                excerpt = "line 10\nline 11\nline 12",
+                release,
+                mappingMethod = "heuristic"
+            })),
+            ("content_hash", Guid.NewGuid().ToString("N")));
+        return artifactId;
+    }
+
+    private static Task SetCurrentReleaseAsync(
+        string connectionString,
+        string configHash,
+        string serviceName,
+        string release) =>
+        ExecuteAsync(connectionString, """
+            UPDATE incidentcompass.triage_config_snapshots
+            SET serialized_config = jsonb_set(
+                serialized_config,
+                '{CurrentReleases}',
+                jsonb_build_object(@service_name, @release),
+                true)
+            WHERE config_hash = @config_hash;
+            """,
+            ("service_name", serviceName),
+            ("release", release),
+            ("config_hash", configHash));
+
+    private static Task InsertToolOutcomeAsync(string connectionString, Guid jobId, int attempt) =>
+        ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES (
+                @id, @job_id, @attempt, 'ToolResult', 'tool:source_lookup',
+                '{"outcome":"no_match","code":"source_no_match","matched":false}'::jsonb,
+                @content_hash, now());
+            """,
+            ("id", Guid.NewGuid()),
+            ("job_id", jobId),
+            ("attempt", attempt),
+            ("content_hash", Guid.NewGuid().ToString("N")));
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {
         await using var connection = new NpgsqlConnection(connectionString);

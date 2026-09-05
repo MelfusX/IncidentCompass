@@ -31,6 +31,16 @@ Fault, ledger and report read paths resolve this server-owned scope before query
 - If full prompt logging is ever enabled, it must require opt-in, redaction, encryption, retention policy and restricted access.
 - Tool execution is controlled by backend policy. The model may propose tool calls, but it cannot execute tools directly and never receives infrastructure credentials.
 
+## Local source read boundary
+
+The source worker never receives a filesystem root, release selector or arbitrary read argument.
+Host options allowlist exact service/release roots and optional build-path prefixes; the job's
+snapshotted `CurrentReleases` entry is the only release selector. Candidate paths are canonicalized
+and revalidated below the selected root before opening, reparse/symlink traversal is rejected, and
+only configured text extensions within byte, frame, candidate and excerpt limits are read. Source
+bodies and absolute host paths are not logged or persisted. Durable artifacts contain only a
+repository-relative path, bounded excerpt, line range, release and `heuristic` mapping label.
+
 ## Intake Redaction And Pseudonymization
 
 Built-in secret patterns remain active for every signal. The triage config can add attribute-key

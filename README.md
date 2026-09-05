@@ -69,6 +69,9 @@ complete the multi-turn trajectory or reach a correct conclusion.
 - Configured orchestrator and worker roles, typed output schemas, role-scoped tools and ledger-backed
   policy decisions.
 - PostgreSQL/pgvector incident memory with governed `memory_search`, file-backed seed identity and snapshotted per-service current-release markers for documentation fit.
+- Governed `source_lookup` over explicitly configured local checkouts, with backend-selected release
+  and stack frames, bounded text excerpts and grounded `RetrievedItem` citations carrying a closed
+  `SourceCode` artifact payload.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -110,9 +113,16 @@ flowchart LR
 ~~~
 
 `IncidentCompass.Application` is organized by feature folder: `Core`, `Governance`, `Intake`,
-`Investigation` and `Memory`. `Infrastructure` implements persistence, provider, configuration and
+`Investigation`, `Memory` and `SourceContext`. `Infrastructure` implements persistence, provider, configuration and
 memory adapters. The API remains transport-focused. The Worker owns job claiming and governed
 background processing. Tester is an external HTTP client for the local scenarios.
+
+Local source lookup is disabled operationally until a host configures an exact
+`IncidentCompass:SourceContext:Roots` entry containing `ServiceName`, `Release` and an absolute
+`RootPath`. Optional absolute `BuildPathPrefixes` translate known build-agent paths only on path
+segment boundaries. The selected release still comes exclusively from the snapshotted
+`CurrentReleases` entry for the fault service. Removing the `source` role or its `source_lookup`
+grant from triage configuration removes the tool from the model surface.
 
 Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).

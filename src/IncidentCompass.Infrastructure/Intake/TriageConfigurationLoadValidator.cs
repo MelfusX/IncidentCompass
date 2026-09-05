@@ -136,11 +136,15 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "a configured worker tool id");
                 }
-
                 if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal) &&
                     !string.Equals(roleName, MemoryRoleName, StringComparison.Ordinal))
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "memory_search granted only to the memory role");
+                }
+                if (string.Equals(toolName, "source_lookup", StringComparison.Ordinal) &&
+                    !string.Equals(roleName, "source", StringComparison.Ordinal))
+                {
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "source_lookup granted only to the source role");
                 }
             }
         }

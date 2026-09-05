@@ -6,6 +6,7 @@ using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.List;
+using IncidentCompass.Application.Investigation.Reports.Context;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Embeddings.Mock;
 using IncidentCompass.Infrastructure.Embeddings.OpenAi;
@@ -18,6 +19,7 @@ using IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 using IncidentCompass.Infrastructure.Observability;
 using IncidentCompass.Infrastructure.Postgres;
 using IncidentCompass.Infrastructure.Security;
+using IncidentCompass.Infrastructure.SourceContext;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -42,6 +44,7 @@ public static class Setup
         services.AddPersistenceAdapters();
         services.AddIntakeInfrastructure(configuration);
         services.AddMemoryInfrastructure(configuration);
+        services.AddSourceContextInfrastructure(configuration);
         // Infrastructure supplies the background identity used by Worker hosts.
         // API foreground auth must bind IUserContext explicitly.
         services.TryAddScoped<IBackgroundUserContext, SystemUserContext>();
@@ -183,7 +186,9 @@ public static class Setup
         services.TryAddScoped<ITriageReportReadRepository, PostgresTriageReportReadRepository>();
         services.TryAddScoped<ITriageReportListRepository, PostgresTriageReportListRepository>();
         services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
+        services.TryAddScoped<IReadOnlyContextOutcomeRepository, PostgresReadOnlyContextOutcomeRepository>();
 
         return services;
     }
+
 }
