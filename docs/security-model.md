@@ -134,8 +134,9 @@ tightening guard, recomputes the registered adapter-binding fingerprint and pass
 stored bytes plus the action id only to the exact registered external-action capability. Frozen or
 newly tightened dry-run performs no adapter call; disabled, approval-tightened, unregistered and
 binding-drift cases fail closed with bounded durable evidence. Application composition registers
-only the non-secret Telegram and ticket-create descriptors for public configuration validation.
-Their workflows, adapters, host bindings and credentials are registered only in the Worker host.
+only the non-secret Telegram, ticket-create and ticket-update descriptors for public configuration
+validation. Their workflows, adapters, host bindings and credentials are registered only in the
+Worker host.
 API and shared test host configuration do not require or receive provider credentials.
 
 The durable claim is the at-most-once boundary. Once it records an owner, random fence and database
@@ -161,6 +162,16 @@ marker or category. Every create remains requested until the tenant operator sub
 hashes. Before the single possible POST, bounded local history and GitHub marker lookup fail closed;
 an earlier uncertain marker is read-only and can never authorize another POST. Once the POST starts,
 transport or response ambiguity becomes `dispatch_outcome_unknown` and is not retried.
+
+Ticket update is a separate mandatory-approval capability and is limited to one backend-built evidence
+comment on exactly one cited `ExistingTicket`. The provider-neutral Application resolver exposes only
+report and ticket identity; Infrastructure binds the evidence to the configured repository and
+rechecks it inside the fault-locked proposal transaction. Model output, API input and proposal
+arguments cannot choose a repository or replace the cited issue. The adapter validates the exact
+issue with bounded target and comment-history reads before one possible POST. Missing, foreign,
+multiple, malformed or ambiguous evidence and any preflight failure authorize no write. An existing
+marker suppresses another comment; uncertainty after POST begins becomes `dispatch_outcome_unknown`
+and is never automatically resent.
 
 Telegram routing separates public policy from secret host authority. The snapshotted configuration
 contains at most 32 ordered route ids with optional normalized service/environment selectors and a

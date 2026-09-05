@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Tickets;
 using Microsoft.Extensions.Hosting;
@@ -11,36 +12,46 @@ internal sealed class GitHubIssueConfigurationStartupValidator(
     IOptions<GitHubIssuesOptions> githubOptions) : IHostedService
 {
     private const string BindingError =
-        "GitHub issue host binding does not match the enabled public ticket-create action.";
+        "GitHub issue host binding does not match an enabled public ticket action.";
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var configuration = await configurationRepository.GetCurrentAsync(cancellationToken);
-        if (!configuration.Actions.AllowedTools.Contains(
-                TicketCreateTool.ToolId, StringComparer.Ordinal))
+        var enabledTools = configuration.Actions.AllowedTools
+            .Where(static toolId => toolId is TicketCreateTool.ToolId or
+                TicketUpdatePostReportActionWorkflow.UpdateToolId)
+            .ToArray();
+        if (enabledTools.Length == 0)
         {
             return;
         }
 
-        if (!configuration.Tools.TryGetValue(TicketCreateTool.ToolId, out var tool) ||
-            !string.Equals(tool.Kind, "external_action", StringComparison.Ordinal) ||
-            !string.Equals(tool.Category, "ticket_create", StringComparison.Ordinal) ||
-            !string.Equals(tool.LogicalTargetId, TicketCreateTool.LogicalTargetId, StringComparison.Ordinal))
+        foreach (var toolId in enabledTools)
         {
-            throw new InvalidOperationException(BindingError);
-        }
+            if (!configuration.Tools.TryGetValue(toolId, out var tool) ||
+                !string.Equals(tool.Kind, "external_action", StringComparison.Ordinal) ||
+                !MatchesIdentity(toolId, tool))
+            {
+                throw new InvalidOperationException(BindingError);
+            }
 
-        if (string.Equals(configuration.Actions.DefaultMode, "disabled", StringComparison.Ordinal) ||
-            string.Equals(tool.Mode, "disabled", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        if (!githubOptions.Value.IsConfigured)
-        {
-            throw new InvalidOperationException(BindingError);
+            if (!string.Equals(configuration.Actions.DefaultMode, "disabled", StringComparison.Ordinal) &&
+                !string.Equals(tool.Mode, "disabled", StringComparison.Ordinal) &&
+                !githubOptions.Value.IsConfigured)
+            {
+                throw new InvalidOperationException(BindingError);
+            }
         }
     }
+
+    private static bool MatchesIdentity(string toolId, TriageToolSettings tool) =>
+        toolId == TicketCreateTool.ToolId
+            ? string.Equals(tool.Category, "ticket_create", StringComparison.Ordinal) &&
+              string.Equals(tool.LogicalTargetId, TicketCreateTool.LogicalTargetId, StringComparison.Ordinal)
+            : string.Equals(tool.Category, "ticket_update", StringComparison.Ordinal) &&
+              string.Equals(tool.LogicalTargetId,
+                  TicketUpdatePostReportActionWorkflow.UpdateLogicalTargetId,
+                  StringComparison.Ordinal);
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

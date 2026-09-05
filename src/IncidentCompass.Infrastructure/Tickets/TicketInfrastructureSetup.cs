@@ -27,6 +27,7 @@ internal static class TicketInfrastructureSetup
         services.Replace(ServiceDescriptor.Scoped<ITicketSearch>(provider =>
             provider.GetRequiredService<GitHubIssuesTicketSearch>()));
         services.TryAddScoped<ITicketActionHistory, PostgresTicketActionHistory>();
+        services.TryAddScoped<ITicketUpdateEvidenceResolver, PostgresTicketUpdateEvidenceResolver>();
         return services;
     }
 }

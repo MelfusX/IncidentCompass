@@ -30,9 +30,9 @@ flowchart LR
     message text.
   - `SourceContext/`: provider-neutral source lookup contracts, bounded stack-frame extraction and
     the governed `source_lookup` worker tool.
-  - `Tickets/`: system-neutral ticket-search and ticket-action-history contracts, backend
-    signal-field extraction, the governed read-only `ticket_search` worker tool and the non-secret
-    `ticket_create` action descriptor and payload rules.
+  - `Tickets/`: system-neutral ticket-search, cited-ticket resolution and ticket-action-history
+    contracts, backend signal-field extraction, the governed read-only `ticket_search` worker tool
+    and the non-secret `ticket_create` and `ticket_update` action descriptors and payload rules.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading,
   post-report evaluation and action approval/provenance repositories, model clients, embedding clients,
@@ -92,8 +92,9 @@ those outcomes or turn them into evidence.
 `ticket_search` has an empty model-facing argument object. The backend supplies only bounded fault
 fingerprint and service plus redacted trigger-signal component, error type, error message and known
 labels. The Application keeps search request/result concepts on the read port. Its separate
-ticket-action history port, create descriptor, eligibility check and payload factory remain
-provider-neutral; none contains a provider DTO, HTTP concept, repository selector or credential.
+ticket-action history and cited-update-evidence ports, action descriptors, eligibility checks and
+payload factories remain provider-neutral; none contains a provider DTO, HTTP concept, repository
+selector or credential.
 GitHub Issues is the first Infrastructure adapter; tests also exercise a differently shaped mock
 tracker through the search port.
 
@@ -129,6 +130,24 @@ returned without a write; a prior outcome-unknown permits lookup but never anoth
 empty preflight permits at most one issue POST. Authentication, authorization, rate-limit, malformed
 or transport failure before the POST is a stable no-write result; cancellation, timeout, lost
 connection or unreadable response after it starts becomes `dispatch_outcome_unknown`.
+
+## Governed ticket evidence comment
+
+`ticket_update` is a separate backend-owned post-report action with category `ticket_update`; it does
+not reuse create identity and never appears in the investigation model tool surface. Its workflow
+resolves exactly one `ExistingTicket` cited by the current completed report and accepts it only when
+the closed evidence payload and domain reference identify the Worker-configured GitHub repository.
+Missing, malformed, foreign or multiple candidates produce no proposal. The proposal transaction
+rechecks the current report, adapter binding and exact cited issue under the existing fault lock.
+
+The adapter freezes a bounded backend-built comment, report identity, cited issue number and stable
+lower-hex marker into the approval contract. Exact-hash operator approval is mandatory. Before the
+single possible comment POST, bounded target and first-page comment reads validate the issue and look
+for the marker. An existing exact marker returns the bounded comment identity without another write;
+any ambiguous, paginated, malformed, authentication, authorization, rate-limit, timeout or transport
+preflight result fails definitively with zero writes. Only cancellation, timeout, lost connection or
+an unreadable response after the comment POST begins becomes `dispatch_outcome_unknown`. Title,
+state, labels, assignees, close/reopen and repository mutation remain outside this action.
 
 ## Phase 5 Grounded Reports
 
@@ -188,9 +207,9 @@ is allowed only when the exact proposal already exists; another lost recovery cl
 A workflow may submit only through the existing
 post-report proposal use case. The queue adds no policy path, action adapter or ledger vocabulary,
 and `action_approvals` remains the only approval and dispatch outbox. Application composition
-registers the non-secret Telegram and ticket-create descriptors so API startup can validate public
-configuration without credentials. Worker composition alone registers their workflows, host
-bindings and adapters.
+registers the non-secret Telegram, ticket-create and ticket-update descriptors so API startup can
+validate public configuration without credentials. Worker composition alone registers their
+workflows, host bindings and adapters.
 
 An action proposal freezes approval contract v1 over the immutable origin report id, exact tool id,
 category, effective mode, logical target, secret-free adapter binding fingerprint, canonical payload

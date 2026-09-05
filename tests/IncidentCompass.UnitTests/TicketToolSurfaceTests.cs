@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Tickets;
@@ -21,17 +22,25 @@ public sealed class TicketToolSurfaceTests
     }
 
     [Fact]
-    public void TicketCreateCannotBecomeModelCallableThroughRoleOrConfig()
+    public void TicketWritesCannotBecomeModelCallableThroughRoleOrConfig()
     {
         var executor = CreateExecutor();
         var configuration = Configuration(true, true);
         var tools = configuration.Tools.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         tools[TicketCreateTool.ToolId] = new TriageToolSettings(
             "external_action", null, null, null, "ticket_create", TicketCreateTool.LogicalTargetId);
+        tools[TicketUpdatePostReportActionWorkflow.UpdateToolId] = new TriageToolSettings(
+            "external_action", null, null, null, "ticket_update",
+            TicketUpdatePostReportActionWorkflow.UpdateLogicalTargetId);
         var roles = configuration.Roles.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
         roles["tickets"] = roles["tickets"] with
         {
-            Tools = ["ticket_search", TicketCreateTool.ToolId]
+            Tools =
+            [
+                "ticket_search",
+                TicketCreateTool.ToolId,
+                TicketUpdatePostReportActionWorkflow.UpdateToolId
+            ]
         };
 
         var surface = Surface(executor, configuration with { Tools = tools, Roles = roles });

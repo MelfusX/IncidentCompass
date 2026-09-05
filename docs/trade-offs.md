@@ -166,9 +166,9 @@ the existing proposal transaction's idempotency boundary.
 The queue stops at proposal creation. It has no adapter port, approval decision, dispatch state or
 new ledger vocabulary; `action_approvals` remains the only approval and external-dispatch outbox.
 This adds durable scheduling and recovery without creating a competing policy system. Shared
-composition registers only non-secret Telegram and ticket-create descriptors for configuration
-validation, while Worker composition registers their workflows and adapters. Deterministic Docker
-tests exercise handoff and recovery cases without calling a real provider.
+composition registers only non-secret Telegram, ticket-create and ticket-update descriptors for
+configuration validation, while Worker composition registers their workflows and adapters.
+Deterministic Docker tests exercise handoff and recovery cases without calling a real provider.
 
 ## At-Most-Once Action Dispatch Prefers Visible Uncertainty
 
@@ -190,5 +190,8 @@ outcome-unknown reduces duplicate alerts, but it can suppress a legitimate rapid
 create is the second side-effect adapter. It trades general provider selection and exactly-once
 delivery for one Worker-owned GitHub repository, mandatory approval, deterministic marker lookup and
 at most one POST after bounded preflight. A prior outcome-unknown is never automatically reconciled
-with another write, so an operator may need to inspect the provider. Ticket update and general-purpose
+with another write, so an operator may need to inspect the provider. Ticket update is a distinct
+side-effect adapter limited to a bounded evidence comment on one exact cited issue. It uses mandatory
+approval, a deterministic comment marker, bounded target/comment preflight and one possible POST;
+this smaller surface excludes title, state, label, assignee and repository mutation. General-purpose
 model-selected external actions remain separate work.

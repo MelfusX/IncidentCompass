@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Governance.PostReportActions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -12,6 +13,7 @@ internal static class TicketsSetup
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IImmediateAgentTool, TicketSearchTool>());
         services.AddSingleton(new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead));
         services.AddSingleton(TicketCreateTool.Descriptor);
+        services.AddSingleton(TicketUpdatePostReportActionWorkflow.Descriptor);
         return services;
     }
 }

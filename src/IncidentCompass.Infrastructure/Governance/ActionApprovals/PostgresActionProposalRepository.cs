@@ -142,6 +142,7 @@ internal sealed class PostgresActionProposalRepository(
                 }
             }
 
+            await PostgresTicketUpdateEvidenceResolver.EnforceProposalAsync(connection, transaction, proposal, origin, ticketOptions.Value.ConfiguredRepository, DenyAsync, cancellationToken);
             if (proposal.RegisteredTool.Category == ActionCategory.Notification)
             {
                 var notificationDenial = await PostgresActionProposalReplay.ApplyNotificationGuardAsync(
