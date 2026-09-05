@@ -72,6 +72,9 @@ complete the multi-turn trajectory or reach a correct conclusion.
 - Governed `source_lookup` over explicitly configured local checkouts, with backend-selected release
   and stack frames, bounded text excerpts and grounded `RetrievedItem` citations carrying a closed
   `SourceCode` artifact payload.
+- Governed read-only `ticket_search` through a system-neutral Application port and a GitHub Issues
+  adapter with a fixed API authority, configured repository, deterministic bounded ranking and
+  grounded `ExistingTicket` citations.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -113,7 +116,7 @@ flowchart LR
 ~~~
 
 `IncidentCompass.Application` is organized by feature folder: `Core`, `Governance`, `Intake`,
-`Investigation`, `Memory` and `SourceContext`. `Infrastructure` implements persistence, provider, configuration and
+`Investigation`, `Memory`, `SourceContext` and `Tickets`. `Infrastructure` implements persistence, provider, configuration and
 memory adapters. The API remains transport-focused. The Worker owns job claiming and governed
 background processing. Tester is an external HTTP client for the local scenarios.
 
@@ -123,6 +126,13 @@ Local source lookup is disabled operationally until a host configures an exact
 segment boundaries. The selected release still comes exclusively from the snapshotted
 `CurrentReleases` entry for the fault service. Removing the `source` role or its `source_lookup`
 grant from triage configuration removes the tool from the model surface.
+
+GitHub Issues search is disabled operationally until the Worker host receives
+`IncidentCompass__Tickets__GitHub__Owner`, `IncidentCompass__Tickets__GitHub__Repository` and the
+secret `IncidentCompass__Tickets__GitHub__Token`. The token is a host secret and does not enter the
+public triage configuration or its snapshots. Requests always target `https://api.github.com` with
+redirects disabled. Removing the `tickets` role or its `ticket_search` grant removes the tool from
+the model surface. Ticket create/update is not part of this read-only integration.
 
 Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).

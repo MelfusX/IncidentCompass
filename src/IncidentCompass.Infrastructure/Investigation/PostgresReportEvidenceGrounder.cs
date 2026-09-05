@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.Context;
+using IncidentCompass.Application.Tickets;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
@@ -8,6 +9,13 @@ namespace IncidentCompass.Infrastructure.Investigation;
 
 internal sealed class PostgresReportEvidenceGrounder
 {
+    private readonly string? configuredTicketRepository;
+
+    public PostgresReportEvidenceGrounder(string? configuredTicketRepository = null)
+    {
+        this.configuredTicketRepository = configuredTicketRepository;
+    }
+
     public async Task<IReadOnlyList<GroundedReportEvidence>> GroundAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -24,7 +32,7 @@ internal sealed class PostgresReportEvidenceGrounder
         return grounded;
     }
 
-    private static async Task<GroundedReportEvidence> GroundOneAsync(
+    private async Task<GroundedReportEvidence> GroundOneAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TriageJob job,
@@ -100,7 +108,7 @@ internal sealed class PostgresReportEvidenceGrounder
         throw new TriageReportValidationException("publish_report evidence referenceId must be a triage artifact id.");
     }
 
-    private static string DeriveEvidenceKind(
+    private string DeriveEvidenceKind(
         string artifactKind,
         string? memoryKind,
         string? domainRef,
@@ -110,6 +118,11 @@ internal sealed class PostgresReportEvidenceGrounder
         if (artifactKind == "RetrievedItem" && memoryKind is null)
         {
             if (SourceCodeEvidenceShape.IsCitable(domainRef, payload, currentRelease))
+            {
+                return "RetrievedItem";
+            }
+
+            if (ExistingTicketEvidenceShape.IsCitable(domainRef, payload, configuredTicketRepository))
             {
                 return "RetrievedItem";
             }

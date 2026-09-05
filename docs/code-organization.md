@@ -65,11 +65,14 @@ IncidentCompass.Application/
     Validation/
 ```
 
-`Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/` and `SourceContext/` are the current
+`Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/`, `SourceContext/` and `Tickets/` are the current
 folders. `Memory/` contains memory_search contracts, seed records and retrieval orchestration.
 `SourceContext/` contains the provider-neutral read port, bounded signal frame extraction and tool;
 filesystem roots, canonicalization and file reads stay in Infrastructure. Report-level context
 outcome contracts and backend limitation policy live under `Investigation/Reports/Context/`.
+`Tickets/` contains the provider-neutral search port, bounded signal-field extraction and worker
+tool. Provider query syntax, HTTP transport, credentials, response parsing and ranking stay under
+`Infrastructure/Tickets/`. Ticket writes must use a separate future port and governed action path.
 
 Use `Query.cs` instead of `Command.cs` when the use case is read-only. Avoid repeating the full folder context in file names, such as `GetCurrentUserQuery.cs`, when `Users/GetCurrent/Query.cs` already communicates the intent.
 

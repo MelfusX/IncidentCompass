@@ -56,3 +56,12 @@ the salt changes every pseudonym and breaks counts across the rotation boundary.
 ## Tools
 
 Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. `ApprovalRequired` denies the call and records a limitation; there is still no suspend/resume lifecycle in MVP. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.
+
+The GitHub Issues token is bound only from Worker host configuration, normally the
+`IncidentCompass__Tickets__GitHub__Token` environment variable. It is absent from public triage
+configuration, config snapshots, tool definitions, prompts, artifacts and report payloads. The
+repository is also host-owned; model arguments, incident fields and tenants cannot select another
+repository or API authority. The adapter does not log authorization headers, response bodies or
+issue bodies. Authentication, rate-limit, timeout and malformed-response failures are reduced to a
+closed sanitized code before they reach durable tool outcomes or report limitations. Caller/job
+cancellation propagates instead of being misreported as a connector timeout.
