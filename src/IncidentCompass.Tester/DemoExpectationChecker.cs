@@ -7,13 +7,15 @@ internal static class DemoExpectationChecker
         TriageReportResponse report,
         out string detail)
     {
-        if (!string.Equals(report.Classification, scenario.ExpectedClassification, StringComparison.Ordinal))
+        if (scenario.ExpectedClassification is not null &&
+            !string.Equals(report.Classification, scenario.ExpectedClassification, StringComparison.Ordinal))
         {
             detail = "classification=" + report.Classification;
             return false;
         }
 
-        if (scenario.ExpectedIsMassIssue != report.IsMassIssue)
+        if (scenario.ExpectedIsMassIssue.HasValue &&
+            scenario.ExpectedIsMassIssue != report.IsMassIssue)
         {
             detail = "is_mass_issue=" + FormatNullableBool(report.IsMassIssue);
             return false;

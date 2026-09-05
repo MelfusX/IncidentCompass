@@ -53,10 +53,17 @@ fully deterministic mock path. The configurable ingestion payload limit must be 
 - Worker tools are role-scoped and fail closed when they are unknown, ungranted or denied by policy.
 - Report evidence is resolved against stored artifacts instead of trusting model-authored citations.
 - The investigation can be reconstructed from durable ledger and configuration snapshot records.
+- The deterministic `-Mock` demo loads the reviewed injection fixture as a fifth scenario, waits for
+  its report and performs a bounded readback of that exact fault ledger. It fails if an action proposal,
+  approval decision, dispatch start or completion appears under the shipped disabled-action configuration.
 - Automated tests remain deterministic and do not call real providers by default.
 
 Model quality is separate from these guarantees. A weak or incompatible model may still fail to
 complete the multi-turn trajectory or reach a correct conclusion.
+
+The fifth scenario is local packaging evidence for the disabled policy only. The mandatory-Docker
+integration proof separately exercises configured policy, requested-only approval and recording
+handlers while proving that the fixture cannot select a recipient, repository issue or provider call.
 
 ## Current Implementation
 

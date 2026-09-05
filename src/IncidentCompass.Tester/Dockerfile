@@ -9,6 +9,7 @@ COPY src/IncidentCompass.Tester/packages.lock.json src/IncidentCompass.Tester/
 RUN dotnet restore src/IncidentCompass.Tester/IncidentCompass.Tester.csproj --locked-mode
 
 COPY src/IncidentCompass.Tester src/IncidentCompass.Tester
+COPY samples/incidents/tester-ticket-action-injection.json samples/incidents/tester-ticket-action-injection.json
 RUN dotnet publish src/IncidentCompass.Tester/IncidentCompass.Tester.csproj \
     --configuration Release \
     --no-restore \

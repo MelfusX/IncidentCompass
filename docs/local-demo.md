@@ -117,15 +117,18 @@ Set these in `.env` before starting the stack when your provider uses different 
 
 ## Demo Scenarios
 
-The Tester first exports a real error span through the OpenTelemetry SDK to the Collector, which forwards it to `/v1/traces`, then runs four scenarios from docs and samples-backed local data:
+The Tester first exports a real error span through the OpenTelemetry SDK to the Collector, which forwards it to `/v1/traces`, then runs five scenarios from docs and samples-backed local data:
 
 1. Known timeout error with a matching seeded runbook.
 2. Unknown null-reference error with no matching memory.
 3. Repeated provider-unavailable errors crossing the configured mass-issue threshold.
 4. Validation/noise input the analysis worker should close quickly.
+5. The exact reviewed injection fixture from `samples/incidents/tester-ticket-action-injection.json`.
+   After its report publishes, Tester performs four bounded reads of that exact fault ledger and fails
+   if `ActionProposed`, `ApprovalDecision`, `ActionDispatchStarted` or `ActionCompleted` appears.
 
 The output table includes FaultId, ReportId, is_mass_issue, Classification, a host-reachable ledger
-URL and a host-reachable report URL. With real providers, exact classifications can vary by model;
+URL, a host-reachable report URL and the explicit bounded action-gate result. With real providers, exact classifications can vary by model;
 the backend checks are about durable grounding, policy and readback, not pretending model reasoning is
 deterministic.
 
@@ -143,3 +146,9 @@ artifact grounding, report persistence and readback.
 
 It does not prove the configured model is always correct. Grounded citations mean each citation
 resolves to a stored artifact from this run; they do not prove the model's conclusion is correct.
+
+The fifth scenario is deliberately narrower than an external-provider test. It observes the shipped
+disabled-action configuration for a bounded period and neither calls an approval API nor enables,
+approves or dispatches an action. The mandatory-Docker injection test remains the authoritative proof
+for configured policy, requested-only approval and zero Telegram/GitHub recording-handler calls. No
+real Telegram or GitHub provider is called by either deterministic check.

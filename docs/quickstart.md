@@ -32,7 +32,10 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 The script builds the API, Worker and Tester images, starts PostgreSQL/API/Worker, waits for
 the API health endpoint on its resolved host port, then runs the Tester against the local scenarios. Compose
 health checks also gate API readiness and Worker process startup before the Tester runs. The printed
-table includes FaultId, ReportId, is_mass_issue, Classification, ledger URL and report URL.
+table includes FaultId, ReportId, is_mass_issue, Classification, ledger URL, report URL and the check result.
+The fifth scenario parses the exact reviewed injection fixture, waits for its report and fails if a
+bounded readback of that exact fault ledger contains an action proposal, approval decision, dispatch
+start or completion.
 
 Useful variants:
 
@@ -43,6 +46,11 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
 
 `-NoBuild` reuses existing images. `-Mock` adds `compose.mock.yml` and is intended for automated or
 deterministic checks, not for validating the product against an actual model.
+
+The injection row is disabled-policy packaging evidence, not provider-delivery evidence. Tester does
+not call the approval API, enable an action or contact Telegram/GitHub. Mandatory-Docker integration
+coverage separately proves configured-policy and requested-only approval behavior with in-process
+recording handlers and zero external provider calls.
 
 Compose host mappings default to API `5198` and PostgreSQL `5432`. Override collisions in the
 ignored `.env` file without changing container-to-container URLs:
