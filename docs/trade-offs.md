@@ -93,6 +93,20 @@ model.
 
 Phase 4 memory retrieval filters by tenant, embedding provider, embedding model and embedding dimensions. This avoids mixing incompatible corpora, but it also means changing the embedding provider or model makes existing memory chunks silently unretrievable until they are re-embedded. Changing the configured embedding provider or model should be paired with a full memory re-seed or migration.
 
+## Bounded Memory Reranking Instead of Database Full-Text Search
+
+Memory search overfetches at most four times the configured result count, capped at 100 candidates,
+then reranks in Application with deterministic lexical and trusted metadata features. This recovers
+relevant chunks that vector-only `TopK` can hide while keeping tenant, embedding-route, dimension and
+active-item isolation inside the PostgreSQL query. Current same-service documentation has priority;
+stale-only evidence remains eligible and keeps its stale label. Component and evidence-kind boosts use
+only exact normalized query matches against stored metadata and code-owned aliases.
+
+This is a bounded reference implementation, not a general hybrid-search engine. Its fixed lexical rules
+may need revision for multilingual or much larger corpora, and overfetch adds query and application work.
+PostgreSQL full-text search, reciprocal-rank fusion, adaptive retries and caller-configurable ranking
+weights remain deferred. Each execution makes exactly one embedding request and one repository search.
+
 ## Deterministic Grouping Is Not Incident Correlation
 
 Delivery deduplication, open-fault grouping, suppression and recurrence are deliberately separate.
