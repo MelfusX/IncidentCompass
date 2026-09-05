@@ -80,6 +80,15 @@ the server-loaded job/configuration tenant context.
 - If full prompt logging is ever enabled, it must require opt-in, redaction, encryption, retention policy and restricted access.
 - Tool execution is controlled by backend policy. The model may propose tool calls, but it cannot execute tools directly and never receives infrastructure credentials.
 
+## Cost read boundary
+
+The authenticated model-cost endpoint obtains its tenant only from the host-bound `IUserContext` and
+accepts no tenant selector. Its bounded window query joins ledger rows through tenant-owned faults.
+The response exposes UTC buckets, counts, token totals and per-currency spend only, not tenant, fault,
+job, provider, model or logical route identifiers. Malformed ModelCall history and missing or
+overlapping prices fail closed to unpriced and are never echoed to responses or logs. Pricing remains
+operator-maintained database configuration; this read surface grants no price, alert or quota authority.
+
 ## Local source read boundary
 
 The source worker never receives a filesystem root, release selector or arbitrary read argument.

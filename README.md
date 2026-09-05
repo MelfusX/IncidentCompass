@@ -99,6 +99,11 @@ complete the multi-turn trajectory or reach a correct conclusion.
   list filtering requires an exact paired resource kind/id and always keeps the authenticated tenant
   boundary. Dry-run, failed and outcome-unknown actions do not claim an external success projection.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
+- Authenticated tenant-scoped model-cost rollups at
+  `GET /api/v1/observability/cost-rollups`, grouped by UTC hour from durable `ModelCall` rows.
+  Results contain counts, token totals, priced/unpriced counts and exact per-currency spend only.
+  Pricing is effective-dated operator-maintained PostgreSQL configuration; no price-management API,
+  currency conversion, alerting or usage dashboard is included.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
 
@@ -139,8 +144,9 @@ flowchart LR
 ~~~
 
 `IncidentCompass.Application` is organized by feature folder: `Core`, `Governance`, `Intake`,
-`Investigation`, `Memory`, `SourceContext` and `Tickets`. `Infrastructure` implements persistence, provider, configuration and
-memory adapters. The API remains transport-focused. The Worker owns separate bounded pumps for job
+`Investigation`, `Memory`, `Observability`, `SourceContext` and `Tickets`. `Infrastructure` implements
+persistence, provider, configuration, memory and cost-rollup adapters. The API remains
+transport-focused. The Worker owns separate bounded pumps for job
 processing, post-report evaluation and approved-action dispatch. Tester is an external HTTP client
 for the local scenarios.
 
@@ -190,6 +196,12 @@ RBAC slice. Demo headers and the config-default tenant never grant action review
 `externalResourceKind` and `externalResourceId` list filters must be supplied together; supported
 kinds are `telegram_message` and `github_issue`, and ids are positive decimal provider identities.
 
+The cost-rollup route uses the same authenticated key-to-tenant binding. It requires `fromUtc` and
+`toUtc` with UTC offsets, treats the start as inclusive and the end as exclusive, and rejects empty,
+reversed or greater-than-31-day windows. Provider, model, logical route and tenant identifiers are not
+returned. Calls with missing or ambiguous effective pricing remain explicitly unpriced instead of
+being reported as zero-cost usage. See [Cost tracking](docs/cost-tracking.md).
+
 Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).
 
@@ -215,6 +227,7 @@ digests through protected host configuration and apply the usual transport and d
 - [Security model](docs/security-model.md)
 - [Model gateway](docs/model-gateway.md)
 - [Observability](docs/observability.md)
+- [Cost tracking](docs/cost-tracking.md)
 - [Code organization](docs/code-organization.md)
 - [Versioning and release flow](docs/versioning.md)
 - [Release candidate notes for v0.2.0](docs/release-notes-v0.2.0.md)

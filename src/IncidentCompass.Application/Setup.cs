@@ -14,6 +14,7 @@ using IncidentCompass.Application.Intake.Redaction;
 using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Memory;
 using IncidentCompass.Application.Notifications;
+using IncidentCompass.Application.Observability.CostRollup;
 using IncidentCompass.Application.SourceContext;
 using IncidentCompass.Application.Tickets;
 using Microsoft.Extensions.Configuration;
@@ -51,6 +52,7 @@ public static class Setup
         services.AddMemoryCore();
         services.AddSourceContextCore();
         services.AddTicketsCore();
+        services.TryAddScoped<IRequestHandler<CostRollupQuery, CostRollupResponse>, CostRollupQueryHandler>();
         services.AddSingleton(TelegramNotificationToolDescriptor.Value);
 
         return services;

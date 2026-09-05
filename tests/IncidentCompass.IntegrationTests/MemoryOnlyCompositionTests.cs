@@ -13,6 +13,7 @@ using IncidentCompass.Application.Investigation.Reports.List;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
+using IncidentCompass.Application.Observability.CostRollup;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
 using Microsoft.Extensions.Configuration;
@@ -52,6 +53,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
         services.AddSingleton<ITriageReportListRepository, InMemoryTriageReportListRepository>();
         services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
+        services.AddSingleton<IModelCostRollupRepository, InMemoryModelCostRollupRepository>();
         services.AddSingleton<IActionProposalRepository, InMemoryActionProposalRepository>();
         services.AddSingleton<IActionApprovalReviewRepository, InMemoryActionApprovalReviewRepository>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
@@ -281,6 +283,14 @@ public sealed class MemoryOnlyCompositionTests
             Guid faultId,
             string tenantId,
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
+    }
+    private sealed class InMemoryModelCostRollupRepository : IModelCostRollupRepository
+    {
+        public Task<IReadOnlyList<CostRollupHour>> ReadAsync(
+            string tenantId,
+            DateTimeOffset fromUtc,
+            DateTimeOffset toUtc,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CostRollupHour>>([]);
     }
     private sealed class InMemoryActionApprovalReviewRepository : IActionApprovalReviewRepository
     {

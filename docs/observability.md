@@ -29,6 +29,27 @@ The live model telemetry mechanism is the append-only triage ledger. Each invest
 
 The ledger does not store rendered prompts, full provider responses, document text, provider credentials, API keys or embedding vectors. Token budget accounting is recorded separately as first-class `BudgetEvent` rows with `tokens_delta` and `workers_delta` columns.
 
+## Hourly Cost Rollups
+
+`GET /api/v1/observability/cost-rollups` reads these durable `ModelCall` rows for the authenticated
+tenant over required `fromUtc` and `toUtc` values. Both boundaries must use a UTC offset. Start is
+inclusive, end is exclusive, and the non-empty window is limited to 31 days. Results contain only UTC
+hour, call count, input/output/total token totals, priced/unpriced call counts and exact spend totals
+separated by currency.
+
+Each call is priced only when its metadata is valid and exactly one case-sensitive provider/model
+pricing interval contains the call timestamp. Valid calls without a price still contribute token
+totals and increment `unpricedCallCount`. Invalid JSON or types, blank identities, unsafe token
+values and overlapping or tied prices increment the call and unpriced counts but contribute no token
+or spend value. A real configured zero price remains a priced call; missing or ambiguous pricing never
+becomes false zero spend.
+
+The pricing table is effective-dated operator-maintained database configuration. This release adds no
+price-management API, configuration reload, currency conversion, threshold, alert job or notification.
+The rollup response and dispatch logs do not return ModelCall provider, model, route ID, prompt,
+response, credential, endpoint or embedding data. Existing ModelCall and BudgetEvent writes and the
+fault-ledger response are unchanged.
+
 Post-report approval state uses the exact `ActionProposed`, `ApprovalDecision`,
 `ActionDispatchStarted` and `ActionCompleted` ledger events. These rows carry bounded summaries,
 closed decisions/statuses and `action:<id>` or `artifact:<id>` references. They do not copy canonical
@@ -100,7 +121,7 @@ Additional sensitive actions should use durable audit records when implemented:
 
 - quota exceeded;
 - additional external-action before/after correlation beyond the existing action lifecycle events;
-- cost rollups once IC-BL-014 consumes `ModelCall` rows and pricing records.
+- cost alert delivery and quota enforcement built on independently governed policy.
 
 ## OTLP Ingress
 

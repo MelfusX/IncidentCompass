@@ -66,7 +66,7 @@ IncidentCompass.Application/
     Validation/
 ```
 
-`Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/`, `SourceContext/` and `Tickets/` are the current
+`Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/`, `Observability/`, `SourceContext/` and `Tickets/` are the current
 folders. `Governance/` contains the common worker-tool contract, validation primitives, triage
 ledger ports and post-report action approval contracts/use cases, including the deterministic approved
 action dispatcher. PostgreSQL action approval, provenance, claim, recovery and terminal-transition
@@ -74,6 +74,9 @@ implementations stay under `Infrastructure/Governance/ActionApprovals/`.
 The single live tool rule engine and the immediate/action capability contracts live under
 `Governance/Tools/`; investigation-only execution orchestration stays under `Investigation/Jobs/`.
 `Memory/` contains memory_search contracts, seed records and retrieval orchestration.
+`Observability/CostRollup/` contains the tenant-scoped read request, validator, response and
+persistence port. ModelCall JSON parsing, effective-price ambiguity handling and PostgreSQL query
+details stay under `Infrastructure/Observability/`; API endpoints remain transport-only.
 `SourceContext/` contains the provider-neutral read port, bounded signal frame extraction and tool;
 filesystem roots, canonicalization and file reads stay in Infrastructure. Report-level context
 outcome contracts and backend limitation policy live under `Investigation/Reports/Context/`.
