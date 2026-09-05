@@ -60,6 +60,14 @@ simulated, requested, rejected, expired and definitive pre-mutation failures do 
 keeps only the bounded provider kind and
 message id in the action result, never the token, chat id, request path or raw response.
 
+GitHub ticket create uses the same action events and stores only a bounded canonical provider kind
+and issue number on confirmed success. Repository-bound no-match eligibility is proven from the
+durable current-attempt `ToolResult`; proposal denials use closed reason codes. Preflight and create
+failures expose only stable codes, and a response that becomes unreadable after the single POST is
+`dispatch_outcome_unknown`. Correlation markers may be read from frozen payload/history for bounded
+duplicate lookup, but tokens, Authorization headers, repository authority, request paths and raw
+provider bodies never enter ledger rows or logs.
+
 ## Failure Behavior
 
 Model calls are part of the Worker investigation loop. Required durable side effects, including ledger budget/model-call events and final report commit events, are treated as part of the workflow state. The Worker does not expose foreground success to an API caller after a missing required durable write.

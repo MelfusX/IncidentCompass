@@ -29,7 +29,8 @@ internal sealed class GitHubIssuesTicketSearch(
             var query = GitHubIssueQueryBuilder.Build(repository, request);
             if (query is null)
             {
-                return TicketSearchResult.NoMatch("ticket_search_no_safe_terms");
+                return TicketSearchResult.NoMatch(
+                    "github", repository, "ticket_search_no_safe_terms");
             }
 
             using var message = CreateRequest(query, settings.Token!);
@@ -55,8 +56,13 @@ internal sealed class GitHubIssuesTicketSearch(
 
             var matches = GitHubIssueRanker.Rank(repository, request, candidates.Candidates);
             return matches.Count == 0
-                ? TicketSearchResult.NoMatch()
-                : new TicketSearchResult(TicketSearchOutcome.Matched, "ticket_search_matches", matches);
+                ? TicketSearchResult.NoMatch("github", repository)
+                : new TicketSearchResult(
+                    TicketSearchOutcome.Matched,
+                    "ticket_search_matches",
+                    matches,
+                    "github",
+                    repository);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

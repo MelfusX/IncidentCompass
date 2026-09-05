@@ -67,7 +67,7 @@ public sealed class TicketSearchWorkerPathTests(PostgresRepositoryFixture postgr
     {
         foreach (var item in new[]
         {
-            (Result: TicketSearchResult.NoMatch(), Expected: "Read-only context ticket_search returned no matches (ticket_search_no_matches)."),
+            (Result: TicketSearchResult.NoMatch("github", "owner/repo"), Expected: "Read-only context ticket_search returned no matches (ticket_search_no_matches)."),
             (Result: TicketSearchResult.Unavailable("ticket_search_rate_limited"), Expected: "Read-only context ticket_search was unavailable (ticket_search_rate_limited).")
         })
         {

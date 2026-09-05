@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Notifications;
+using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Intake;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,6 +33,7 @@ public sealed class TriageConfigurationValidationParityTests
         { "dangling-role-route", true, false, "Roles.analysis.RouteId" },
         { "valid-external-action", true, true, null },
         { "valid-telegram-action", true, true, null },
+        { "valid-ticket-create-action", true, true, null },
         { "valid-mixed-case-external-action", true, true, null },
         { "unsafe-external-action-id", false, false, "Tools.notify:test" },
         { "external-action-in-role", true, false, "Roles.analysis.Tools" },
@@ -177,6 +179,11 @@ public sealed class TriageConfigurationValidationParityTests
                     TelegramNotificationToolDescriptor.LogicalTargetId,
                     "telegram_ops");
                 return;
+            case "valid-ticket-create-action":
+                root["Tools"]![TicketCreateTool.ToolId]!["Mode"] = "live";
+                root["Actions"]!["AllowedTools"] = new JsonArray(TicketCreateTool.ToolId);
+                root["Actions"]!["DefaultMode"] = "live";
+                return;
             case "valid-mixed-case-external-action":
                 AddExternalAction(root, "Action_Test.v1-Edge");
                 return;
@@ -321,6 +328,7 @@ public sealed class TriageConfigurationValidationParityTests
             new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead),
             new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead),
             TelegramNotificationToolDescriptor.Value,
+            TicketCreateTool.Descriptor,
             new AgentToolDescriptor(
                 "notify_test",
                 AgentToolCapability.ExternalAction,

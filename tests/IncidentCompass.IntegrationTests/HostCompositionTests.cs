@@ -86,9 +86,11 @@ public sealed class HostCompositionTests
 
         // Investigation/action workers + Infrastructure warmups for config and optional memory seeding.
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        Assert.Equal(6, hostedServices.Length);
+        Assert.Equal(7, hostedServices.Length);
         Assert.Contains(hostedServices, service =>
             service.GetType().FullName == "IncidentCompass.Worker.TelegramConfigurationStartupValidator");
+        Assert.Contains(hostedServices, service =>
+            service.GetType().FullName == "IncidentCompass.Worker.GitHubIssueConfigurationStartupValidator");
         Assert.Contains(hostedServices, service => service is WorkerService);
         Assert.Contains(hostedServices, service =>
             service.GetType().FullName == "IncidentCompass.Worker.ActionDispatchWorker");
@@ -106,6 +108,10 @@ public sealed class HostCompositionTests
         Assert.Equal("system", userContext.UserId);
         Assert.Null(userContext.TenantId);
         Assert.Contains("system", userContext.Roles);
+        Assert.Contains(scope.ServiceProvider.GetServices<IPostReportActionWorkflow>(),
+            workflow => workflow.ToolId == TicketCreateTool.ToolId);
+        Assert.Contains(scope.ServiceProvider.GetServices<IExternalActionTool>(),
+            tool => tool.Definition.Name == TicketCreateTool.ToolId);
     }
 
     [Fact]
@@ -156,6 +162,14 @@ public sealed class HostCompositionTests
             tool => tool.Definition.Name == TelegramNotificationToolDescriptor.ToolId);
         Assert.Null(host.Services.GetRequiredService<IConfiguration>()["IncidentCompass:Telegram:BotToken"]);
         Assert.Null(host.Services.GetRequiredService<IConfiguration>()["IncidentCompass:Telegram:ChatId"]);
+        Assert.True(registry.TryGet(TicketCreateTool.ToolId, out var ticketDescriptor));
+        Assert.Equal(TicketCreateTool.LogicalTargetId, ticketDescriptor.LogicalTargetId);
+        Assert.DoesNotContain(
+            scope.ServiceProvider.GetRequiredService<PostReportActionWorkflowCatalog>().Workflows,
+            workflow => workflow.ToolId == TicketCreateTool.ToolId);
+        Assert.DoesNotContain(
+            scope.ServiceProvider.GetServices<IExternalActionTool>(),
+            tool => tool.Definition.Name == TicketCreateTool.ToolId);
     }
 
     [Fact]
@@ -201,6 +215,37 @@ public sealed class HostCompositionTests
         });
 
         await StartTelegramValidatorAsync(host.Services);
+    }
+
+    [Fact]
+    public async Task WorkerGitHubBinding_RejectsEnabledTicketCreateWithoutHostCredential()
+    {
+        using var host = CreateTicketHost(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+            ["IncidentCompass:Tickets:GitHub:Repository"] = "repo"
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => StartGitHubValidatorAsync(host.Services));
+
+        Assert.Equal(
+            "GitHub issue host binding does not match the enabled public ticket-create action.",
+            exception.Message);
+        Assert.DoesNotContain("owner/repo", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WorkerGitHubBinding_AcceptsExactEnabledTicketCreateBinding()
+    {
+        using var host = CreateTicketHost(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+            ["IncidentCompass:Tickets:GitHub:Repository"] = "repo",
+            ["IncidentCompass:Tickets:GitHub:Token"] = "github-host-token-sentinel"
+        });
+
+        await StartGitHubValidatorAsync(host.Services);
     }
 
     [Fact]
@@ -468,10 +513,62 @@ public sealed class HostCompositionTests
         }
     };
 
+    private static IHost CreateTicketHost(IReadOnlyDictionary<string, string?> ticketValues)
+    {
+        var values = new Dictionary<string, string?>(ticketValues)
+        {
+            ["IncidentCompass:ModelGateway:Provider"] = "Mock",
+            ["IncidentCompass:ModelGateway:DefaultModel"] = "mock-chat",
+            ["IncidentCompass:Embeddings:Provider"] = "Mock",
+            ["IncidentCompass:Embeddings:DefaultModel"] = "mock-embedding"
+        };
+        return new HostBuilder()
+            .ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(values))
+            .ConfigureServices((context, services) =>
+            {
+                services.AddLogging();
+                services.AddTestApplication(context.Configuration);
+                services.AddInfrastructure(context.Configuration);
+                services.RemoveAll<ITriageConfigurationRepository>();
+                services.AddSingleton<ITriageConfigurationRepository>(
+                    new StaticNotificationConfiguration(CreateTicketConfiguration()));
+                services.AddWorker(context.Configuration);
+            })
+            .Build();
+    }
+
+    private static TriageConfiguration CreateTicketConfiguration() => new(
+        "ticket-host-composition",
+        new Dictionary<string, TriageProviderSettings>(StringComparer.Ordinal),
+        new Dictionary<string, TriageRouteSettings>(StringComparer.Ordinal),
+        new OrchestratorSettings("orchestrator", "chat", ["delegate", "publish_report"],
+            new OrchestratorBudgetSettings(1, 1000, 30)),
+        new Dictionary<string, TriageRoleSettings>(StringComparer.Ordinal),
+        new Dictionary<string, TriageToolSettings>(StringComparer.Ordinal)
+        {
+            [TicketCreateTool.ToolId] = new(
+                "external_action", null, null, null, "ticket_create",
+                TicketCreateTool.LogicalTargetId)
+        },
+        [],
+        new IngestionSettings("tenant", ["tester"]),
+        new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")),
+        RedactionSettings.Default)
+    {
+        Actions = new TriageActionSettings([TicketCreateTool.ToolId], "live", false, 60)
+    };
+
     private static Task StartTelegramValidatorAsync(IServiceProvider services)
     {
         var validator = services.GetServices<IHostedService>().Single(service =>
             service.GetType().FullName == "IncidentCompass.Worker.TelegramConfigurationStartupValidator");
+        return validator.StartAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static Task StartGitHubValidatorAsync(IServiceProvider services)
+    {
+        var validator = services.GetServices<IHostedService>().Single(service =>
+            service.GetType().FullName == "IncidentCompass.Worker.GitHubIssueConfigurationStartupValidator");
         return validator.StartAsync(TestContext.Current.CancellationToken);
     }
 

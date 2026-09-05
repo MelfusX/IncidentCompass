@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Intake;
 
 namespace IncidentCompass.UnitTests;
@@ -340,6 +341,26 @@ public sealed class TriageConfigurationMaterializerTests
     }
 
     [Fact]
+    public void Materialize_AcceptsDisabledBackendTicketCreateDescriptorWithoutRoleGrant()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)[TicketCreateTool.ToolId] = new JsonObject
+        {
+            ["Kind"] = "external_action",
+            ["Category"] = "ticket_create",
+            ["LogicalTargetId"] = TicketCreateTool.LogicalTargetId,
+            ["Mode"] = "disabled"
+        };
+
+        var configuration = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+
+        Assert.Empty(configuration.Actions.AllowedTools);
+        Assert.Equal("disabled", configuration.Tools[TicketCreateTool.ToolId].Mode);
+        Assert.DoesNotContain(configuration.Roles.Values,
+            role => role.Tools.Contains(TicketCreateTool.ToolId, StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Materialize_InvalidConfiguredRedactionPattern_FailsLoadValidation()
     {
         var node = ValidConfigNode();
@@ -368,7 +389,8 @@ public sealed class TriageConfigurationMaterializerTests
         var tools = new AgentToolRegistry([
             new AgentToolDescriptor("memory_search", AgentToolCapability.ImmediateRead),
             new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead),
-            new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead)
+            new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead),
+            TicketCreateTool.Descriptor
         ]);
         return new TriageConfigurationMaterializer(new TriageConfigurationLoadValidator(registry, tools));
     }

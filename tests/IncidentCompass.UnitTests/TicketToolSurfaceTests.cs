@@ -20,6 +20,25 @@ public sealed class TicketToolSurfaceTests
         Assert.Empty(Surface(executor, Configuration(false, false)));
     }
 
+    [Fact]
+    public void TicketCreateCannotBecomeModelCallableThroughRoleOrConfig()
+    {
+        var executor = CreateExecutor();
+        var configuration = Configuration(true, true);
+        var tools = configuration.Tools.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        tools[TicketCreateTool.ToolId] = new TriageToolSettings(
+            "external_action", null, null, null, "ticket_create", TicketCreateTool.LogicalTargetId);
+        var roles = configuration.Roles.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        roles["tickets"] = roles["tickets"] with
+        {
+            Tools = ["ticket_search", TicketCreateTool.ToolId]
+        };
+
+        var surface = Surface(executor, configuration with { Tools = tools, Roles = roles });
+
+        Assert.Equal("ticket_search", Assert.Single(surface).Name);
+    }
+
     private static IReadOnlyList<IncidentCompass.Application.Core.ModelClients.AiToolDefinition> Surface(
         WorkerToolCallExecutor executor,
         TriageConfiguration configuration) =>

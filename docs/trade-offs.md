@@ -166,9 +166,9 @@ the existing proposal transaction's idempotency boundary.
 The queue stops at proposal creation. It has no adapter port, approval decision, dispatch state or
 new ledger vocabulary; `action_approvals` remains the only approval and external-dispatch outbox.
 This adds durable scheduling and recovery without creating a competing policy system. Shared
-composition registers only the non-secret Telegram descriptor for configuration validation, while
-Worker composition registers its workflow and adapter. Deterministic Docker tests exercise both its
-handoff and the synthetic recovery cases without calling the real provider.
+composition registers only non-secret Telegram and ticket-create descriptors for configuration
+validation, while Worker composition registers their workflows and adapters. Deterministic Docker
+tests exercise handoff and recovery cases without calling a real provider.
 
 ## At-Most-Once Action Dispatch Prefers Visible Uncertainty
 
@@ -187,4 +187,8 @@ Telegram is the first production side-effect adapter. Its fixed-recipient design
 flexibility for a smaller authority surface: public routes select only one Worker-owned binding and
 the backend generates the message. A fault-locked 30-minute cooldown after confirmed live success or
 outcome-unknown reduces duplicate alerts, but it can suppress a legitimate rapid follow-up. Ticket
-writes and general-purpose model-selected external actions remain separate work.
+create is the second side-effect adapter. It trades general provider selection and exactly-once
+delivery for one Worker-owned GitHub repository, mandatory approval, deterministic marker lookup and
+at most one POST after bounded preflight. A prior outcome-unknown is never automatically reconciled
+with another write, so an operator may need to inspect the provider. Ticket update and general-purpose
+model-selected external actions remain separate work.

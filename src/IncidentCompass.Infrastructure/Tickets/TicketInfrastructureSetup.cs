@@ -26,6 +26,7 @@ internal static class TicketInfrastructureSetup
             .ConfigurePrimaryHttpMessageHandler(GitHubIssuesHttpMessageHandlerFactory.Create);
         services.Replace(ServiceDescriptor.Scoped<ITicketSearch>(provider =>
             provider.GetRequiredService<GitHubIssuesTicketSearch>()));
+        services.TryAddScoped<ITicketActionHistory, PostgresTicketActionHistory>();
         return services;
     }
 }

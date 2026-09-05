@@ -134,9 +134,9 @@ tightening guard, recomputes the registered adapter-binding fingerprint and pass
 stored bytes plus the action id only to the exact registered external-action capability. Frozen or
 newly tightened dry-run performs no adapter call; disabled, approval-tightened, unregistered and
 binding-drift cases fail closed with bounded durable evidence. Application composition registers
-only the non-secret Telegram descriptor for public configuration validation. The workflow, adapter,
-host binding and credentials are registered only in the Worker host. API and test host configuration
-do not require or receive Telegram credentials.
+only the non-secret Telegram and ticket-create descriptors for public configuration validation.
+Their workflows, adapters, host bindings and credentials are registered only in the Worker host.
+API and shared test host configuration do not require or receive provider credentials.
 
 The durable claim is the at-most-once boundary. Once it records an owner, random fence and database
 deadline, no automatic path may call that adapter again. Exceptions, timeout, cancellation and crash
@@ -152,7 +152,15 @@ repository is also host-owned; model arguments, incident fields and tenants cann
 repository or API authority. The adapter does not log authorization headers, response bodies or
 issue bodies. Authentication, rate-limit, timeout and malformed-response failures are reduced to a
 closed sanitized code before they reach durable tool outcomes or report limitations. Caller/job
-cancellation propagates instead of being misreported as a connector timeout.
+cancellation on read-only search propagates instead of being misreported as a connector timeout.
+
+Ticket create additionally requires exactly one current-attempt durable no-match bound to that same
+repository. The check and current binding comparison occur inside the fault-locked proposal
+transaction. The model cannot call the create tool or provide repository, owner, authority, token,
+marker or category. Every create remains requested until the tenant operator submits exact frozen
+hashes. Before the single possible POST, bounded local history and GitHub marker lookup fail closed;
+an earlier uncertain marker is read-only and can never authorize another POST. Once the POST starts,
+transport or response ambiguity becomes `dispatch_outcome_unknown` and is not retried.
 
 Telegram routing separates public policy from secret host authority. The snapshotted configuration
 contains at most 32 ordered route ids with optional normalized service/environment selectors and a
