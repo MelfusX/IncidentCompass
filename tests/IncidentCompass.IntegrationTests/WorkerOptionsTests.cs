@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
-using IncidentCompass.Worker;
 using IncidentCompass.Infrastructure.Notifications.Telegram;
+using IncidentCompass.Worker;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.IntegrationTests;

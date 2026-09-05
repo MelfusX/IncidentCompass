@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using IncidentCompass.Application.Core.Dispatching;
 using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.Application.Core.Dispatching;

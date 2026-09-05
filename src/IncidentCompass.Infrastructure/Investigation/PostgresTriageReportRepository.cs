@@ -1,6 +1,6 @@
+using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
-using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Governance.PostReportActions;
 using IncidentCompass.Infrastructure.Postgres;

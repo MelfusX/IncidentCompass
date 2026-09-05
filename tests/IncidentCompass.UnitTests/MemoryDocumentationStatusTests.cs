@@ -4,7 +4,6 @@ using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Memory;
 using IncidentCompass.Domain.Incidents;
-using IncidentCompass.Domain.Incidents.Statuses;
 
 namespace IncidentCompass.UnitTests;
 

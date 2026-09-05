@@ -1,7 +1,6 @@
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Notifications;
 using IncidentCompass.Infrastructure.Notifications.Telegram;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Worker;

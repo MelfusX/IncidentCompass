@@ -2,11 +2,8 @@ using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Notifications;
-using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Notifications.Telegram;
 using IncidentCompass.Infrastructure.Tickets;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 

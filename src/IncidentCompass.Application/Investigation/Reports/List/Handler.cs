@@ -1,5 +1,4 @@
 using FluentValidation.Results;
-using System.Buffers.Binary;
 using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Tenancy;
 

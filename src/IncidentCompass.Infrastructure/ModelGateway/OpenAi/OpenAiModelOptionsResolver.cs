@@ -1,5 +1,4 @@
 using IncidentCompass.Application.Core.ModelGateway;
-using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.OpenAiCompatible;
 using Microsoft.Extensions.Options;

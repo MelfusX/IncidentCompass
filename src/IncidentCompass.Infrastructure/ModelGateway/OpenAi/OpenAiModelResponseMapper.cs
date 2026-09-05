@@ -1,5 +1,4 @@
 using System.Text.Json;
-using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.ModelGateway.OpenAi.Dtos;
 

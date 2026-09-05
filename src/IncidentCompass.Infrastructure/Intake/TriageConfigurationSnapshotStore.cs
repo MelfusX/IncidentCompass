@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Infrastructure.Postgres;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Intake;
 

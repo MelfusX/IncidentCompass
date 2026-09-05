@@ -2,7 +2,6 @@ using IncidentCompass.Infrastructure.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using Pgvector.Npgsql;
 
 namespace IncidentCompass.Infrastructure.Postgres;
 

@@ -1,9 +1,8 @@
 using IncidentCompass.Api.Configuration;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Core.Tenancy;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace IncidentCompass.Api.Security;
 

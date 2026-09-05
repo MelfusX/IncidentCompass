@@ -1,8 +1,7 @@
-using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Governance.PostReportActions;
+using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Tickets;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Worker;

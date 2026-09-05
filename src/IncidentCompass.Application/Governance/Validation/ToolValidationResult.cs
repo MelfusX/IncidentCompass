@@ -1,5 +1,5 @@
-using IncidentCompass.Domain.Governance;
 using System.Text.Json;
+using IncidentCompass.Domain.Governance;
 
 namespace IncidentCompass.Application.Governance.Validation;
 

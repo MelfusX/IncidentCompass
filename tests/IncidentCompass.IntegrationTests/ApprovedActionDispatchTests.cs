@@ -7,7 +7,6 @@ using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents.Actions;
-using IncidentCompass.Infrastructure.Investigation;
 using IncidentCompass.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

@@ -1,4 +1,3 @@
-using IncidentCompass.Application.Core.Dispatching;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IncidentCompass.Application.Core.Dispatching;

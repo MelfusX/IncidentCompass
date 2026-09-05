@@ -1,5 +1,5 @@
-using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Governance.ActionApprovals;
+using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Notifications;
 using IncidentCompass.Domain.Incidents.Actions;
 

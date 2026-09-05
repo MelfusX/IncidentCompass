@@ -4,7 +4,6 @@ using IncidentCompass.Api.Configuration;
 using IncidentCompass.Api.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Memory;
-using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.IntegrationTests;
 

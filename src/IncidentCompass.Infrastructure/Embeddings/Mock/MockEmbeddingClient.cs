@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using IncidentCompass.Application.Core.Embeddings;
-using IncidentCompass.Application.Core.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Infrastructure.Embeddings.Mock;

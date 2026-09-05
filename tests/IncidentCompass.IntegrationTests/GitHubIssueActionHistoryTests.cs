@@ -1,7 +1,6 @@
 using System.Text;
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Tickets;
-using IncidentCompass.Domain.Incidents.Actions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IncidentCompass.IntegrationTests;

@@ -3,7 +3,6 @@ using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Investigation;
 

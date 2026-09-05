@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelGateway;
-using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.OpenAiCompatible;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.OpenAi;

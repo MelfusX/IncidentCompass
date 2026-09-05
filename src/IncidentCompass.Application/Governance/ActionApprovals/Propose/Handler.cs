@@ -3,7 +3,6 @@ using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents.Actions;
-using IncidentCompass.Domain.Incidents.Statuses;
 
 namespace IncidentCompass.Application.Governance.ActionApprovals.Propose;
 

@@ -1,6 +1,6 @@
-using IncidentCompass.Application.Core.ModelClients;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using IncidentCompass.Application.Core.ModelClients;
 using static IncidentCompass.Infrastructure.ModelGateway.Mock.MockIncidentCompassReportScript;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.Mock;

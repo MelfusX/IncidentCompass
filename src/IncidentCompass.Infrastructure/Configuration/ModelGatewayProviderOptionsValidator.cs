@@ -1,5 +1,4 @@
 using IncidentCompass.Application.Core.ModelGateway;
-using IncidentCompass.Application.Core.ModelClients;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Infrastructure.Configuration;

@@ -10,3 +10,8 @@
 *.ico  binary
 *.pdf  binary
 *.snk  binary
+
+# Sample incident fixtures are byte-pinned by SHA-256 in tests (see
+# DemoInjectionScenarioLoader.ExpectedSha256 and TesterInjectionDemoTests). Force LF checkout
+# on every platform so the pinned hash matches regardless of core.autocrlf.
+samples/**/*.json text eol=lf

@@ -1,7 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.ModelGateway.OpenAi.Dtos;

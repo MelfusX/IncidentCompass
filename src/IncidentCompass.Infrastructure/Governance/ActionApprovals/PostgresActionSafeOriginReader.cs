@@ -1,6 +1,5 @@
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Domain.Incidents;
-using IncidentCompass.Domain.Incidents.Statuses;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 

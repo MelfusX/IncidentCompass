@@ -1,12 +1,10 @@
-using IncidentCompass.Api.Health;
+using System.Threading.RateLimiting;
 using IncidentCompass.Api.Configuration;
+using IncidentCompass.Api.Health;
 using IncidentCompass.Api.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
-using Microsoft.Extensions.DependencyInjection;
-using System.Threading.RateLimiting;
 
 namespace IncidentCompass.Api;
 

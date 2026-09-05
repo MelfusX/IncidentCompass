@@ -5,7 +5,6 @@ using IncidentCompass.Application.Governance.ActionApprovals.Propose;
 using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Tickets;
-using IncidentCompass.Domain.Incidents.Actions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace IncidentCompass.UnitTests;

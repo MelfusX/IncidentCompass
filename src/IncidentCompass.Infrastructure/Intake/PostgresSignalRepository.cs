@@ -2,7 +2,6 @@ using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace IncidentCompass.Infrastructure.Intake;
 

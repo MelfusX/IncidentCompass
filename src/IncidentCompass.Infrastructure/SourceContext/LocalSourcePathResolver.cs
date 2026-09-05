@@ -1,6 +1,7 @@
-namespace IncidentCompass.Infrastructure.SourceContext;
 
-using static SourcePathBoundary;
+using static IncidentCompass.Infrastructure.SourceContext.SourcePathBoundary;
+
+namespace IncidentCompass.Infrastructure.SourceContext;
 
 internal sealed class LocalSourcePathResolver(
     SourceContextRootOptions mapping,

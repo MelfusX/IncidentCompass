@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Logging;
-
 namespace IncidentCompass.Worker;
 
 internal sealed class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)

@@ -2,7 +2,6 @@ using System.Text.Json;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.SourceContext;
 using IncidentCompass.Domain.Incidents;
-using IncidentCompass.Domain.Incidents.Statuses;
 
 namespace IncidentCompass.UnitTests;
 

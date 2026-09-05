@@ -1,4 +1,3 @@
-using System.Text.Json;
 using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
