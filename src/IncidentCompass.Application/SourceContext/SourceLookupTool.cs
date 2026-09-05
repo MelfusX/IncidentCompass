@@ -24,9 +24,6 @@ internal sealed class SourceLookupTool(
             ["properties"] = new JsonObject()
         }));
 
-    public ToolPolicyMetadata Policy =>
-        ToolPolicyMetadata.Allowed("Read-only current-release source retrieval.");
-
     public ToolValidationResult Validate(JsonElement arguments)
     {
         if (arguments.ValueKind != JsonValueKind.Object || arguments.EnumerateObject().Any())

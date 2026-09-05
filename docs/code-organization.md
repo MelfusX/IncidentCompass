@@ -60,13 +60,15 @@ IncidentCompass.Application/
     Embeddings/
 
   Governance/
+    Ledger/
     Tools/
-      Execution/
     Validation/
 ```
 
 `Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/`, `SourceContext/` and `Tickets/` are the current
-folders. `Memory/` contains memory_search contracts, seed records and retrieval orchestration.
+folders. `Governance/` contains the common worker-tool contract, validation primitives and triage
+ledger ports. The single live tool rule engine and execution orchestration live under
+`Investigation/Jobs/`. `Memory/` contains memory_search contracts, seed records and retrieval orchestration.
 `SourceContext/` contains the provider-neutral read port, bounded signal frame extraction and tool;
 filesystem roots, canonicalization and file reads stay in Infrastructure. Report-level context
 outcome contracts and backend limitation policy live under `Investigation/Reports/Context/`.

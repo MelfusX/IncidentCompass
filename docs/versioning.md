@@ -34,7 +34,8 @@ Do not auto-increment release versions in CI. The version is part of the reviewe
 ## Database
 
 - Keep schema changes in source control.
-- Live ledger/report/memory tables and dormant pricing/tool-audit tables use explicit raw SQL/init scripts and small Npgsql adapters while the persistence surface is still stabilizing.
+- Live ledger/report/memory tables and dormant pricing state use explicit raw SQL/init scripts and small Npgsql adapters while the persistence surface is still stabilizing.
+- Released migrations are append-only. `006-tool-audit.sql` remains byte-identical and creates an unused legacy table even though the retired standalone application stack no longer has an adapter.
 - If EF Core is introduced later for broader persistence, use migrations and name them after the use case or schema change.
 
 ## Pricing
