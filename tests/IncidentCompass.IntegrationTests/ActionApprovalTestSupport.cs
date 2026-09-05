@@ -28,7 +28,10 @@ internal static class ActionApprovalTestSupport
                 ["IncidentCompass:ModelGateway:Provider"] = "Mock",
                 ["IncidentCompass:ModelGateway:DefaultModel"] = "mock-chat",
                 ["IncidentCompass:Embeddings:Provider"] = "Mock",
-                ["IncidentCompass:Embeddings:DefaultModel"] = "mock-embedding"
+                ["IncidentCompass:Embeddings:DefaultModel"] = "mock-embedding",
+                ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+                ["IncidentCompass:Tickets:GitHub:Repository"] = "repo",
+                ["IncidentCompass:Tickets:GitHub:Token"] = "test-token"
             })
             .Build();
         var services = new ServiceCollection();
@@ -192,6 +195,52 @@ internal static class ActionApprovalTestSupport
             [],
             "Review the successor report.");
         return (job, report);
+    }
+
+    public static async Task<Guid> SeedTicketSearchResultAsync(
+        string connectionString,
+        ActionApprovalOriginFixture origin,
+        string outcome = "no_match",
+        string? provider = "github",
+        string? repository = "owner/repo")
+    {
+        var artifactId = Guid.NewGuid();
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            matched = outcome == "matched",
+            message = outcome == "matched" ? "matches found" :
+                outcome == "no_match" ? "no matches" : "connector unavailable",
+            outcome,
+            provider,
+            repository,
+            code = outcome == "matched" ? "ticket_search_matches" :
+                outcome == "no_match" ? "ticket_search_no_matches" : "ticket_search_unavailable",
+            items = outcome == "matched"
+                ? new object[] { new { externalId = "42" } }
+                : Array.Empty<object>(),
+            noMatchReason = outcome == "matched" ? null : "ticket_search_no_matches"
+        });
+        await ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES (@id, @job_id, 1, 'ToolResult', 'tool:ticket_search',
+                    CAST(@payload AS jsonb), @content_hash, clock_timestamp());
+
+            INSERT INTO incidentcompass.triage_ledger (
+                fault_id, job_id, attempt, event_type, role, tool_name, rationale,
+                tool_status, payload_ref, config_hash, created_at_utc)
+            VALUES (@fault_id, @job_id, 1, 'ToolResult', 'tickets', 'ticket_search',
+                    'ticket search test outcome', 'Succeeded', @payload_ref,
+                    @config_hash, clock_timestamp());
+            """,
+            ("id", artifactId),
+            ("job_id", origin.JobId),
+            ("payload", payload),
+            ("content_hash", "ticket-result-" + artifactId.ToString("N")),
+            ("fault_id", origin.FaultId),
+            ("payload_ref", "artifact:" + artifactId),
+            ("config_hash", origin.ConfigHash));
+        return artifactId;
     }
 
     public static async Task<long> CountAsync(

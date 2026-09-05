@@ -11,6 +11,7 @@ internal static class TicketsSetup
         services.TryAddScoped<ITicketSearch, UnavailableTicketSearch>();
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IImmediateAgentTool, TicketSearchTool>());
         services.AddSingleton(new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead));
+        services.AddSingleton(TicketCreateTool.Descriptor);
         return services;
     }
 }

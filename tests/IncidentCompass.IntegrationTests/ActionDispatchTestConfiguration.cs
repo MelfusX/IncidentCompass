@@ -11,7 +11,9 @@ internal static class ActionDispatchTestConfiguration
         ActionExecutionMode mode = ActionExecutionMode.Live,
         bool requireApproval = false,
         bool allowed = true,
-        string toolId = "action_test") =>
+        string toolId = "action_test",
+        ActionCategory category = ActionCategory.Notification,
+        string logicalTargetId = "test:target") =>
         new(
             "action-dispatch-current",
             new Dictionary<string, TriageProviderSettings>(StringComparer.Ordinal),
@@ -29,8 +31,8 @@ internal static class ActionDispatchTestConfiguration
                     null,
                     null,
                     null,
-                    ActionCategory.Notification.ToStorageValue(),
-                    "test:target")
+                    category.ToStorageValue(),
+                    logicalTargetId)
             },
             [],
             new IngestionSettings("local", ["tester"]),
@@ -43,7 +45,7 @@ internal static class ActionDispatchTestConfiguration
                 requireApproval,
                 60)
             {
-                NotificationRoutes = allowed
+                NotificationRoutes = allowed && category == ActionCategory.Notification
                     ? [new NotificationRoute("test-route", toolId, null, null, ["error", "critical", "fatal"])]
                     : []
             }

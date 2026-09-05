@@ -88,11 +88,11 @@ complete the multi-turn trajectory or reach a correct conclusion.
   registered action identity and snapshotted action grants, and creates requested or auto-approved
   rows without invoking an adapter. A bounded Worker dispatcher expires and supersedes stale rows,
   claims approved rows with a durable fence, verifies current policy and adapter binding, then sends
-  the exact frozen bytes at most once. The Worker composition includes one disabled-by-default
-  Telegram notification workflow and adapter. Application composition exposes only its non-secret
-  tool descriptor; Worker composition owns the workflow, route binding, credentials and HTTP
-  adapter. Ordered backend routes select its fixed Worker-owned chat; the model, report and API
-  cannot supply a recipient or message body.
+  the exact frozen bytes at most once. The Worker composition includes disabled-by-default Telegram
+  notification and GitHub Issue create workflows and adapters. Application composition exposes only
+  their non-secret tool descriptors; Worker composition owns workflows, host bindings, credentials
+  and HTTP adapters. Ordered backend routes select Telegram's fixed Worker-owned chat, while the
+  GitHub binding selects one fixed repository. The model, report and API cannot supply either target.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -151,7 +151,12 @@ GitHub Issues search is disabled operationally until the Worker host receives
 secret `IncidentCompass__Tickets__GitHub__Token`. The token is a host secret and does not enter the
 public triage configuration or its snapshots. Requests always target `https://api.github.com` with
 redirects disabled. Removing the `tickets` role or its `ticket_search` grant removes the tool from
-the model surface. Ticket create/update is not part of this read-only integration.
+the model surface. `ticket_create` is a separate, never-model-callable post-report action. Enabling it
+requires an exact `Actions.AllowedTools` grant and non-disabled mode while retaining the same Worker
+repository binding. It is eligible only after exactly one current-attempt, repository-bound
+`ticket_search` no-match. Every create remains `requested` until an authenticated operator approves
+the frozen hashes. Bounded marker lookup may precede at most one issue POST; uncertainty after that
+POST is visible and never automatically resent. Ticket update remains out of scope for this slice.
 
 Telegram notification is also disabled by default. Enabling it requires one exact
 `telegram_notify` entry in `Actions.AllowedTools`, one ordered `Actions.NotificationRoutes` entry
@@ -185,9 +190,10 @@ The current scope provides a minimal host-managed API-key boundary, not enterpri
 managed key distribution or a secret store. It also does not provide a stable extension framework,
 a UI, general-purpose external-action framework, an MCP surface, a usage dashboard or a general
 document-ingestion system. The action approval API records and reviews frozen proposals. Production
-Worker composition registers only the Telegram notification workflow and adapter; Application/API
-composition registers its non-secret descriptor for configuration validation without credentials.
-Ticket writes and arbitrary model-selected external actions remain out of scope.
+Worker composition registers the Telegram notification and GitHub Issue create workflows and
+adapters; Application/API composition registers their non-secret descriptors for configuration
+validation without credentials. Ticket update and arbitrary model-selected external actions remain
+out of scope.
 Demo auth and Compose defaults remain local-only; non-local operators must inject high-entropy key
 digests through protected host configuration and apply the usual transport and deployment controls.
 

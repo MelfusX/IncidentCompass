@@ -15,7 +15,9 @@ public sealed class TicketSearchToolTests
             TicketSearchOutcome.Matched,
             "ticket_search_matches",
             [new TicketSearchMatch("github", "owner/repo", "42", "Checkout failure", "open", "octocat",
-                DateTimeOffset.Parse("2026-08-28T00:00:00Z"), "https://github.com/owner/repo/issues/42", 0.85)]));
+                DateTimeOffset.Parse("2026-08-28T00:00:00Z"), "https://github.com/owner/repo/issues/42", 0.85)],
+            "github",
+            "owner/repo"));
         var tool = new TicketSearchTool(adapter, TimeProvider.System);
 
         var result = await tool.ExecuteAsync(CreateContext(), Json("{}"), TestContext.Current.CancellationToken);
@@ -26,6 +28,8 @@ public sealed class TicketSearchToolTests
         Assert.Equal("TimeoutException", adapter.Request.ErrorType);
         Assert.Equal(["sev1", "payments"], adapter.Request.KnownLabels);
         Assert.True(result.Output.GetProperty("matched").GetBoolean());
+        Assert.Equal("github", result.Output.GetProperty("provider").GetString());
+        Assert.Equal("owner/repo", result.Output.GetProperty("repository").GetString());
         Assert.DoesNotContain("body", result.Output.GetRawText(), StringComparison.OrdinalIgnoreCase);
         var artifact = Assert.Single(result.Artifacts!);
         Assert.Equal(ArtifactKind.RetrievedItem, artifact.Kind);
@@ -41,7 +45,9 @@ public sealed class TicketSearchToolTests
             TicketSearchOutcome.Matched,
             "ticket_search_matches",
             [new TicketSearchMatch("jira", "INC", "INC-42", "Checkout failure", "Open", null,
-                DateTimeOffset.Parse("2026-08-28T00:00:00Z"), "https://jira.example/browse/INC-42", 0.4)]));
+                DateTimeOffset.Parse("2026-08-28T00:00:00Z"), "https://jira.example/browse/INC-42", 0.4)],
+            "jira",
+            "INC"));
         var tool = new TicketSearchTool(adapter, TimeProvider.System);
 
         var result = await tool.ExecuteAsync(CreateContext(), Json("{}"), TestContext.Current.CancellationToken);
@@ -53,7 +59,9 @@ public sealed class TicketSearchToolTests
     [Fact]
     public void Validate_RejectsModelSelectedQueryOrRepository()
     {
-        var tool = new TicketSearchTool(new CapturingTicketSearch(TicketSearchResult.NoMatch()), TimeProvider.System);
+        var tool = new TicketSearchTool(
+            new CapturingTicketSearch(TicketSearchResult.NoMatch("github", "owner/repo")),
+            TimeProvider.System);
 
         Assert.False(tool.Validate(Json("{\"query\":\"secret\"}")).IsValid);
         Assert.False(tool.Validate(Json("{\"repository\":\"other/repo\"}")).IsValid);

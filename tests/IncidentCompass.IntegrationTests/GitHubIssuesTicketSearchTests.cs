@@ -23,6 +23,8 @@ public sealed class GitHubIssuesTicketSearchTests
         var result = await adapter.SearchAsync(Request(), TestContext.Current.CancellationToken);
 
         Assert.Equal(TicketSearchOutcome.Matched, result.Outcome);
+        Assert.Equal("github", result.Provider);
+        Assert.Equal("owner/repo", result.Repository);
         var match = Assert.Single(result.Matches);
         Assert.Equal("42", match.ExternalId);
         Assert.Equal("https://github.com/owner/repo/issues/42", match.Url);
@@ -56,6 +58,8 @@ public sealed class GitHubIssuesTicketSearchTests
         var result = await CreateAdapter(handler).SearchAsync(Request(), TestContext.Current.CancellationToken);
 
         Assert.Equal(TicketSearchOutcome.NoMatch, result.Outcome);
+        Assert.Equal("github", result.Provider);
+        Assert.Equal("owner/repo", result.Repository);
         Assert.Empty(result.Matches);
     }
 

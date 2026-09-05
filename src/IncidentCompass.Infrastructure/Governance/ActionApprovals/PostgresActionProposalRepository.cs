@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Tickets;
 using IncidentCompass.Domain.Incidents.Actions;
 using IncidentCompass.Domain.Incidents.Statuses;
 using IncidentCompass.Infrastructure.Postgres;
@@ -17,7 +18,6 @@ internal sealed class PostgresActionProposalRepository(
 {
     private readonly PostgresActionProvenanceGrounder grounder = new(ticketOptions.Value.ConfiguredRepository);
     private readonly PostgresActionProposalPolicyStore policyStore = new(dataSourceProvider, timeProvider);
-
     public Task<ActionProposalOrigin?> FindSafeOriginAsync(
         string tenantId,
         Guid originReportId,
@@ -64,7 +64,6 @@ internal sealed class PostgresActionProposalRepository(
                 await transaction.CommitAsync(cancellationToken);
                 return replay;
             }
-
             var origin = await grounder.GroundAsync(
                 connection, transaction, GroundingInput(proposal), cancellationToken);
             existing = await PostgresActionProposalReplay.FindAsync(connection, transaction, proposal, cancellationToken);
@@ -75,7 +74,6 @@ internal sealed class PostgresActionProposalRepository(
                 await transaction.CommitAsync(cancellationToken);
                 return replay;
             }
-
             var action = await PostgresActionProposalCommitter.InsertAsync(
                 connection, transaction, proposal, origin, payloadSha256,
                 faultInjector, timeProvider, cancellationToken);
@@ -131,6 +129,19 @@ internal sealed class PostgresActionProposalRepository(
                 await DenyAsync("configuration_invalid");
             }
 
+            if (proposal.RegisteredTool.Category == ActionCategory.TicketCreate &&
+                proposal.RegisteredTool.ToolId == TicketCreateTool.ToolId)
+            {
+                var eligibilityDenial = await PostgresTicketActionHistory.ValidateCreateProposalAsync(
+                    connection, transaction, proposal, origin,
+                    ticketOptions.Value.ConfiguredRepository,
+                    cancellationToken);
+                if (eligibilityDenial is not null)
+                {
+                    await DenyAsync(eligibilityDenial);
+                }
+            }
+
             if (proposal.RegisteredTool.Category == ActionCategory.Notification)
             {
                 var notificationDenial = await PostgresActionProposalReplay.ApplyNotificationGuardAsync(
@@ -140,7 +151,6 @@ internal sealed class PostgresActionProposalRepository(
                     await DenyAsync(notificationDenial);
                 }
             }
-
             var facts = new PostgresActionToolRuleFactReader(connection, transaction, origin);
             var policy = await ruleEngine.DecideExternalAsync(
                 proposal.Configuration, proposal.RegisteredTool, facts, cancellationToken);
@@ -182,10 +192,8 @@ internal sealed class PostgresActionProposalRepository(
             throw;
         }
     }
-
     private static ActionProposalGroundingInput GroundingInput(PreparedActionProposal proposal) =>
         new(proposal.TenantId, proposal.OriginReportId, proposal.EvidenceArtifactIds);
-
     private static ActionProposalGroundingInput GroundingInput(GovernedActionProposal proposal) =>
         new(proposal.TenantId, proposal.OriginReportId, proposal.EvidenceArtifactIds);
 }

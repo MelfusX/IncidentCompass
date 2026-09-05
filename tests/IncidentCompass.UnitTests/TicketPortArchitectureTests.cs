@@ -5,9 +5,10 @@ namespace IncidentCompass.UnitTests;
 public sealed class TicketPortArchitectureTests
 {
     [Fact]
-    public void ApplicationTicketPort_IsSearchOnlyAndProviderNeutral()
+    public void ApplicationTicketPorts_AreProviderNeutralAndKeepAuthorityOutOfSearchInput()
     {
         var methods = typeof(ITicketSearch).GetMethods();
+        var historyMethods = typeof(ITicketActionHistory).GetMethods();
         var applicationTypes = typeof(ITicketSearch).Assembly.GetTypes()
             .Where(type => type.Namespace == "IncidentCompass.Application.Tickets")
             .ToArray();
@@ -16,6 +17,7 @@ public sealed class TicketPortArchitectureTests
             .ToArray();
 
         Assert.Equal("SearchAsync", Assert.Single(methods).Name);
+        Assert.Equal("ReadPriorAsync", Assert.Single(historyMethods).Name);
         Assert.DoesNotContain(applicationTypes,
             type => ContainsProviderOrTransportConcept(type.Name));
         Assert.DoesNotContain(requestProperties,

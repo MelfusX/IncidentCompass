@@ -117,6 +117,8 @@ internal sealed class TicketSearchTool(ITicketSearch ticketSearch, TimeProvider 
             ["message"] = result.Outcome == TicketSearchOutcome.Matched ? "matches found" :
                 result.Outcome == TicketSearchOutcome.NoMatch ? "no matches" : "connector unavailable",
             ["outcome"] = outcome,
+            ["provider"] = result.Provider,
+            ["repository"] = result.Repository,
             ["code"] = result.Code,
             ["items"] = items,
             ["noMatchReason"] = result.Outcome == TicketSearchOutcome.Matched ? null : result.Code
