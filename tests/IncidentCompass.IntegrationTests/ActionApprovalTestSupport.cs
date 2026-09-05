@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using IncidentCompass.Application;
 using IncidentCompass.Application.Governance.ActionApprovals;
@@ -251,7 +252,7 @@ internal static class ActionApprovalTestSupport
         string connectionString,
         string sql,
         params (string Name, object Value)[] parameters) =>
-        Convert.ToInt64(await ScalarAsync(connectionString, sql, parameters));
+        Convert.ToInt64(await ScalarAsync(connectionString, sql, parameters), CultureInfo.InvariantCulture);
 
     public static async Task<object?> ScalarAsync(
         string connectionString,

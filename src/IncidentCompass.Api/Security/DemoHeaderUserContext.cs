@@ -59,7 +59,7 @@ internal sealed class DemoHeaderUserContext(
         return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
-    private IReadOnlyCollection<string> GetIdentityValues(
+    private string[] GetIdentityValues(
         string name,
         IReadOnlyCollection<string> fallback)
     {
@@ -78,7 +78,7 @@ internal sealed class DemoHeaderUserContext(
         return NormalizeIdentityValues(fallback);
     }
 
-    private static IReadOnlyCollection<string> NormalizeIdentityValues(IEnumerable<string> values)
+    private static string[] NormalizeIdentityValues(IEnumerable<string> values)
     {
         return values
             .Where(static item => !string.IsNullOrWhiteSpace(item))

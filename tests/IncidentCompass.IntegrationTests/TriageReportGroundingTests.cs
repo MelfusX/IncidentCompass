@@ -20,6 +20,8 @@ namespace IncidentCompass.IntegrationTests;
 [Collection(PostgresRepositoryCollection.CollectionName)]
 public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgres)
 {
+    private static readonly string[] NonCitableAnalysisKeyFacts = ["Analysis output is not citable evidence."];
+
     [DockerAvailableFact]
     public async Task ProcessClaimedAsync_WorkerOutputEvidenceIsRejectedThenReprompted()
     {
@@ -757,7 +759,7 @@ public sealed class TriageReportGroundingTests(PostgresRepositoryFixture postgre
     {
         return JsonSerializer.Serialize(new
         {
-            keyFacts = new[] { "Analysis output is not citable evidence." },
+            keyFacts = NonCitableAnalysisKeyFacts,
             candidateClassification = "SimpleKnownError",
             needsDeeperContext = false,
             rationale = "Analysis completed."

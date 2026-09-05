@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
@@ -50,7 +51,7 @@ internal sealed class PostgresActionToolRuleFactReader(
             """ + attemptPredicate + ";", connection, transaction);
         command.AddParameter("event_type", eventType);
         AddParameters(command, toolName, attemptPredicate);
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
     private void AddParameters(NpgsqlCommand command, string toolName, string attemptPredicate)

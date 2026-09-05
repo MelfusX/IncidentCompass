@@ -107,7 +107,7 @@ internal static class TriageReportParser
         return arguments;
     }
 
-    private static IReadOnlyList<TriageReportEvidenceReference> ReadEvidence(JsonElement root)
+    private static List<TriageReportEvidenceReference> ReadEvidence(JsonElement root)
     {
         if (!root.TryGetProperty("evidence", out var element) || element.ValueKind != JsonValueKind.Array)
         {
@@ -144,7 +144,7 @@ internal static class TriageReportParser
             $"publish_report {propertyName} must be a string.");
     }
 
-    private static IReadOnlyList<string> ReadRequiredStringArray(JsonElement root, string propertyName)
+    private static List<string> ReadRequiredStringArray(JsonElement root, string propertyName)
     {
         if (!root.TryGetProperty(propertyName, out var element) || element.ValueKind != JsonValueKind.Array)
         {

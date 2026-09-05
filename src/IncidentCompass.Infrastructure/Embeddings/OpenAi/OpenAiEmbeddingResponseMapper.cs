@@ -14,7 +14,8 @@ internal sealed class OpenAiEmbeddingResponseMapper
         var embeddingResponse = JsonSerializer.Deserialize<OpenAiEmbeddingResponse>(
             responseContent,
             OpenAiEmbeddingJson.Options);
-        var embedding = embeddingResponse?.Data?.FirstOrDefault()?.Embedding;
+        var data = embeddingResponse?.Data;
+        var embedding = data is { Count: > 0 } && data[0] is { } item ? item.Embedding : null;
         if (embedding is null || embedding.Count == 0)
         {
             throw errorMapper.EmptyEmbedding();

@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Infrastructure.Postgres;
@@ -155,7 +156,7 @@ internal static class PostgresActionProposalReplay
             """, connection, transaction);
         command.AddParameter("action_id", existing.Id);
         command.AddParameter("artifact_ids", evidenceArtifactIds.ToArray());
-        var matched = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        var matched = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (matched != evidenceArtifactIds.Count || existing.ProvenanceCount != matched + 1)
         {
             throw new ConflictException("Action proposal idempotency key was reused with different provenance.");

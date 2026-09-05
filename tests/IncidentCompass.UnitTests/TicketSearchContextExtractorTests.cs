@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application.Tickets;
 using IncidentCompass.Domain.Incidents;
@@ -76,7 +77,7 @@ public sealed class TicketSearchContextExtractorTests
 
     private static Signal CreateSignal(JsonElement attributes)
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z");
+        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
         return new Signal(
             Guid.NewGuid(), "tenant", "otel", null, null, null, FingerprintStrength.Strong, true,
             null, false, null, null, null, null, null, "service", "prod", null, "Error",

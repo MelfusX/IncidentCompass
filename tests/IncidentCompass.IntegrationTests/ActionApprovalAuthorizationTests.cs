@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -270,13 +271,13 @@ public sealed class ActionApprovalAuthorizationTests(PostgresRepositoryFixture p
         Convert.ToString(await ActionApprovalTestSupport.ScalarAsync(
             connectionString,
             "SELECT state FROM incidentcompass.action_approvals WHERE id = @id;",
-            ("id", actionId)))!;
+            ("id", actionId)), CultureInfo.InvariantCulture)!;
 
     private static async Task<string> ReadDecisionActorAsync(string connectionString, Guid actionId) =>
         Convert.ToString(await ActionApprovalTestSupport.ScalarAsync(
             connectionString,
             "SELECT decision_actor FROM incidentcompass.action_approvals WHERE id = @id;",
-            ("id", actionId)))!;
+            ("id", actionId)), CultureInfo.InvariantCulture)!;
 
     private static Task<long> CountSentinelAsync(string connectionString, string sentinel) =>
         ActionApprovalTestSupport.CountAsync(connectionString, """

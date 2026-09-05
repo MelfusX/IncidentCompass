@@ -59,7 +59,7 @@ public static class SourceCodeEvidenceShape
     private static bool IsSafeRelativePath(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length > MaxRelativePathCharacters ||
-            Path.IsPathRooted(value) || value.IndexOf('\0') >= 0 || value.Contains('\\'))
+            Path.IsPathRooted(value) || value.Contains('\0') || value.Contains('\\'))
         {
             return false;
         }

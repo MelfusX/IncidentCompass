@@ -5,6 +5,6 @@ public interface IPipelineBehavior<TRequest, TResponse>
 {
     Task<TResponse> HandleAsync(
         TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        PipelineContinuation<TResponse> continuation,
         CancellationToken cancellationToken);
 }

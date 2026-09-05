@@ -7,14 +7,22 @@
          after changing a PackageReference, then commit the updated lock files. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
-    <!-- Style rules in .editorconfig are reported by the compiler, so a style regression
-         is visible in every build and not only when `dotnet format` runs. -->
+    <!-- Enforce the .editorconfig code-style rules (unused usings, formatting, file-scoped
+         namespaces, using placement) as build warnings, not just editor suggestions. -->
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 
-    <!-- IDE0005 (unnecessary using directive) only participates in build analysis when the
-         compiler produces a documentation file (dotnet/roslyn#41640). XML doc comments are
-         not a project convention, so CS1591 is suppressed rather than documenting every
-         public member. -->
+    <!-- Warnings are build-breaking so drift is caught at build time instead of drifting
+         unnoticed; AnalysisLevel opts every project into the current recommended set of
+         .NET analyzer rules. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- IDE0005 (unused usings) is configured as a build-enforced diagnostic in .editorconfig,
+         but the compiler only reports it during build when GenerateDocumentationFile is true
+         (https://github.com/dotnet/roslyn/issues/41640). XML doc generation is enabled solely to
+         make that enforcement real; the generated .xml files are a build by-product and are not
+         published. CS1591 (missing XML comment for a publicly visible type or member) is
+         suppressed because this reference project documents selectively rather than exhaustively. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>

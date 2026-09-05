@@ -45,9 +45,9 @@ internal sealed class OpenAiEmbeddingExecutor(
                 }
             }
             catch (TaskCanceledException) when (CanRetryCanceledAttempt(
-                                                   cancellationToken,
                                                    attempt,
-                                                   maxRetryAttempts))
+                                                   maxRetryAttempts,
+                                                   cancellationToken))
             {
                 await DelayBeforeTransportRetryAsync(
                     clientOptions,
@@ -175,9 +175,9 @@ internal sealed class OpenAiEmbeddingExecutor(
     }
 
     private static bool CanRetryCanceledAttempt(
-        CancellationToken cancellationToken,
         int attempt,
-        int maxRetryAttempts) =>
+        int maxRetryAttempts,
+        CancellationToken cancellationToken) =>
         !cancellationToken.IsCancellationRequested && attempt < maxRetryAttempts;
 
     private Task DelayBeforeTransportRetryAsync(

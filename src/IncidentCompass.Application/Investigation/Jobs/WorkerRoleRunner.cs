@@ -37,7 +37,9 @@ internal sealed class WorkerRoleRunner(
                 messages,
                 toolSurface.Count > 0 ? toolSurface : null,
                 cancellationToken);
-            var toolCall = response.ProposedToolCalls?.FirstOrDefault();
+            var toolCall = response.ProposedToolCalls is { Count: > 0 } proposedToolCalls
+                ? proposedToolCalls[0]
+                : null;
             if (toolCall is not null)
             {
                 messages.Add(new AiChatMessage(AiMessageRole.Assistant, response.Content, ToolCalls: [toolCall]));

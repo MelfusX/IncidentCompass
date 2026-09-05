@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
@@ -119,7 +120,7 @@ internal sealed class PostgresActionProvenanceGrounder(string? configuredTicketR
             """, connection, transaction);
         command.AddParameter("report_id", proposal.OriginReportId);
         command.AddParameter("artifact_ids", proposal.EvidenceArtifactIds.ToArray());
-        var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (count != proposal.EvidenceArtifactIds.Count)
         {
             throw new ActionProposalValidationException("Action provenance must use persisted origin-report evidence.");

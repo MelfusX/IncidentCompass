@@ -136,7 +136,7 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
         };
     }
 
-    private static JsonElement CreateOutput(AgentToolExecutionContext context, IReadOnlyList<MemorySearchMatch> matches, IReadOnlyList<TriageArtifact> artifacts)
+    private static JsonElement CreateOutput(AgentToolExecutionContext context, IReadOnlyList<MemorySearchMatch> matches, TriageArtifact[] artifacts)
     {
         var items = new JsonArray();
         for (var i = 0; i < matches.Count; i++)

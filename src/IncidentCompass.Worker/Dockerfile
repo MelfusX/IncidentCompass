@@ -3,7 +3,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Directory.Build.props IncidentCompass.slnx ./
+COPY Directory.Build.props Directory.Packages.props IncidentCompass.slnx ./
 COPY src/IncidentCompass.Domain/IncidentCompass.Domain.csproj src/IncidentCompass.Domain/
 COPY src/IncidentCompass.Domain/packages.lock.json src/IncidentCompass.Domain/
 COPY src/IncidentCompass.Application/IncidentCompass.Application.csproj src/IncidentCompass.Application/

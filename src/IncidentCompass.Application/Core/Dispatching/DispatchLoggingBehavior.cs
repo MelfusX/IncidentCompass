@@ -10,13 +10,13 @@ internal sealed partial class DispatchLoggingBehavior<TRequest, TResponse>(
 {
     public async Task<TResponse> HandleAsync(
         TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        PipelineContinuation<TResponse> continuation,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var response = await next();
+            var response = await continuation();
             LogDispatched(logger, typeof(TRequest).Name, stopwatch.ElapsedMilliseconds);
             return response;
         }

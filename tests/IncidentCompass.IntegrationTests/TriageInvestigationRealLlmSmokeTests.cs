@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -42,7 +43,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         await WriteResultAsync(settings, outcomes);
     }
 
-    private async Task<SmokeOutcome> RunOneAsync(
+    private static async Task<SmokeOutcome> RunOneAsync(
         TestScope scope,
         int index,
         RealLocalLlmSmokeSettings settings)
@@ -114,7 +115,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:ChatCompletionsPath", settings.ChatCompletionsPath);
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:ApiKey", settings.ApiKey);
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:AllowInsecureHttpForLoopback", "true");
-            builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:TimeoutSeconds", settings.TimeoutSeconds.ToString());
+            builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:TimeoutSeconds", settings.TimeoutSeconds.ToString(CultureInfo.InvariantCulture));
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:MaxRetryAttempts", "0");
             builder.UseSetting("IncidentCompass:Embeddings:Provider", "Mock");
             builder.UseSetting("IncidentCompass:Embeddings:DefaultModel", MemoryModel);

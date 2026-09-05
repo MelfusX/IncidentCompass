@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
@@ -73,12 +74,12 @@ internal sealed class TriageConfigurationLoadValidator(
 
             if (route.MaxOutputTokens is <= 0)
             {
-                throw Invalid("Routes." + routeId + ".MaxOutputTokens", route.MaxOutputTokens.Value.ToString(), "a positive integer when set");
+                throw Invalid("Routes." + routeId + ".MaxOutputTokens", route.MaxOutputTokens.Value.ToString(CultureInfo.InvariantCulture), "a positive integer when set");
             }
 
             if (route.ContextWindowTokens is <= 0)
             {
-                throw Invalid("Routes." + routeId + ".ContextWindowTokens", route.ContextWindowTokens.Value.ToString(), "a positive integer when set");
+                throw Invalid("Routes." + routeId + ".ContextWindowTokens", route.ContextWindowTokens.Value.ToString(CultureInfo.InvariantCulture), "a positive integer when set");
             }
         }
     }
@@ -97,22 +98,22 @@ internal sealed class TriageConfigurationLoadValidator(
 
         if (orchestrator.Budget.MaxWorkers <= 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxWorkers", orchestrator.Budget.MaxWorkers.ToString(), "a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxWorkers", orchestrator.Budget.MaxWorkers.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (orchestrator.Budget.MaxTokens <= 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxTokens", orchestrator.Budget.MaxTokens.ToString(), "a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxTokens", orchestrator.Budget.MaxTokens.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (orchestrator.Budget.MaxWallClockSeconds <= 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxWallClockSeconds", orchestrator.Budget.MaxWallClockSeconds.ToString(), "a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxWallClockSeconds", orchestrator.Budget.MaxWallClockSeconds.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (orchestrator.Budget.MaxReprompts < 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxReprompts", orchestrator.Budget.MaxReprompts.ToString(), "zero or a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxReprompts", orchestrator.Budget.MaxReprompts.ToString(CultureInfo.InvariantCulture), "zero or a positive integer");
         }
     }
 

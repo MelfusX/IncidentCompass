@@ -24,7 +24,7 @@ internal static class MemoryWorkerOutputParser
         return new MemoryWorkerOutput(matched, items, noMatchReason);
     }
 
-    private static IReadOnlyList<MemoryWorkerOutputItem> ReadItems(JsonElement root)
+    private static List<MemoryWorkerOutputItem> ReadItems(JsonElement root)
     {
         if (!root.TryGetProperty("items", out var itemsElement) ||
             itemsElement.ValueKind != JsonValueKind.Array)

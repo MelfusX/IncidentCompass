@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application;
 using IncidentCompass.Application.Core.ModelClients;
@@ -16,8 +17,8 @@ namespace IncidentCompass.IntegrationTests;
 [Collection(PostgresRepositoryCollection.CollectionName)]
 public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
 {
-    private static readonly DateTimeOffset WindowStart = DateTimeOffset.Parse("2026-08-01T00:15:00Z");
-    private static readonly DateTimeOffset WindowEnd = DateTimeOffset.Parse("2026-08-01T03:00:00Z");
+    private static readonly DateTimeOffset WindowStart = DateTimeOffset.Parse("2026-08-01T00:15:00Z", CultureInfo.InvariantCulture);
+    private static readonly DateTimeOffset WindowEnd = DateTimeOffset.Parse("2026-08-01T03:00:00Z", CultureInfo.InvariantCulture);
 
     [DockerAvailableFact]
     public async Task ValidMalformedUnpricedAndAmbiguousHistoryRollsUpFailClosed()
@@ -28,14 +29,14 @@ public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
         await SeedPricingMatrixAsync(database.ConnectionString);
 
         await InsertCallAsync(database.ConnectionString, tenantA, WindowStart, Usage("alpha", "Model-A", 100_000, 200_000, 300_000));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T00:59:59Z"), Usage("alpha", "Model-A", 10, 20, 30));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:00:00Z"), Usage("alpha", "Model-A", 1_000_000, 1_000_000, 2_000_000));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:05:00Z"), Usage("beta", "Model-B", 1_000_000, 0, 1_000_000));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:10:00Z"), Usage("missing", "Model-C", 7, 8, 15));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:15:00Z"), Usage("caseprovider", "CaseModel", 9, 10, 19));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:20:00Z"), Usage("overlap", "Model-O", 11, 12, 23));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:25:00Z"), Usage("tie", "Model-T", 13, 14, 27));
-        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:30:00Z"), Usage("mock", "mock-chat", 21, 22, 43));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T00:59:59Z", CultureInfo.InvariantCulture), Usage("alpha", "Model-A", 10, 20, 30));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:00:00Z", CultureInfo.InvariantCulture), Usage("alpha", "Model-A", 1_000_000, 1_000_000, 2_000_000));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:05:00Z", CultureInfo.InvariantCulture), Usage("beta", "Model-B", 1_000_000, 0, 1_000_000));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:10:00Z", CultureInfo.InvariantCulture), Usage("missing", "Model-C", 7, 8, 15));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:15:00Z", CultureInfo.InvariantCulture), Usage("caseprovider", "CaseModel", 9, 10, 19));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:20:00Z", CultureInfo.InvariantCulture), Usage("overlap", "Model-O", 11, 12, 23));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:25:00Z", CultureInfo.InvariantCulture), Usage("tie", "Model-T", 13, 14, 27));
+        await InsertCallAsync(database.ConnectionString, tenantA, DateTimeOffset.Parse("2026-08-01T01:30:00Z", CultureInfo.InvariantCulture), Usage("mock", "mock-chat", 21, 22, 43));
 
         var invalidRows = new[]
         {
@@ -51,7 +52,7 @@ public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
             await InsertCallAsync(
                 database.ConnectionString,
                 tenantA,
-                DateTimeOffset.Parse("2026-08-01T02:00:00Z").AddMinutes(index),
+                DateTimeOffset.Parse("2026-08-01T02:00:00Z", CultureInfo.InvariantCulture).AddMinutes(index),
                 invalidRows[index]);
         }
 
@@ -78,7 +79,7 @@ public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
         const string endpointSentinel = "https://provider-endpoint-sentinel.invalid";
         const string credentialSentinel = "credential-secret-sentinel";
         const string vectorSentinel = "embedding-vector-sentinel";
-        var now = DateTimeOffset.Parse("2026-08-02T12:30:00Z");
+        var now = DateTimeOffset.Parse("2026-08-02T12:30:00Z", CultureInfo.InvariantCulture);
         await using var database = await ActionApprovalDatabase.CreateAsync(postgres);
         var seeded = await SeedJobAsync(database.ConnectionString, "tenant-a", now);
         await InsertPriceAsync(
@@ -109,7 +110,7 @@ public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
         var rationale = Convert.ToString(await ActionApprovalTestSupport.ScalarAsync(database.ConnectionString, """
             SELECT rationale FROM incidentcompass.triage_ledger
             WHERE job_id = @job AND event_type = 'ModelCall';
-            """, ("job", seeded.Job.Id)))!;
+            """, ("job", seeded.Job.Id)), CultureInfo.InvariantCulture)!;
         using var metadata = JsonDocument.Parse(rationale);
         Assert.Equal("safe-logical-route", metadata.RootElement.GetProperty("routeId").GetString());
         Assert.Equal(1, await ActionApprovalTestSupport.CountAsync(database.ConnectionString, """
@@ -192,12 +193,12 @@ public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
 
     private static async Task SeedPricingMatrixAsync(string connectionString)
     {
-        await InsertPriceAsync(connectionString, "alpha", "Model-A", "USD", 1.5m, 2.5m, DateTimeOffset.Parse("2026-08-01T00:00:00Z"), DateTimeOffset.Parse("2026-08-01T01:00:00Z"));
-        await InsertPriceAsync(connectionString, "alpha", "Model-A", "USD", 2m, 3m, DateTimeOffset.Parse("2026-08-01T01:00:00Z"), WindowEnd);
+        await InsertPriceAsync(connectionString, "alpha", "Model-A", "USD", 1.5m, 2.5m, DateTimeOffset.Parse("2026-08-01T00:00:00Z", CultureInfo.InvariantCulture), DateTimeOffset.Parse("2026-08-01T01:00:00Z", CultureInfo.InvariantCulture));
+        await InsertPriceAsync(connectionString, "alpha", "Model-A", "USD", 2m, 3m, DateTimeOffset.Parse("2026-08-01T01:00:00Z", CultureInfo.InvariantCulture), WindowEnd);
         await InsertPriceAsync(connectionString, "beta", "Model-B", "EUR", 4m, 6m, WindowStart, WindowEnd);
         await InsertPriceAsync(connectionString, "CaseProvider", "CaseModel", "USD", 1m, 1m, WindowStart, WindowEnd);
         await InsertPriceAsync(connectionString, "overlap", "Model-O", "USD", 1m, 1m, WindowStart, WindowEnd);
-        await InsertPriceAsync(connectionString, "overlap", "Model-O", "USD", 2m, 2m, DateTimeOffset.Parse("2026-08-01T01:00:00Z"), DateTimeOffset.Parse("2026-08-01T02:00:00Z"));
+        await InsertPriceAsync(connectionString, "overlap", "Model-O", "USD", 2m, 2m, DateTimeOffset.Parse("2026-08-01T01:00:00Z", CultureInfo.InvariantCulture), DateTimeOffset.Parse("2026-08-01T02:00:00Z", CultureInfo.InvariantCulture));
         await InsertPriceAsync(connectionString, "tie", "Model-T", "USD", 1m, 1m, WindowStart, WindowEnd);
         await InsertPriceAsync(connectionString, "tie", "Model-T", "USD", 2m, 2m, WindowStart, WindowEnd);
     }
@@ -243,7 +244,7 @@ public sealed class ModelCostRollupTests(PostgresRepositoryFixture postgres)
         long unpriced,
         params (string Currency, decimal Amount)[] spend)
     {
-        Assert.Equal(DateTimeOffset.Parse(hourUtc), actual.HourUtc);
+        Assert.Equal(DateTimeOffset.Parse(hourUtc, CultureInfo.InvariantCulture), actual.HourUtc);
         Assert.Equal((calls, input, output, total, priced, unpriced),
             (actual.CallCount, actual.InputTokens, actual.OutputTokens, actual.TotalTokens,
              actual.PricedCallCount, actual.UnpricedCallCount));

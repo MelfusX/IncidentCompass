@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -289,7 +290,7 @@ public sealed class ApiKeyAuthenticationTests
             });
             builder.UseEnvironment("Development");
             builder.UseSetting("IncidentCompass:ApiKeyAuth:Enabled", "true");
-            builder.UseSetting("IncidentCompass:ApiKeyAuth:PermitLimit", permitLimit.ToString());
+            builder.UseSetting("IncidentCompass:ApiKeyAuth:PermitLimit", permitLimit.ToString(CultureInfo.InvariantCulture));
             builder.UseSetting("IncidentCompass:ApiKeyAuth:WindowSeconds", "300");
             SetCredential(builder, 0, "key-a", "tenant-a", KeyA);
             SetCredential(builder, 1, "key-b", "tenant-b", KeyB);

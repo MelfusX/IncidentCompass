@@ -1,6 +1,6 @@
 namespace IncidentCompass.Worker;
 
-internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
+internal sealed partial class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
 {
     private readonly List<(Task ProcessingTask, CancellationTokenSource Cancellation)> jobs = [];
 
@@ -29,7 +29,7 @@ internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
             }
             catch (Exception exception)
             {
-                logger.LogWarning(exception, "Claimed triage job processing failed after claim.");
+                LogJobFailedAfterClaim(logger, exception);
             }
             finally
             {
@@ -58,7 +58,7 @@ internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
             }
             catch (Exception exception)
             {
-                logger.LogWarning(exception, "Claimed triage job processing failed while draining the worker.");
+                LogJobFailedWhileDraining(logger, exception);
             }
             finally
             {
@@ -79,4 +79,10 @@ internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
         var completionTask = Task.WhenAny(jobs.Select(static job => job.ProcessingTask));
         await Task.WhenAny(delayTask, completionTask);
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Claimed triage job processing failed after claim.")]
+    private static partial void LogJobFailedAfterClaim(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Claimed triage job processing failed while draining the worker.")]
+    private static partial void LogJobFailedWhileDraining(ILogger logger, Exception exception);
 }

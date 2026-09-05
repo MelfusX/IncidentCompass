@@ -16,9 +16,9 @@ internal sealed class SourceContextOptionsValidator : IValidateOptions<SourceCon
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 
-    private static void ValidateExtensions(IReadOnlyCollection<string>? extensions, ICollection<string> failures)
+    private static void ValidateExtensions(string[]? extensions, List<string> failures)
     {
-        if (extensions is null || extensions.Count == 0)
+        if (extensions is null || extensions.Length == 0)
         {
             failures.Add("AllowedExtensions must contain at least one extension.");
             return;
@@ -26,7 +26,7 @@ internal sealed class SourceContextOptionsValidator : IValidateOptions<SourceCon
 
         foreach (var extension in extensions)
         {
-            if (string.IsNullOrWhiteSpace(extension) || !extension.StartsWith(".", StringComparison.Ordinal) ||
+            if (string.IsNullOrWhiteSpace(extension) || !extension.StartsWith('.') ||
                 extension.IndexOfAny(['/', '\\']) >= 0)
             {
                 failures.Add("AllowedExtensions entries must be dot-prefixed file extensions.");
@@ -34,7 +34,7 @@ internal sealed class SourceContextOptionsValidator : IValidateOptions<SourceCon
         }
     }
 
-    private static void ValidateRoots(IReadOnlyCollection<SourceContextRootOptions>? roots, ICollection<string> failures)
+    private static void ValidateRoots(IReadOnlyCollection<SourceContextRootOptions>? roots, List<string> failures)
     {
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var root in roots ?? [])
@@ -73,7 +73,7 @@ internal sealed class SourceContextOptionsValidator : IValidateOptions<SourceCon
             (value.Length >= 3 && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] is '/' or '\\');
     }
 
-    private static void RequireRange(int value, int minimum, int maximum, string name, ICollection<string> failures)
+    private static void RequireRange(int value, int minimum, int maximum, string name, List<string> failures)
     {
         if (value < minimum || value > maximum)
         {

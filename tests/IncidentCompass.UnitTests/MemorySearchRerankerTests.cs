@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Governance.Tools;
@@ -144,7 +145,7 @@ public sealed class MemorySearchRerankerTests
 
     private static AgentToolExecutionContext Context(TriageConfiguration configuration)
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z");
+        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
         return new AgentToolExecutionContext(
             new TriageJob(
                 Guid.Parse("90000000-0000-0000-0000-000000000001"),

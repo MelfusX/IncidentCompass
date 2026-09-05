@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 namespace IncidentCompass.Infrastructure.Investigation;
 
-internal sealed class PostgresTriageReportRepository(
+internal sealed partial class PostgresTriageReportRepository(
     PostgresDataSourceProvider dataSourceProvider,
     ITriageReportFinalCommitFaultInjector faultInjector,
     ITriageReportPublicationIntentWriter publicationIntentWriter,
@@ -191,10 +191,12 @@ internal sealed class PostgresTriageReportRepository(
         {
             return;
         }
-        logger.LogError(
-            "Fault {FaultId} was not terminalized while publishing triage report for job {JobId}.",
-            job.FaultId,
-            job.Id);
+        LogFaultNotTerminalized(logger, job.FaultId, job.Id);
         throw new InvalidOperationException($"Fault '{job.FaultId}' could not be marked terminal while publishing triage report.");
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Fault {FaultId} was not terminalized while publishing triage report for job {JobId}.")]
+    private static partial void LogFaultNotTerminalized(ILogger logger, Guid faultId, Guid jobId);
 }

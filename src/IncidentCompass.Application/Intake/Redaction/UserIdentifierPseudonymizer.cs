@@ -89,7 +89,7 @@ public sealed class UserIdentifierPseudonymizer(IOptions<PseudonymizationOptions
         return result;
     }
 
-    private JsonNode ProtectIdentifier(JsonNode value, string path)
+    private JsonValue ProtectIdentifier(JsonNode value, string path)
     {
         var salt = options.Value.Salt;
         if (string.IsNullOrWhiteSpace(salt))

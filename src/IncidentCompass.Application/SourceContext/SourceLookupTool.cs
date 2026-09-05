@@ -106,7 +106,7 @@ internal sealed class SourceLookupTool(
 
     private static JsonElement CreateOutput(
         SourceLookupResult result,
-        IReadOnlyList<TriageArtifact> artifacts,
+        TriageArtifact[] artifacts,
         string? release)
     {
         var items = new JsonArray();

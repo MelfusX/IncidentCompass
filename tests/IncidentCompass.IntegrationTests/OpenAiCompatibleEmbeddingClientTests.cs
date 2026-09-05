@@ -10,6 +10,8 @@ namespace IncidentCompass.IntegrationTests;
 
 public sealed class OpenAiCompatibleEmbeddingClientTests
 {
+    private static readonly float[] FakeEmbeddingVector = [0.1f, 0.2f, 0.3f];
+
     [Fact]
     public async Task CreateEmbeddingAsync_RetriesTransientProviderStatus()
     {
@@ -217,7 +219,7 @@ public sealed class OpenAiCompatibleEmbeddingClientTests
                 {
                     new
                     {
-                        embedding = new[] { 0.1f, 0.2f, 0.3f }
+                        embedding = FakeEmbeddingVector
                     }
                 },
                 usage = new

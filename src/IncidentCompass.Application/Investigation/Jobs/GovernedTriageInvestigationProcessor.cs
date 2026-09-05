@@ -49,7 +49,9 @@ internal sealed class GovernedTriageInvestigationProcessor : IClaimedTriageJobPr
         for (var turn = 0; turn < maxTurns; turn++)
         {
             var response = await CompleteOrchestratorAsync(job, configuration, attemptStartedAtUtc, messages, cancellationToken);
-            var toolCall = response.ProposedToolCalls?.FirstOrDefault();
+            var toolCall = response.ProposedToolCalls is { Count: > 0 } proposedToolCalls
+                ? proposedToolCalls[0]
+                : null;
             if (toolCall is null)
             {
                 RepromptOrThrow(configuration, ref reprompts, "Orchestrator did not propose delegate or publish_report after bounded reprompts.");

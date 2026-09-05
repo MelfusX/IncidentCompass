@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Intake.Configuration;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
 
@@ -38,7 +39,7 @@ internal static class TriageRuleLoadValidator
             case "rate_cap":
                 if (rule.Max is not > 0)
                 {
-                    throw Invalid("Rules.rate_cap.Max", rule.Max?.ToString() ?? "", "a positive integer");
+                    throw Invalid("Rules.rate_cap.Max", rule.Max?.ToString(CultureInfo.InvariantCulture) ?? "", "a positive integer");
                 }
 
                 break;

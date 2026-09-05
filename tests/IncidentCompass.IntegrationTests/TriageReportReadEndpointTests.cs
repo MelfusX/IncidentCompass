@@ -16,6 +16,8 @@ namespace IncidentCompass.IntegrationTests;
 [Collection(PostgresRepositoryCollection.CollectionName)]
 public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture postgres)
 {
+    private static readonly JsonSerializerOptions ResponseDeserializationOptions = new(JsonSerializerDefaults.Web);
+
     [DockerAvailableFact]
     public async Task GetTriageReportById_CitedPriorReportShowsUntrustedMarker()
     {
@@ -252,7 +254,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         Assert.True(response.IsSuccessStatusCode, $"Expected a successful report list response for '{path}', received {(int)response.StatusCode}: {content}");
         using var document = JsonDocument.Parse(content);
         Assert.All(document.RootElement.GetProperty("reports").EnumerateArray(), report => Assert.False(report.TryGetProperty("evidence", out _)));
-        return JsonSerializer.Deserialize<TriageReportListDto>(content, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        return JsonSerializer.Deserialize<TriageReportListDto>(content, ResponseDeserializationOptions)!;
     }
     private async Task<TestScope> CreateScopeAsync(bool citeRecurrenceState = false, bool useReTriageConfig = false)
     {
@@ -328,7 +330,7 @@ public sealed class TriageReportReadEndpointTests(PostgresRepositoryFixture post
         var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
         var content = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.True(response.IsSuccessStatusCode, $"Expected a successful report response for '{path}', received {(int)response.StatusCode}: {content}");
-        return JsonSerializer.Deserialize<TriageReportDetailsDto>(content, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        return JsonSerializer.Deserialize<TriageReportDetailsDto>(content, ResponseDeserializationOptions)!;
     }
     private static async Task ExecuteAsync(string connectionString, string sql, params (string Name, object Value)[] parameters)
     {

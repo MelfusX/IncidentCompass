@@ -13,7 +13,7 @@ internal sealed class LocalSourcePathResolver(
 
     public SourcePathResolution Resolve(string framePath, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(framePath) || framePath.IndexOf('\0') >= 0)
+        if (string.IsNullOrWhiteSpace(framePath) || framePath.Contains('\0'))
         {
             return Rejected("source_path_rejected");
         }

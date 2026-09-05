@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Observability.CostRollup;
 
 namespace IncidentCompass.UnitTests;
@@ -9,7 +10,7 @@ public sealed class CostRollupQueryValidatorTests
     [Fact]
     public void ExactThirtyOneDayUtcWindowIsValid()
     {
-        var fromUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var fromUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z", CultureInfo.InvariantCulture);
 
         var result = validator.Validate(new CostRollupQuery(fromUtc, fromUtc.AddDays(31)));
 
@@ -22,8 +23,8 @@ public sealed class CostRollupQueryValidatorTests
     public void NonUtcBoundaryIsRejected(string from, string to)
     {
         var result = validator.Validate(new CostRollupQuery(
-            DateTimeOffset.Parse(from),
-            DateTimeOffset.Parse(to)));
+            DateTimeOffset.Parse(from, CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, CultureInfo.InvariantCulture)));
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.PropertyName is "FromUtc" or "ToUtc");
@@ -35,8 +36,8 @@ public sealed class CostRollupQueryValidatorTests
     public void EmptyOrReversedWindowIsRejected(string from, string to)
     {
         var result = validator.Validate(new CostRollupQuery(
-            DateTimeOffset.Parse(from),
-            DateTimeOffset.Parse(to)));
+            DateTimeOffset.Parse(from, CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(to, CultureInfo.InvariantCulture)));
 
         Assert.False(result.IsValid);
         Assert.Contains(result.Errors, error => error.PropertyName == "window");
@@ -45,7 +46,7 @@ public sealed class CostRollupQueryValidatorTests
     [Fact]
     public void WindowOverThirtyOneDaysIsRejected()
     {
-        var fromUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var fromUtc = DateTimeOffset.Parse("2026-01-01T00:00:00Z", CultureInfo.InvariantCulture);
 
         var result = validator.Validate(new CostRollupQuery(
             fromUtc,

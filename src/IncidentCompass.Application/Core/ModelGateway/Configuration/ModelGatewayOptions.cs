@@ -22,7 +22,7 @@ public sealed class ModelGatewayOptions
 
     public IReadOnlyCollection<string> AllowedModels { get; init; } = [];
 
-    public double MinTemperature { get; init; } = 0;
+    public double MinTemperature { get; init; }
 
     public double MaxTemperature { get; init; } = 1;
 

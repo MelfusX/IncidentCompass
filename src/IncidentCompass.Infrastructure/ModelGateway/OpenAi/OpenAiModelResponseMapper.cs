@@ -14,7 +14,8 @@ internal sealed class OpenAiModelResponseMapper
         var completion = JsonSerializer.Deserialize<OpenAiChatCompletionResponse>(
             responseContent,
             OpenAiModelJson.Options);
-        var message = completion?.Choices?.FirstOrDefault()?.Message;
+        var choices = completion?.Choices;
+        var message = choices is { Count: > 0 } && choices[0] is { } choice ? choice.Message : null;
         var content = message?.Content;
         var proposedToolCalls = message?.ToolCalls?
             .Select(ToAiToolCall)

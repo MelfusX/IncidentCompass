@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Governance.Tools;
@@ -202,7 +203,7 @@ internal sealed class BenchmarkHarness(
                     "Fixtures",
                     "test-triage-config",
                     "incidentcompass.config.json"));
-            builder.UseSetting("IncidentCompass:Embeddings:MockDimensions", corpus.EmbeddingDimensions.ToString());
+            builder.UseSetting("IncidentCompass:Embeddings:MockDimensions", corpus.EmbeddingDimensions.ToString(CultureInfo.InvariantCulture));
             builder.UseSetting("IncidentCompass:Memory:Seed:Enabled", "false");
         });
         var scope = factory.Services.CreateScope();

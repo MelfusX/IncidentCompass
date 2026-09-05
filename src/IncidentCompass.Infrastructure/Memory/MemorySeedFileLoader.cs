@@ -14,7 +14,7 @@ internal static class MemorySeedFileLoader
         ("postmortems", "postmortem")
     ];
 
-    private static readonly IReadOnlyDictionary<string, string> KindAliases =
+    private static readonly Dictionary<string, string> KindAliases =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["runbook"] = "runbook",

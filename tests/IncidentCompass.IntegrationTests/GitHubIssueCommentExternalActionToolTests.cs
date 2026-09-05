@@ -354,6 +354,7 @@ public sealed class GitHubIssueCommentExternalActionToolTests
 
         protected override void Dispose(bool disposing)
         {
+            base.Dispose(disposing);
         }
     }
 
@@ -383,6 +384,7 @@ public sealed class GitHubIssueCommentExternalActionToolTests
 
         protected override void Dispose(bool disposing)
         {
+            base.Dispose(disposing);
         }
     }
 }

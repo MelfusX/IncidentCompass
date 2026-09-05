@@ -12,7 +12,7 @@ public sealed class ApplicationDispatcher(IServiceProvider serviceProvider) : IA
         ArgumentNullException.ThrowIfNull(request);
 
         var handler = serviceProvider.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
-        RequestHandlerDelegate<TResponse> next = () => handler.HandleAsync(request, cancellationToken);
+        PipelineContinuation<TResponse> next = () => handler.HandleAsync(request, cancellationToken);
 
         var behaviors = serviceProvider
             .GetServices<IPipelineBehavior<TRequest, TResponse>>()

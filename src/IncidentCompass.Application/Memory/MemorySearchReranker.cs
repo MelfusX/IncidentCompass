@@ -10,7 +10,7 @@ internal static class MemorySearchReranker
     private const double ComponentBoost = 0.25;
     private const double EvidenceKindBoost = 0.2;
 
-    private static readonly IReadOnlyDictionary<string, string[]> EvidenceKindAliases =
+    private static readonly Dictionary<string, string[]> EvidenceKindAliases =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             ["runbook"] = ["runbook", "playbook"],

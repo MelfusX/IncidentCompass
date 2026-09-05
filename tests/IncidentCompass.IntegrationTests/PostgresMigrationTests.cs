@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Postgres;
@@ -246,14 +247,14 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(1, Convert.ToInt64(await ActionApprovalTestSupport.ScalarAsync(
             connectionString,
             "SELECT count(*) FROM incidentcompass.action_approvals WHERE id = @id;",
-            ("id", actionId))));
+            ("id", actionId)), CultureInfo.InvariantCulture));
         Assert.Equal(0, Convert.ToInt64(await ActionApprovalTestSupport.ScalarAsync(connectionString, """
             SELECT count(*)
             FROM incidentcompass.action_approvals
             WHERE id = @id
               AND (external_resource_kind IS NOT NULL OR external_resource_id IS NOT NULL OR
                    external_before_state IS NOT NULL OR external_after_state IS NOT NULL);
-            """, ("id", actionId))));
+            """, ("id", actionId)), CultureInfo.InvariantCulture));
     }
 
     private static IHost CreateMigrationHost(
@@ -598,7 +599,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                       AND pg_get_constraintdef(oid) LIKE '%ActionResult%')
             );
             """;
-        return Convert.ToBoolean(await ExecuteScalarAsync(connectionString, sql));
+        return Convert.ToBoolean(await ExecuteScalarAsync(connectionString, sql), CultureInfo.InvariantCulture);
     }
 
     private static async Task AssertReportRowsAreImmutableAsync(string connectionString)
@@ -759,7 +760,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
     private static async Task<int> CountAsync(string connectionString, string tableName) =>
         Convert.ToInt32(await ExecuteScalarAsync(
             connectionString,
-            $"SELECT count(*) FROM incidentcompass.{tableName};"));
+            $"SELECT count(*) FROM incidentcompass.{tableName};"), CultureInfo.InvariantCulture);
 
     private static async Task<int> CountSqlAsync(
         string connectionString,
@@ -773,7 +774,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             command.Parameters.AddWithValue(parameter.Name, parameter.Value);
         }
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), CultureInfo.InvariantCulture);
     }
 
     private static async Task<IReadOnlyList<string>> ReadStringsAsync(string connectionString, string sql)
