@@ -41,17 +41,32 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
 `-NoBuild` reuses existing images. `-Mock` adds `compose.mock.yml`; use it when you need a stable
 backend packaging check without provider calls.
 
+The deterministic mock acceptance path is:
+
+~~~powershell
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
+~~~
+
+It can be run against a fresh volume and then again against the retained volume. The script resolves
+the API host mapping from Compose, so both runs work with the default ports or with
+`IC_API_PORT` and `IC_POSTGRES_PORT` overrides. These are host-only mappings: service-to-service
+traffic always remains on `api:8080`, `postgres:5432` and `otel-collector:4318`.
+
 Stop the demo services with:
 
 ~~~powershell
-docker compose --profile demo down
+docker compose -f docker-compose.yml -f compose.mock.yml --profile demo down
 ~~~
 
 If you need a fresh database volume after schema or seed changes, use:
 
 ~~~powershell
-docker compose --profile demo down --volumes
+docker compose -f docker-compose.yml -f compose.mock.yml --profile demo down --volumes
 ~~~
+
+The first command retains the named PostgreSQL volume for a retained run. The second removes it,
+so the next `scripts/demo.ps1 -Mock` run is fresh. For the default non-mock path, omit
+`-f compose.mock.yml`.
 
 ## Service Layout
 
@@ -78,6 +93,14 @@ configuration. Put overrides in the ignored `.env` file.
 Compose waits for PostgreSQL health before starting the hosts, checks API readiness with GET
 /health, and uses a process-level Worker health check before running the Tester. API and Worker still
 use restart-on-failure because config warmup intentionally fails fast if durable storage is unavailable.
+
+## Fixed-Authority Action Adapters
+
+The Compose demo does not provide GitHub or Telegram endpoint doubles. Production adapters use fixed
+authorities, and their host-owned repository, recipient and credential bindings are deliberately not
+made configurable through Compose. Automated GitHub and Telegram coverage instead uses deterministic
+in-process recording HTTP handlers. That keeps test doubles from becoming a second runtime endpoint
+configuration path while the mock demo proves the disabled-policy packaging path.
 ## Grouping, Suppression And Recurrence
 
 The grouping configuration separates delivery deduplication from fault lifecycle. Reusing one delivery

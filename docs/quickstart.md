@@ -63,6 +63,18 @@ IC_POSTGRES_PORT=55432
 `scripts/demo.ps1` resolves the effective API mapping from Compose, so its health check and the
 Tester output follow `IC_API_PORT`.
 
+For deterministic Compose acceptance, run `scripts/demo.ps1 -Mock` once with a fresh PostgreSQL
+volume and once with the retained volume. Reset the mock composition only when a fresh run is needed:
+
+~~~powershell
+docker compose -f docker-compose.yml -f compose.mock.yml --profile demo down --volumes
+~~~
+
+Host-port overrides do not alter the fixed internal addresses `api:8080`, `postgres:5432` or
+`otel-collector:4318`. The mock override changes only model and embedding providers. GitHub and
+Telegram use fixed production authorities, so their automated doubles are in-process recording
+handlers rather than Compose services or configurable endpoint overrides.
+
 ## OTLP Collector Demo
 
 The demo profile also runs a pinned stock OpenTelemetry Collector. The Tester emits an error span through
