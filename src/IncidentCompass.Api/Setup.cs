@@ -64,6 +64,9 @@ public static class Setup
             options.FallbackPolicy = new AuthorizationPolicyBuilder()
                 .AddRequirements(new ApiKeyAuthorizationRequirement())
                 .Build();
+            options.AddPolicy(
+                ActionOperatorAuthorizationPolicy.Name,
+                policy => policy.AddRequirements(new ActionOperatorAuthorizationRequirement()));
         });
         services.AddRateLimiter(options =>
         {

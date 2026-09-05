@@ -2,6 +2,8 @@ using IncidentCompass.Api.Configuration;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Core.Tenancy;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 
 namespace IncidentCompass.Api.Security;
 
@@ -16,6 +18,9 @@ internal static class ApiUserContextSetup
             .AddOptions<DemoAuthOptions>()
             .Bind(configuration.GetSection(DemoAuthOptions.SectionName));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IStartupFilter, ApiUserContextStartupFilter>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuthorizationHandler, ActionOperatorAuthorizationHandler>());
+        services.RemoveAll<IAuthorizationMiddlewareResultHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, ActionOperatorAuthorizationResultHandler>();
 
         var apiKeyOptions = configuration
             .GetSection(ApiKeyAuthOptions.SectionName)

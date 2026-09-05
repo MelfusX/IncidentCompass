@@ -34,8 +34,12 @@ Do not auto-increment release versions in CI. The version is part of the reviewe
 ## Database
 
 - Keep schema changes in source control.
-- Live ledger/report/memory tables and dormant pricing state use explicit raw SQL/init scripts and small Npgsql adapters while the persistence surface is still stabilizing.
+- Live ledger/report/memory/action-approval tables and dormant pricing state use explicit raw SQL/init scripts and small Npgsql adapters while the persistence surface is still stabilizing.
 - Released migrations are append-only. `006-tool-audit.sql` remains byte-identical and creates an unused legacy table even though the retired standalone application stack no longer has an adapter.
+- `023-action-approvals-outbox.sql` is catalog migration version 14. Approval contract version 1 is
+  stored per action and hashes the complete immutable review tuple with domain separation and
+  length-prefixed fields. A future tuple change requires a new contract version and an additive
+  migration; released tuple rows and provenance are never rewritten.
 - If EF Core is introduced later for broader persistence, use migrations and name them after the use case or schema change.
 
 ## Pricing

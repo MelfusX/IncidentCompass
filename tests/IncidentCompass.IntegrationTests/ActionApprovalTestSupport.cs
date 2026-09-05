@@ -1,0 +1,234 @@
+using System.Text;
+using IncidentCompass.Application;
+using IncidentCompass.Application.Governance.ActionApprovals;
+using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Domain.Incidents;
+using IncidentCompass.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
+using NpgsqlTypes;
+
+namespace IncidentCompass.IntegrationTests;
+
+internal static class ActionApprovalTestSupport
+{
+    public static ServiceProvider CreateServices(
+        string connectionString,
+        IActionApprovalTransactionFaultInjector? faultInjector = null,
+        TimeProvider? timeProvider = null)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:ActionApprovalTests"] = connectionString,
+                ["IncidentCompass:Postgres:ConnectionStringName"] = "ActionApprovalTests",
+                ["IncidentCompass:ModelGateway:Provider"] = "Mock",
+                ["IncidentCompass:ModelGateway:DefaultModel"] = "mock-chat",
+                ["IncidentCompass:Embeddings:Provider"] = "Mock",
+                ["IncidentCompass:Embeddings:DefaultModel"] = "mock-embedding"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddApplication(configuration);
+        services.AddInfrastructure(configuration);
+        if (faultInjector is not null)
+        {
+            services.RemoveAll<IActionApprovalTransactionFaultInjector>();
+            services.AddSingleton(faultInjector);
+        }
+
+        if (timeProvider is not null)
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton(timeProvider);
+        }
+
+        return services.BuildServiceProvider();
+    }
+
+    public static PreparedActionProposal Proposal(
+        ActionApprovalOriginFixture origin,
+        string proposalKey,
+        IReadOnlyList<Guid>? evidence = null,
+        bool automaticallyApproved = false) =>
+        new(
+            origin.TenantId,
+            origin.ReportId,
+            "ticket_create",
+            proposalKey,
+            IncidentCompass.Domain.Incidents.Actions.ActionCategory.TicketCreate,
+            IncidentCompass.Domain.Incidents.Actions.ActionExecutionMode.Live,
+            "github:owner/repository",
+            new string('a', 64),
+            Encoding.UTF8.GetBytes("{\"title\":\"Investigate incident\"}"),
+            "Create a bounded review ticket.",
+            60,
+            evidence ?? [origin.EvidenceArtifactId],
+            automaticallyApproved,
+            automaticallyApproved ? "allowed" : "approval_required");
+
+    public static async Task<ActionApprovalOriginFixture> SeedOriginAsync(
+        string connectionString,
+        string tenantId = "tenant-action-tests")
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var signalId = Guid.NewGuid();
+        var faultId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var reportId = Guid.NewGuid();
+        var artifactId = Guid.NewGuid();
+        var configHash = "action-config-" + suffix;
+        await ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.triage_config_snapshots (
+                config_hash, serialized_config, instructions, created_at_utc)
+            VALUES (@config_hash, '{"CurrentReleases":{"orders":"v1"}}'::jsonb, '{}'::jsonb, clock_timestamp());
+
+            INSERT INTO incidentcompass.signals (
+                id, tenant_id, source, fingerprint, fingerprint_version, fingerprint_strength,
+                service_name, environment, error_type, summary, body, observed_at_utc, received_at_utc)
+            VALUES (@signal_id, @tenant_id, 'tester', @fingerprint, 1, 'strong',
+                    'orders', 'test', 'TimeoutException', 'action test signal', '{}'::jsonb,
+                    clock_timestamp(), clock_timestamp());
+
+            INSERT INTO incidentcompass.faults (
+                id, trigger_signal_id, tenant_id, status, fingerprint, fingerprint_version,
+                fingerprint_strength, service_name, environment, created_at_utc, completed_at_utc)
+            VALUES (@fault_id, @signal_id, @tenant_id, 'Completed', @fingerprint, 1,
+                    'strong', 'orders', 'test', clock_timestamp(), clock_timestamp());
+
+            UPDATE incidentcompass.signals SET fault_id = @fault_id WHERE id = @signal_id;
+
+            INSERT INTO incidentcompass.triage_jobs (
+                id, fault_id, status, attempt, config_hash, created_at_utc, updated_at_utc)
+            VALUES (@job_id, @fault_id, 'Succeeded', 1, @config_hash, clock_timestamp(), clock_timestamp());
+
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES (@artifact_id, @job_id, NULL, 'TriggerSignal', @domain_ref,
+                    '{"summary":"redacted evidence"}'::jsonb, @content_hash, clock_timestamp());
+
+            INSERT INTO incidentcompass.triage_reports (
+                id, job_id, fault_id, status, summary, classification, confidence,
+                documentation_fit, limitations, config_hash, created_at_utc)
+            VALUES (@report_id, @job_id, @fault_id, 'Completed', 'action test report',
+                    'KnownIncident', 'High', 'Current', ARRAY[]::text[], @config_hash, clock_timestamp());
+
+            INSERT INTO incidentcompass.triage_evidence (
+                id, report_id, kind, artifact_id, reference, created_at_utc)
+            VALUES (gen_random_uuid(), @report_id, 'TriggerSignal', @artifact_id, @domain_ref, clock_timestamp());
+
+            INSERT INTO incidentcompass.triage_ledger (
+                fault_id, job_id, attempt, event_type, tool_name, rationale,
+                payload_ref, config_hash, created_at_utc)
+            VALUES (@fault_id, @job_id, 1, 'ReportPublished', 'publish_report',
+                    'action test report', @payload_ref, @config_hash, clock_timestamp());
+            """,
+            ("config_hash", configHash),
+            ("signal_id", signalId),
+            ("tenant_id", tenantId),
+            ("fingerprint", "fingerprint-" + suffix),
+            ("fault_id", faultId),
+            ("job_id", jobId),
+            ("artifact_id", artifactId),
+            ("domain_ref", "signal:" + signalId),
+            ("content_hash", "artifact-" + suffix),
+            ("report_id", reportId),
+            ("payload_ref", "report:" + reportId));
+        return new ActionApprovalOriginFixture(
+            tenantId, signalId, faultId, jobId, reportId, artifactId, configHash);
+    }
+
+    public static async Task<(TriageJob Job, TriageReport Report)> SeedSuccessorJobAsync(
+        string connectionString,
+        ActionApprovalOriginFixture origin,
+        string workerId)
+    {
+        var jobId = Guid.NewGuid();
+        var recurrenceArtifactId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.triage_jobs (
+                id, fault_id, status, attempt, locked_by, locked_until_utc,
+                config_hash, created_at_utc, updated_at_utc,
+                retriage_trigger_job_id, supersedes_report_id)
+            VALUES (@job_id, @fault_id, 'Processing', 1, @worker_id, @locked_until,
+                    @config_hash, @now, @now, @trigger_job_id, @report_id);
+
+            INSERT INTO incidentcompass.triage_artifacts (
+                id, job_id, attempt, kind, domain_ref, redacted_payload, content_hash, created_at_utc)
+            VALUES (@artifact_id, @job_id, NULL, 'RecurrenceState', @domain_ref,
+                    '{"recurrenceCount":2}'::jsonb, @content_hash, @now);
+            """,
+            ("job_id", jobId), ("fault_id", origin.FaultId), ("worker_id", workerId),
+            ("locked_until", now.AddMinutes(5)), ("config_hash", origin.ConfigHash), ("now", now),
+            ("trigger_job_id", origin.JobId), ("report_id", origin.ReportId),
+            ("artifact_id", recurrenceArtifactId), ("domain_ref", "job:" + jobId),
+            ("content_hash", "recurrence-" + Guid.NewGuid().ToString("N")));
+        var job = new TriageJob(
+            jobId, origin.FaultId, TriageJobStatus.Processing, 1, workerId, now.AddMinutes(5),
+            null, null, null, origin.ConfigHash, now, now)
+        {
+            ReTriageTriggerJobId = origin.JobId,
+            SupersedesReportId = origin.ReportId
+        };
+        var report = new TriageReport(
+            TriageReportStatus.Completed,
+            "Successor report for action lock ordering.",
+            "KnownIncident",
+            "High",
+            [new TriageReportEvidenceReference(recurrenceArtifactId.ToString(), null)],
+            [],
+            "Review the successor report.");
+        return (job, report);
+    }
+
+    public static async Task<long> CountAsync(
+        string connectionString,
+        string sql,
+        params (string Name, object Value)[] parameters) =>
+        Convert.ToInt64(await ScalarAsync(connectionString, sql, parameters));
+
+    public static async Task<object?> ScalarAsync(
+        string connectionString,
+        string sql,
+        params (string Name, object Value)[] parameters)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddParameters(command, parameters);
+        return await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+    }
+
+    public static async Task ExecuteAsync(
+        string connectionString,
+        string sql,
+        params (string Name, object Value)[] parameters)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddParameters(command, parameters);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static void AddParameters(NpgsqlCommand command, IEnumerable<(string Name, object Value)> parameters)
+    {
+        foreach (var parameter in parameters)
+        {
+            if (parameter.Value is DBNull)
+            {
+                command.Parameters.Add(new NpgsqlParameter(parameter.Name, NpgsqlDbType.Text)
+                {
+                    Value = DBNull.Value
+                });
+            }
+            else
+            {
+                command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+            }
+        }
+    }
+}

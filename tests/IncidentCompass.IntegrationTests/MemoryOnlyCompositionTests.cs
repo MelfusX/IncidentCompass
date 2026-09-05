@@ -3,6 +3,7 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Artifacts;
 using IncidentCompass.Application.Investigation.Jobs;
@@ -51,6 +52,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
         services.AddSingleton<ITriageReportListRepository, InMemoryTriageReportListRepository>();
         services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
+        services.AddSingleton<IActionApprovalReviewRepository, InMemoryActionApprovalReviewRepository>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
 
@@ -278,6 +280,24 @@ public sealed class MemoryOnlyCompositionTests
             Guid faultId,
             string tenantId,
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
+    }
+    private sealed class InMemoryActionApprovalReviewRepository : IActionApprovalReviewRepository
+    {
+        public Task<IReadOnlyList<ActionApprovalRecord>> ListAsync(
+            ActionApprovalListFilter filter,
+            string tenantId,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<ActionApprovalRecord>>([]);
+
+        public Task<(ActionApprovalRecord Action, IReadOnlyList<ActionApprovalProvenance> Provenance)?> FindAsync(
+            Guid actionId,
+            string tenantId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<(ActionApprovalRecord, IReadOnlyList<ActionApprovalProvenance>)?>(null);
+
+        public Task<ActionDecisionResult> DecideAsync(
+            ActionDecisionRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ActionDecisionResult(ActionDecisionOutcome.NotFound, null, null));
     }
     private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
     {

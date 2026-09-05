@@ -1,0 +1,20 @@
+namespace IncidentCompass.Application.Governance.ActionApprovals.List;
+
+public sealed record ActionApprovalListItemResponse(
+    Guid Id,
+    string Status,
+    int ApprovalContractVersion,
+    Guid OriginReportId,
+    string ToolId,
+    string Category,
+    string Mode,
+    string LogicalTargetId,
+    string PayloadSha256,
+    string ProvenanceSha256,
+    string ApprovalSha256,
+    string ReviewSummary,
+    int ProvenanceCount,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    DateTimeOffset? DecisionAtUtc,
+    DateTimeOffset? CompletedAtUtc);

@@ -10,6 +10,7 @@ internal static class ApiV1Endpoints
         api.MapUserEndpoints();
         api.MapIncidentEndpoints();
         api.MapTriageReportEndpoints();
+        api.MapActionApprovalEndpoints();
 
         return endpoints;
     }

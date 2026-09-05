@@ -20,7 +20,8 @@ flowchart LR
 - `IncidentCompass.Api`: HTTP endpoints, OpenAPI, demo auth adapter, request/response mapping.
 - `IncidentCompass.Application`: single application project with populated feature folders:
   - `Core/`: dispatcher, pipeline behaviors, identity/correlation contracts, shared configuration, base errors, health echo, current-user use case, and model/embedding gateway abstractions.
-  - `Governance/`: common worker-tool contracts, validation primitives and the durable triage ledger append contract.
+  - `Governance/`: common worker-tool contracts, validation primitives, durable triage-ledger ports
+    and post-report action approval contracts and use cases.
   - `Intake/`: source normalization, input limits, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts for the Phase 1 ingestion flow.
   - `Investigation/`: Worker job claim/runtime seams that rehydrate claimed jobs by config hash and hand them to the governed investigation processor.
   - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
@@ -29,7 +30,9 @@ flowchart LR
   - `Tickets/`: system-neutral ticket-search contracts, backend signal-field extraction and the
     governed read-only `ticket_search` worker tool.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
-- `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, memory adapters, a dormant pricing adapter and other infrastructure adapters.
+- `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading,
+  action approval/provenance repositories, model clients, embedding clients, memory adapters, a
+  dormant pricing adapter and other infrastructure adapters.
 - `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, renewable ownership-fenced leases, cancellation on ownership loss and per-process `MaxConcurrentJobs`.
 
 ## Phase 1 Intake Flow
@@ -52,7 +55,7 @@ configuration controls error-only, service and severity trigger filters; an empt
 Ignored telemetry returns a valid empty OTLP response and does not create a signal or triage job. A delivery
 key derived from `externalId`, or from trace plus span when no external ID exists, is unique per tenant and
 source, so exporter retries return the accepted signal rather than adding a neighbor or job.
-The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `RecurrenceState` and optional `PriorReport`) plus attempt-level `WorkerOutput`, `RetrievedItem` and `ToolResult` artifacts. Phase 2 adds `infra/postgres/init/008-triage-ledger.sql` for append-only DB-ordered triage events. Phase 5 evolves `infra/postgres/init/009-triage-reports-minimal.sql` into grounded `triage_reports` plus `triage_evidence` persistence. The Worker claim loop leases pending/retryable jobs, rehydrates each job's triage configuration from `triage_config_snapshots` by `config_hash`, runs a governed orchestrator with only `delegate(role, task)` and `publish_report(report_json)`, validates `delegate.role` against the config-derived role set, executes workers sequentially, enforces per-attempt budget and bounded reprompt policy, evaluates worker-tool rules over the ledger, and closes the job/fault only when backend-grounded report publication commits.
+The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `RecurrenceState` and optional `PriorReport`) plus attempt-level `WorkerOutput`, `RetrievedItem` and `ToolResult` artifacts. Phase 2 adds `infra/postgres/init/008-triage-ledger.sql` for append-only DB-ordered triage events. Phase 5 evolves `infra/postgres/init/009-triage-reports-minimal.sql` into grounded `triage_reports` plus `triage_evidence` persistence. Migration `023-action-approvals-outbox.sql` adds immutable post-report approval tuples, closed provenance, `ProposedAction` and `ActionResult` artifacts and constrained action lifecycle events. The Worker claim loop leases pending/retryable jobs, rehydrates each job's triage configuration from `triage_config_snapshots` by `config_hash`, runs a governed orchestrator with only `delegate(role, task)` and `publish_report(report_json)`, validates `delegate.role` against the config-derived role set, executes workers sequentially, enforces per-attempt budget and bounded reprompt policy, evaluates worker-tool rules over the ledger, and closes the job/fault only when backend-grounded report publication commits.
 
 
 ## Phase 4 Memory Worker
@@ -138,3 +141,22 @@ Follow `docs/code-organization.md` for maintainability guardrails. In short: kee
 ## Phase 3 Governance Rails
 
 Phase 3 keeps the system a layered monolith and adds the product-core governance rails around worker tools. Worker roles receive only registered backend tools that are both configured and granted to that role. Proposed worker calls are recorded as `ToolProposed`, evaluated by the single live `WorkerToolRuleEngine` over current-attempt ledger state by default, recorded as `PolicyDecision`, and successful executions commit a `ToolResult` artifact plus `ToolResult` ledger event atomically. `ToolResult` status and `BudgetEvent` deltas are stored in first-class ledger state, not parsed from rationale text. Configured rule scopes are limited to `attempt` and `job` for the MVP; `fault` scope remains deferred. The shipped immediate read tools are `memory_search`, `source_lookup` and `ticket_search`; synthetic `tool_x`/`tool_y` exist only in integration-test composition for cross-tool governance cases.
+
+## Post-report Action Approval Boundary
+
+An action proposal freezes approval contract v1 over the immutable origin report id, exact tool id,
+category, effective mode, logical target, secret-free adapter binding fingerprint, canonical payload
+bytes and payload hash, plus a deterministic provenance hash. Provenance contains only the immutable
+origin report and its persisted same-job evidence from the report attempt. Trust labels are derived
+from artifact kind by the backend; model-supplied labels and working/output artifacts are rejected.
+
+Proposal, decision, claim and terminal operations use PostgreSQL transactions with action-specific
+ledger events. Report publication and all action transitions acquire one shared fault-row lock before
+job, report or action locks. This makes the latest-report check a serialized boundary and avoids an
+action/publication lock inversion. Candidate scans are nonlocking and bounded; each candidate is
+rechecked in its own fault-first transaction.
+
+`/api/v1/action-approvals` exposes compact tenant-scoped lists, immutable review details, approve and
+reject. Review details are reconstructed from tuple and provenance rows, not the `ProposedAction`
+artifact JSON. This slice intentionally has no production proposal caller, Worker action pump,
+provider registry or real action adapter.

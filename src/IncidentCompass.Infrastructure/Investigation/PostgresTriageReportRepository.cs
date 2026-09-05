@@ -41,6 +41,8 @@ internal sealed class PostgresTriageReportRepository(
 
         try
         {
+            await PostgresFaultTransactionLock.LockAsync(
+                connection, transaction, job.FaultId, cancellationToken);
             var evidence = await evidenceGrounder.GroundAsync(connection, transaction, job, report.Evidence, cancellationToken);
             if (job.IsReTriage && !evidence.Any(evidenceItem => evidenceItem.Kind == "RecurrenceState"))
             {
@@ -195,5 +197,4 @@ internal sealed class PostgresTriageReportRepository(
             job.Id);
         throw new InvalidOperationException($"Fault '{job.FaultId}' could not be marked terminal while publishing triage report.");
     }
-
 }

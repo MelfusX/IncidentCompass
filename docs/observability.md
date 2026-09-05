@@ -29,6 +29,12 @@ The live model telemetry mechanism is the append-only triage ledger. Each invest
 
 The ledger does not store rendered prompts, full provider responses, document text, provider credentials, API keys or embedding vectors. Token budget accounting is recorded separately as first-class `BudgetEvent` rows with `tokens_delta` and `workers_delta` columns.
 
+Post-report approval state uses the exact `ActionProposed`, `ApprovalDecision`,
+`ActionDispatchStarted` and `ActionCompleted` ledger events. These rows carry bounded summaries,
+closed decisions/statuses and `action:<id>` or `artifact:<id>` references. They do not copy canonical
+payload bodies, provenance bodies, adapter routes, credentials, prompts or transcripts into the
+ledger or application logs.
+
 ## Failure Behavior
 
 Model calls are part of the Worker investigation loop. Required durable side effects, including ledger budget/model-call events and final report commit events, are treated as part of the workflow state. The Worker does not expose foreground success to an API caller after a missing required durable write.

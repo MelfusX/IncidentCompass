@@ -34,6 +34,8 @@ internal sealed class ApiExceptionHandler(
         return exception switch
         {
             NotFoundException current => ApiErrorMapping.NotFound(current),
+            ConflictException current => ApiErrorMapping.Conflict(current),
+            ForbiddenRequestException current => ApiErrorMapping.Forbidden(current),
             RequestValidationException current => ApiErrorMapping.RequestValidation(current),
             ValidationException current => ApiErrorMapping.BadRequest(current.Message),
             DomainException current => ApiErrorMapping.InternalDomainViolation(current),

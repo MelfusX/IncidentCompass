@@ -150,3 +150,12 @@ integrity.
 ## Dormant Pricing Components Kept for the Roadmap
 
 IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingRecord`, `IPricingRepository`, `PostgresObservabilityRepository` and the `incidentcompass.ai_model_pricing` half of `infra/postgres/init/004-observability-cost.sql`. Live model usage is recorded as `ModelCall` and `BudgetEvent` ledger rows; cost rollup is deferred until a reporting workflow consumes those rows.
+
+## Durable Approval Boundary Before External Adapters
+
+The post-report action slice lands the immutable approval tuple, provenance, operator API and atomic
+dispatch-state primitives before it lands a Worker proposal caller or any external adapter. This
+makes approval review and failure semantics testable without granting side-effect authority. The
+trade-off is that an approved row is not executed in this slice. There is intentionally no provider
+registry, retry endpoint or automatic pump until the later dispatcher work can preserve fencing,
+current-report checks and at-most-once invocation behavior end to end.
