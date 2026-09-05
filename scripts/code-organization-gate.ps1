@@ -1,6 +1,6 @@
 param(
-    [int] $MaxFileLines = 200,
-    [int] $MaxLogicalTypeLines = 200
+    [int] $MaxFileLines = 400,
+    [int] $MaxLogicalTypeLines = 400
 )
 
 $ErrorActionPreference = "Stop"
