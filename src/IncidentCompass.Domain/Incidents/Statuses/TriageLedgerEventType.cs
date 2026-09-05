@@ -9,5 +9,9 @@ public enum TriageLedgerEventType
     WorkerCompleted,
     BudgetEvent,
     ReportPublished,
-    ModelCall
+    ModelCall,
+    ActionProposed,
+    ApprovalDecision,
+    ActionDispatchStarted,
+    ActionCompleted
 }

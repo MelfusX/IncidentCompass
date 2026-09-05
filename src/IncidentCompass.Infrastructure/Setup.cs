@@ -2,6 +2,7 @@ using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
@@ -11,6 +12,7 @@ using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Embeddings.Mock;
 using IncidentCompass.Infrastructure.Embeddings.OpenAi;
 using IncidentCompass.Infrastructure.Governance;
+using IncidentCompass.Infrastructure.Governance.ActionApprovals;
 using IncidentCompass.Infrastructure.Intake;
 using IncidentCompass.Infrastructure.Investigation;
 using IncidentCompass.Infrastructure.Memory;
@@ -189,8 +191,10 @@ public static class Setup
         services.TryAddScoped<ITriageReportListRepository, PostgresTriageReportListRepository>();
         services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
         services.TryAddScoped<IReadOnlyContextOutcomeRepository, PostgresReadOnlyContextOutcomeRepository>();
-
+        services.TryAddScoped<IActionApprovalTransactionFaultInjector, NoopActionApprovalTransactionFaultInjector>();
+        services.TryAddScoped<IActionProposalRepository, PostgresActionProposalRepository>();
+        services.TryAddScoped<IActionApprovalReviewRepository, PostgresActionReviewRepository>();
+        services.TryAddScoped<IActionDispatchRepository, PostgresActionDispatchRepository>();
         return services;
     }
-
 }

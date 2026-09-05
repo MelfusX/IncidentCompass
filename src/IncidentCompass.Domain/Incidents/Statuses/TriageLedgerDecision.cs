@@ -4,5 +4,9 @@ public enum TriageLedgerDecision
 {
     Allowed,
     Denied,
-    ApprovalRequired
+    ApprovalRequired,
+    AutoApproved,
+    Approved,
+    Rejected,
+    Expired
 }

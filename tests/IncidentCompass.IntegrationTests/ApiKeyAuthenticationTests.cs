@@ -45,6 +45,10 @@ public sealed class ApiKeyAuthenticationTests
         [HttpMethod.Get, "/api/v1/triage-reports"],
         [HttpMethod.Get, "/api/v1/triage-reports/11111111-1111-1111-1111-111111111111"],
         [HttpMethod.Get, "/api/v1/faults/11111111-1111-1111-1111-111111111111/triage-report"],
+        [HttpMethod.Get, "/api/v1/action-approvals"],
+        [HttpMethod.Get, "/api/v1/action-approvals/11111111-1111-1111-1111-111111111111"],
+        [HttpMethod.Post, "/api/v1/action-approvals/11111111-1111-1111-1111-111111111111/approve"],
+        [HttpMethod.Post, "/api/v1/action-approvals/11111111-1111-1111-1111-111111111111/reject"],
         [HttpMethod.Post, "/api/v1/incidents"],
         [HttpMethod.Post, "/v1/traces"],
         [HttpMethod.Post, "/v1/logs"]

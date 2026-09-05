@@ -37,8 +37,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
         Assert.Equal(
@@ -70,7 +70,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
     }
 
@@ -343,9 +343,50 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                 (SELECT count(*)
                  FROM pg_constraint
                  WHERE connamespace = 'incidentcompass'::regnamespace
-                   AND conname IN (
+                 AND conname IN (
                        'uq_triage_reports_id_fault',
                        'fk_triage_reports_superseded_same_fault')) = 2
+                AND
+                (SELECT count(*)
+                 FROM information_schema.tables
+                 WHERE table_schema = 'incidentcompass'
+                   AND table_name IN ('action_approvals', 'action_approval_provenance')) = 2
+                AND
+                (SELECT count(*)
+                 FROM pg_indexes
+                 WHERE schemaname = 'incidentcompass'
+                   AND indexname IN (
+                       'ix_action_approvals_tenant_created',
+                       'ix_action_approvals_dispatch_candidates')) = 2
+                AND
+                (SELECT count(*)
+                 FROM pg_trigger
+                 WHERE NOT tgisinternal
+                   AND tgname IN (
+                       'trg_action_approvals_immutable',
+                       'trg_action_approvals_no_delete',
+                       'trg_action_approval_provenance_sealed',
+                       'trg_action_approval_provenance_immutable',
+                       'trg_action_review_artifact_immutable')) = 5
+                AND
+                (SELECT count(*)
+                 FROM pg_constraint
+                 WHERE connamespace = 'incidentcompass'::regnamespace
+                   AND conname IN (
+                       'ck_triage_artifacts_kind',
+                       'triage_ledger_event_type_check',
+                       'triage_ledger_decision_check',
+                       'triage_ledger_tool_status_check',
+                       'triage_ledger_status_shape_check',
+                       'triage_ledger_action_ref_check')) = 6
+                AND
+                EXISTS (
+                    SELECT 1
+                    FROM pg_constraint
+                    WHERE conrelid = 'incidentcompass.triage_artifacts'::regclass
+                      AND conname = 'ck_triage_artifacts_kind'
+                      AND pg_get_constraintdef(oid) LIKE '%ProposedAction%'
+                      AND pg_get_constraintdef(oid) LIKE '%ActionResult%')
             );
             """;
         return Convert.ToBoolean(await ExecuteScalarAsync(connectionString, sql));

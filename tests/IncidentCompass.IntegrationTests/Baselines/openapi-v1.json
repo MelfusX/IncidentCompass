@@ -492,10 +492,591 @@
           }
         ]
       }
+    },
+    "/api/v1/action-approvals": {
+      "get": {
+        "tags": [
+          "action-approvals"
+        ],
+        "summary": "List tenant-scoped action approval summaries with stable keyset pagination.",
+        "operationId": "ListActionApprovals",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionApprovalListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/v1/action-approvals/{id}": {
+      "get": {
+        "tags": [
+          "action-approvals"
+        ],
+        "summary": "Return the immutable action proposal tuple and grounded provenance for review.",
+        "operationId": "GetActionApproval",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionApprovalDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/v1/action-approvals/{id}/approve": {
+      "post": {
+        "tags": [
+          "action-approvals"
+        ],
+        "summary": "Approve the exact observed action payload and approval hashes.",
+        "operationId": "ApproveAction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionApprovalDetailsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/v1/action-approvals/{id}/reject": {
+      "post": {
+        "tags": [
+          "action-approvals"
+        ],
+        "summary": "Reject the exact observed action payload and approval hashes.",
+        "operationId": "RejectAction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionApprovalDetailsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
+      }
     }
   },
   "components": {
     "schemas": {
+      "ActionApprovalDetailsResponse": {
+        "required": [
+          "id",
+          "status",
+          "approvalContractVersion",
+          "originReportId",
+          "toolId",
+          "category",
+          "mode",
+          "logicalTargetId",
+          "canonicalPayload",
+          "payloadSha256",
+          "provenanceSha256",
+          "approvalSha256",
+          "reviewSummary",
+          "createdAtUtc",
+          "expiresAtUtc",
+          "decisionAtUtc",
+          "rejectionReason",
+          "completedAtUtc",
+          "resultSummary",
+          "failureCode",
+          "provenance"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "approvalContractVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "originReportId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toolId": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "logicalTargetId": {
+            "type": "string"
+          },
+          "canonicalPayload": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "payloadSha256": {
+            "type": "string"
+          },
+          "provenanceSha256": {
+            "type": "string"
+          },
+          "approvalSha256": {
+            "type": "string"
+          },
+          "reviewSummary": {
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisionAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "rejectionReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "completedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "resultSummary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "failureCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "provenance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionApprovalProvenanceResponse"
+            }
+          }
+        }
+      },
+      "ActionApprovalListItemResponse": {
+        "required": [
+          "id",
+          "status",
+          "approvalContractVersion",
+          "originReportId",
+          "toolId",
+          "category",
+          "mode",
+          "logicalTargetId",
+          "payloadSha256",
+          "provenanceSha256",
+          "approvalSha256",
+          "reviewSummary",
+          "provenanceCount",
+          "createdAtUtc",
+          "expiresAtUtc",
+          "decisionAtUtc",
+          "completedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "approvalContractVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "originReportId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toolId": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "logicalTargetId": {
+            "type": "string"
+          },
+          "payloadSha256": {
+            "type": "string"
+          },
+          "provenanceSha256": {
+            "type": "string"
+          },
+          "approvalSha256": {
+            "type": "string"
+          },
+          "reviewSummary": {
+            "type": "string"
+          },
+          "provenanceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decisionAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "completedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ActionApprovalListResponse": {
+        "required": [
+          "actions",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActionApprovalListItemResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ActionApprovalProvenanceResponse": {
+        "required": [
+          "sourceType",
+          "sourceId",
+          "artifactKind",
+          "trustClass"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceType": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "trustClass": {
+            "type": "string"
+          }
+        }
+      },
+      "ApproveActionRequest": {
+        "required": [
+          "payloadSha256",
+          "approvalSha256"
+        ],
+        "type": "object",
+        "properties": {
+          "payloadSha256": {
+            "type": "string"
+          },
+          "approvalSha256": {
+            "type": "string"
+          }
+        }
+      },
       "CurrentUserDto": {
         "required": [
           "isAuthenticated",
@@ -1038,6 +1619,28 @@
           }
         }
       },
+      "RejectActionRequest": {
+        "required": [
+          "payloadSha256",
+          "approvalSha256",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "payloadSha256": {
+            "type": "string"
+          },
+          "approvalSha256": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "TriageJobSummary": {
         "required": [
           "id",
@@ -1334,6 +1937,9 @@
     },
     {
       "name": "v1"
+    },
+    {
+      "name": "action-approvals"
     }
   ]
 }

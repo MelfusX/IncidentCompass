@@ -27,6 +27,12 @@ anonymous allowlist is `/health`, `/api/v1/health`, `/api/v1/health/memory-sync`
 Development-only OpenAPI document. Manual intake, incident-data reads, `users/me` and native OTLP
 trace/log ingestion all use the same boundary.
 
+Action approval routes use a dedicated operator policy. The complete
+`/api/v1/action-approvals` group returns `403` before user-context resolution, dispatch or repository
+access whenever API-key authentication is disabled. When it is enabled, any valid host-issued key is
+the minimal action operator for exactly its mapped tenant until RBAC is added. Demo identity, demo
+headers and the config-default tenant never grant approval authority. Foreign action ids return `404`.
+
 Clients send exactly one `X-IncidentCompass-Key` value. It must be 32-128 ASCII base64url
 characters with no padding, commas or whitespace. The host stores only its SHA-256 hex digest and
 compares the digest in fixed time. A credential also has a non-secret stable key id and exactly one
@@ -61,7 +67,7 @@ reads `Ingestion.DefaultTenant` from the server-loaded triage configuration. `X-
 incident-envelope fields, OTLP resource attributes and other sender-controlled data never select
 the incident-data tenant.
 
-Fault, ledger and report read paths resolve this server-owned scope before querying. An object
+Fault, ledger, report and action approval read/decision paths resolve this server-owned scope before querying. An object
 outside the scope is indistinguishable from a missing object and returns `404`; compact report
 lists only return scoped rows. API-key authentication changes only the API composition adapter,
 not the intake or read use cases. Worker/system jobs continue to use their background identity and
@@ -98,7 +104,13 @@ the salt changes every pseudonym and breaks counts across the rotation boundary.
 
 ## Tools
 
-Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. `ApprovalRequired` denies the call and records a limitation; there is still no suspend/resume lifecycle in MVP. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.
+Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. The current immediate Worker path still treats `ApprovalRequired` as a denial with a report limitation; a later slice will wire eligible post-report action tools to the separate durable approval lifecycle. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.
+
+Approval decisions submit the exact observed payload and approval hashes. A stale lifecycle state,
+expiry, hash mismatch or superseded origin conflicts without approval. The public review surface
+contains the frozen safe tuple, canonical payload and backend-derived provenance only. It excludes
+adapter binding inputs, credentials, raw routes, prompts, transcripts and evidence bodies. No current
+API endpoint edits payloads, dispatches an action or retries an outcome.
 
 The GitHub Issues token is bound only from Worker host configuration, normally the
 `IncidentCompass__Tickets__GitHub__Token` environment variable. It is absent from public triage

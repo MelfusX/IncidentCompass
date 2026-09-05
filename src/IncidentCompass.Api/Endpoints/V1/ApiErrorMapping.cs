@@ -26,6 +26,12 @@ internal static class ApiErrorMapping
 
     public static IResult NotFound(NotFoundException exception) => NotFound(exception.Message);
 
+    public static IResult Conflict(ConflictException exception) =>
+        Problem("Conflict", exception.Message, StatusCodes.Status409Conflict);
+
+    public static IResult Forbidden(ForbiddenRequestException exception) =>
+        Problem("Forbidden", exception.Message, StatusCodes.Status403Forbidden);
+
     public static IResult NotFound(string error)
     {
         return Problem(

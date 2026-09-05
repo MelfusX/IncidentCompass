@@ -78,6 +78,10 @@ complete the multi-turn trajectory or reach a correct conclusion.
 - Optional host-configured API-key authentication for API-v1 data and native OTLP routes, with
   server-side key-to-tenant binding, deny-by-default endpoint coverage and queue-free per-key
   fixed-window limits. Auth-disabled demo mode remains local-only.
+- Durable, tenant-scoped post-report action proposals with immutable approval-contract hashes,
+  closed provenance, lifecycle audit events and API-key-only list, get, approve and reject APIs.
+  The current slice provides the review boundary and dispatch primitives only; it does not wire a
+  Worker proposal caller, run an action pump or call an external provider.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -144,6 +148,11 @@ hex digest. Clients send the corresponding 32-128 character base64url secret in 
 `X-IncidentCompass-Key` header. See [Security model](docs/security-model.md) for reload, tenant and
 rate-limit behavior. Do not place a raw key in tracked configuration.
 
+Action approval routes are always stricter than the local walkthrough. The entire
+`/api/v1/action-approvals` group returns `403` when API-key authentication is disabled. When it is
+enabled, any valid host-issued key is the minimal action operator for its mapped tenant until a later
+RBAC slice. Demo headers and the config-default tenant never grant action review authority.
+
 Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).
 
@@ -152,7 +161,9 @@ Start with [Architecture](docs/architecture.md), [Security model](docs/security-
 IncidentCompass is reference-quality software for local review, not a production incident platform.
 The current scope provides a minimal host-managed API-key boundary, not enterprise identity, RBAC,
 managed key distribution or a secret store. It also does not provide a stable extension framework,
-a UI, external actions, an MCP surface, a usage dashboard or a general document-ingestion system.
+a UI, external action dispatch or provider adapters, an MCP surface, a usage dashboard or a general
+document-ingestion system. The action approval API records and reviews frozen proposals; it does not
+itself execute them.
 Demo auth and Compose defaults remain local-only; non-local operators must inject high-entropy key
 digests through protected host configuration and apply the usual transport and deployment controls.
 
