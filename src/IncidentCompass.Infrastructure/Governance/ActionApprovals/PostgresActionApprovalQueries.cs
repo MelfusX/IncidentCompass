@@ -12,18 +12,32 @@ internal static class PostgresActionApprovalQueries
         string tenantId,
         CancellationToken cancellationToken)
     {
+        var externalResourcePredicate = filter.ExternalResourceKind is null
+            ? string.Empty
+            : " AND a.external_resource_kind = @external_resource_kind" +
+              " AND a.external_resource_id = @external_resource_id";
+        var sortColumn = filter.ExternalResourceKind is null
+            ? "a.created_at_utc"
+            : "a.completed_at_utc";
         await using var command = new NpgsqlCommand(
             "SELECT " + PostgresActionApprovalReader.Columns + """
             FROM incidentcompass.action_approvals a
             WHERE a.tenant_id = @tenant_id
               AND (@status::text IS NULL OR a.state = @status)
-              AND (@before_created::timestamptz IS NULL OR a.created_at_utc < @before_created
-                   OR (a.created_at_utc = @before_created AND a.id < @before_id::uuid))
-            ORDER BY a.created_at_utc DESC, a.id DESC
+            """ + externalResourcePredicate +
+            " AND (@before_created::timestamptz IS NULL OR " + sortColumn + " < @before_created" +
+            " OR (" + sortColumn + " = @before_created AND a.id < @before_id::uuid))" +
+            " ORDER BY " + sortColumn + " DESC, a.id DESC " + """
             LIMIT @limit;
             """, connection);
         command.AddParameter("tenant_id", tenantId);
         command.AddParameter("status", filter.Status?.ToStorageValue());
+        if (filter.ExternalResourceKind is not null)
+        {
+            command.AddParameter("external_resource_kind", filter.ExternalResourceKind);
+            command.AddParameter("external_resource_id", filter.ExternalResourceId);
+        }
+
         command.AddParameter("before_created", filter.BeforeCreatedAtUtc);
         command.AddParameter("before_id", filter.BeforeActionId);
         command.AddParameter("limit", filter.Limit);

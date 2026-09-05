@@ -22,7 +22,6 @@ internal sealed class PostgresActionDispatchTransaction(IActionApprovalTransacti
         {
             return null;
         }
-
         var fence = Guid.NewGuid();
         await using var command = new NpgsqlCommand("""
             WITH current_clock AS (SELECT clock_timestamp() AS now)
@@ -70,11 +69,16 @@ internal sealed class PostgresActionDispatchTransaction(IActionApprovalTransacti
         ActionTerminalRequest request,
         CancellationToken cancellationToken)
     {
-        ActionTerminalValidator.Validate(request);
+        ActionTerminalValidator.ValidateForAction(action, request);
         await using var command = new NpgsqlCommand("""
             UPDATE incidentcompass.action_approvals
             SET state = @state, result_payload = @result_payload, result_summary = @result_summary,
-                failure_code = @failure_code, completed_at_utc = clock_timestamp()
+                failure_code = @failure_code,
+                external_resource_kind = @external_resource_kind,
+                external_resource_id = @external_resource_id,
+                external_before_state = @external_before_state,
+                external_after_state = @external_after_state,
+                completed_at_utc = clock_timestamp()
             WHERE id = @action_id AND state = 'approved' AND dispatch_fence = @fence
               AND dispatch_started_at IS NOT NULL AND dispatch_deadline_at > clock_timestamp()
             RETURNING completed_at_utc;
@@ -83,6 +87,10 @@ internal sealed class PostgresActionDispatchTransaction(IActionApprovalTransacti
         command.AddParameter("result_payload", request.ResultPayload);
         command.AddParameter("result_summary", request.ResultSummary);
         command.AddParameter("failure_code", request.FailureCode);
+        command.AddParameter("external_resource_kind", request.AuditProjection?.ResourceKind);
+        command.AddParameter("external_resource_id", request.AuditProjection?.ResourceId);
+        command.AddParameter("external_before_state", request.AuditProjection?.BeforeState);
+        command.AddParameter("external_after_state", request.AuditProjection?.AfterState);
         command.AddParameter("action_id", action.Id);
         command.AddParameter("fence", request.DispatchFence);
         var value = await command.ExecuteScalarAsync(cancellationToken);
@@ -90,7 +98,6 @@ internal sealed class PostgresActionDispatchTransaction(IActionApprovalTransacti
         {
             return false;
         }
-
         var completed = value is DateTimeOffset offset
             ? offset
             : new DateTimeOffset(DateTime.SpecifyKind((DateTime)value, DateTimeKind.Utc));
@@ -139,7 +146,6 @@ internal sealed class PostgresActionDispatchTransaction(IActionApprovalTransacti
         {
             return false;
         }
-
         var completed = value is DateTimeOffset offset
             ? offset
             : new DateTimeOffset(DateTime.SpecifyKind((DateTime)value, DateTimeKind.Utc));
@@ -166,7 +172,6 @@ internal sealed class PostgresActionDispatchTransaction(IActionApprovalTransacti
         {
             return false;
         }
-
         await using var command = new NpgsqlCommand("""
             UPDATE incidentcompass.action_approvals
             SET state = 'expired', decision_actor = 'system:expiry',

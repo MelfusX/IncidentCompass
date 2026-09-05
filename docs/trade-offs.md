@@ -195,3 +195,15 @@ side-effect adapter limited to a bounded evidence comment on one exact cited iss
 approval, a deterministic comment marker, bounded target/comment preflight and one possible POST;
 this smaller surface excludes title, state, label, assignee and repository mutation. General-purpose
 model-selected external actions remain separate work.
+
+## Compact External Projection, Not General Reconstruction
+
+Confirmed live Telegram and GitHub actions store one indexed immutable projection beside the action:
+external kind/id plus a closed before/after marker. This makes tenant-scoped operator correlation cheap
+without indexing raw provider JSON or copying credentials, routes, response bodies, report text or
+prompts into a second audit system. The detailed bounded canonical result remains in `ActionResult`.
+
+The trade-off is intentionally narrow reconstruction. Failure, dry-run and outcome-unknown rows have
+no external-success projection, and the projection does not model arbitrary provider state or later
+out-of-band changes. Retention, reaping and cross-system reconciliation remain future work rather than
+being inferred from uncertain provider outcomes.

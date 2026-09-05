@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Application.Tickets;
@@ -121,14 +122,15 @@ public sealed partial class GitHubIssuesTicketCreate : IExternalActionTool, IDis
         if (prior.ConfirmedCanonicalResult is not null)
         {
             if (!GitHubIssueCreateResponseParser.TryValidateCanonicalResult(
-                    prior.ConfirmedCanonicalResult, out var confirmed))
+                    prior.ConfirmedCanonicalResult, out var confirmed, out var issueNumber))
             {
                 return Failure("github_issue_prior_result_invalid");
             }
             return new ExternalActionExecutionResult(
                 true,
                 confirmed,
-                "A prior governed action already created the GitHub issue.");
+                "A prior governed action already created the GitHub issue.",
+                AuditProjection: ExternalActionAuditProjection.GitHubIssueCreated(issueNumber));
         }
         if (prior.HasPendingAction)
         {

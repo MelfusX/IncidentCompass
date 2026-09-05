@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Postgres;
 using Microsoft.Extensions.Configuration;
@@ -37,8 +38,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
         Assert.Equal(
@@ -70,7 +71,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
     }
 
@@ -90,13 +91,42 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
             await ReadAppliedVersionsAsync(database.ConnectionString));
         Assert.Equal("Failed", (await ReadMigrationRecordAsync(database.ConnectionString, 15))!.Status);
+        var actionId = await SeedPreProjectionActionAsync(database.ConnectionString, "upgrade-from-v14");
 
         await RunMigrationsAsync(database.ConnectionString);
 
         Assert.Equal(
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             await ReadAppliedVersionsAsync(database.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(database.ConnectionString));
+        await AssertPreProjectionActionPreservedAsync(database.ConnectionString, actionId);
+    }
+
+    [DockerAvailableFact]
+    public async Task FailedVersion16LeavesVersion15DurableAndThenUpgradesCleanly()
+    {
+        await using var database = await MigrationDatabase.CreateAsync(fixture);
+        using (var failing = CreateServiceProvider(
+                   database.ConnectionString, new FailingMigrationInjector(16)))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => failing
+                .GetRequiredService<PostgresMigrationRunner>()
+                .MigrateAsync(TestContext.Current.CancellationToken));
+        }
+
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            await ReadAppliedVersionsAsync(database.ConnectionString));
+        Assert.Equal("Failed", (await ReadMigrationRecordAsync(database.ConnectionString, 16))!.Status);
+        var actionId = await SeedPreProjectionActionAsync(database.ConnectionString, "upgrade-from-v15");
+
+        await RunMigrationsAsync(database.ConnectionString);
+
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            await ReadAppliedVersionsAsync(database.ConnectionString));
+        Assert.True(await HasRequiredV02IndexesAndColumnsAsync(database.ConnectionString));
+        await AssertPreProjectionActionPreservedAsync(database.ConnectionString, actionId);
     }
 
     [DockerAvailableFact]
@@ -126,6 +156,54 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             new NoPostgresMigrationFailureInjector());
         await services.GetRequiredService<PostgresMigrationRunner>()
             .MigrateAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<Guid> SeedPreProjectionActionAsync(
+        string connectionString,
+        string proposalKey)
+    {
+        var origin = await ActionApprovalTestSupport.SeedOriginAsync(connectionString);
+        var actionId = Guid.NewGuid();
+        await ActionApprovalTestSupport.ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.action_approvals (
+                id, tenant_id, origin_report_id, fault_id, job_id, attempt,
+                tool_id, proposal_key, category, mode, logical_target_id,
+                adapter_binding_fingerprint, approval_contract_version, provenance_sha256,
+                state, canonical_payload, payload_sha256, approval_sha256,
+                proposal_artifact_id, review_summary, created_at_utc, expires_at_utc)
+            VALUES (
+                @id, @tenant, @report, @fault, @job, 1,
+                'ticket_create', @proposal_key, 'ticket_create', 'live', 'ticket:configured-repository',
+                @hash, 1, @hash, 'requested', convert_to('{"title":"upgrade proof"}', 'UTF8'),
+                @hash, @hash, @artifact, 'Upgrade proof action.',
+                clock_timestamp(), clock_timestamp() + interval '1 hour');
+            """,
+            ("id", actionId),
+            ("tenant", origin.TenantId),
+            ("report", origin.ReportId),
+            ("fault", origin.FaultId),
+            ("job", origin.JobId),
+            ("proposal_key", proposalKey),
+            ("hash", new string('a', 64)),
+            ("artifact", origin.EvidenceArtifactId));
+        return actionId;
+    }
+
+    private static async Task AssertPreProjectionActionPreservedAsync(
+        string connectionString,
+        Guid actionId)
+    {
+        Assert.Equal(1, Convert.ToInt64(await ActionApprovalTestSupport.ScalarAsync(
+            connectionString,
+            "SELECT count(*) FROM incidentcompass.action_approvals WHERE id = @id;",
+            ("id", actionId))));
+        Assert.Equal(0, Convert.ToInt64(await ActionApprovalTestSupport.ScalarAsync(connectionString, """
+            SELECT count(*)
+            FROM incidentcompass.action_approvals
+            WHERE id = @id
+              AND (external_resource_kind IS NOT NULL OR external_resource_id IS NOT NULL OR
+                   external_before_state IS NOT NULL OR external_after_state IS NOT NULL);
+            """, ("id", actionId))));
     }
 
     private static IHost CreateMigrationHost(
@@ -382,7 +460,27 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                  WHERE schemaname = 'incidentcompass'
                    AND indexname IN (
                        'ix_action_approvals_tenant_created',
-                       'ix_action_approvals_dispatch_candidates')) = 2
+                       'ix_action_approvals_dispatch_candidates',
+                       'ix_action_approvals_external_resource')) = 3
+                AND
+                (SELECT count(*)
+                 FROM information_schema.columns
+                 WHERE table_schema = 'incidentcompass'
+                   AND table_name = 'action_approvals'
+                   AND column_name IN (
+                       'external_resource_kind', 'external_resource_id',
+                       'external_before_state', 'external_after_state')) = 4
+                AND
+                (SELECT count(*)
+                 FROM pg_constraint
+                 WHERE connamespace = 'incidentcompass'::regnamespace
+                   AND conname IN (
+                       'ck_action_approvals_external_resource_kind',
+                       'ck_action_approvals_external_resource_id',
+                       'ck_action_approvals_external_before_state_bound',
+                       'ck_action_approvals_external_after_state_bound',
+                       'ck_action_approvals_external_projection_shape',
+                       'ck_action_approvals_external_projection_transition')) = 6
                 AND
                 (SELECT count(*)
                  FROM pg_trigger

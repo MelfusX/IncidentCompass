@@ -93,7 +93,11 @@ complete the multi-turn trajectory or reach a correct conclusion.
   Application composition exposes only their non-secret tool descriptors; Worker composition owns
   workflows, host bindings, credentials and HTTP adapters. Ordered backend routes select Telegram's
   fixed Worker-owned chat, while the GitHub binding selects one fixed repository. The model, report
-  and API cannot supply either target.
+  and API cannot supply either target. Confirmed live success atomically records a compact immutable
+  external-resource projection with the terminal result: Telegram message id or GitHub issue number
+  plus one closed before/after marker. The approval list/get API exposes those bounded safe fields;
+  list filtering requires an exact paired resource kind/id and always keeps the authenticated tenant
+  boundary. Dry-run, failed and outcome-unknown actions do not claim an external success projection.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -182,7 +186,9 @@ rate-limit behavior. Do not place a raw key in tracked configuration.
 Action approval routes are always stricter than the local walkthrough. The entire
 `/api/v1/action-approvals` group returns `403` when API-key authentication is disabled. When it is
 enabled, any valid host-issued key is the minimal action operator for its mapped tenant until a later
-RBAC slice. Demo headers and the config-default tenant never grant action review authority.
+RBAC slice. Demo headers and the config-default tenant never grant action review authority. Optional
+`externalResourceKind` and `externalResourceId` list filters must be supplied together; supported
+kinds are `telegram_message` and `github_issue`, and ids are positive decimal provider identities.
 
 Start with [Architecture](docs/architecture.md), [Security model](docs/security-model.md),
 [Observability](docs/observability.md) and [Trade-offs](docs/trade-offs.md).

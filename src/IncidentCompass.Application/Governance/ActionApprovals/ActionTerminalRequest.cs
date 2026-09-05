@@ -8,4 +8,5 @@ public sealed record ActionTerminalRequest(
     ActionApprovalState TerminalState,
     byte[] ResultPayload,
     string ResultSummary,
-    string? FailureCode);
+    string? FailureCode,
+    ExternalActionAuditProjection? AuditProjection = null);

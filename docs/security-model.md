@@ -139,6 +139,13 @@ validation. Their workflows, adapters, host bindings and credentials are registe
 Worker host.
 API and shared test host configuration do not require or receive provider credentials.
 
+Confirmed live action results may expose one compact external-resource projection through approval
+list/get responses. The projection uses a closed resource kind, a positive decimal provider identity
+and a closed bounded before/after marker. It contains no token, recipient, repository authority,
+request route, provider body, prompt or report text. Exact list lookup requires kind and id together,
+uses a tenant-leading partial index and always applies the authenticated server-owned tenant. A
+foreign resource identity therefore returns the same empty list shape as an absent identity.
+
 The durable claim is the at-most-once boundary. Once it records an owner, random fence and database
 deadline, no automatic path may call that adapter again. Exceptions, timeout, cancellation and crash
 recovery become `dispatch_outcome_unknown`; deadline recovery fences a late completion. This prefers a

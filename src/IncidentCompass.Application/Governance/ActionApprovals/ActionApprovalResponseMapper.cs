@@ -24,7 +24,11 @@ internal static class ActionApprovalResponseMapper
             action.CreatedAtUtc,
             action.ExpiresAtUtc,
             action.DecisionAtUtc,
-            action.CompletedAtUtc);
+            action.CompletedAtUtc,
+            action.AuditProjection?.ResourceKind,
+            action.AuditProjection?.ResourceId,
+            action.AuditProjection?.BeforeState,
+            action.AuditProjection?.AfterState);
 
     public static ActionApprovalDetailsResponse ToDetails(
         ActionApprovalRecord action,
@@ -52,6 +56,10 @@ internal static class ActionApprovalResponseMapper
             action.CompletedAtUtc,
             action.ResultSummary,
             action.FailureCode,
+            action.AuditProjection?.ResourceKind,
+            action.AuditProjection?.ResourceId,
+            action.AuditProjection?.BeforeState,
+            action.AuditProjection?.AfterState,
             provenance.Select(static item => new ActionApprovalProvenanceResponse(
                 item.SourceType,
                 item.SourceId,

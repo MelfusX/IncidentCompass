@@ -25,8 +25,9 @@ internal static class ActionDispatchTerminalFactory
             result.Succeeded ? ActionApprovalState.Executed : ActionApprovalState.Failed,
             result.CanonicalResult,
             result.Summary,
-            result.Succeeded ? null : result.FailureCode);
-        ActionTerminalValidator.Validate(request);
+            result.Succeeded ? null : result.FailureCode,
+            result.AuditProjection);
+        ActionTerminalValidator.ValidateForAction(claim.Action, request);
         return request;
     }
 

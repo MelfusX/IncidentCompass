@@ -23,14 +23,25 @@ public sealed class ListActionApprovalsQueryHandler(
 
         var status = ParseStatus(request.Status);
         var cursor = ActionApprovalListCursor.Decode(request.Cursor);
+        ValidateExternalResourceFilter(request.ExternalResourceKind, request.ExternalResourceId);
         var rows = await repository.ListAsync(
-            new ActionApprovalListFilter(status, cursor?.CreatedAtUtc, cursor?.ActionId, limit + 1),
+            new ActionApprovalListFilter(
+                status,
+                cursor?.CreatedAtUtc,
+                cursor?.ActionId,
+                limit + 1,
+                request.ExternalResourceKind,
+                request.ExternalResourceId),
             identity.TenantId,
             cancellationToken);
         var page = rows.Take(limit).ToArray();
         var items = page.Select(ActionApprovalResponseMapper.ToListItem).ToArray();
         var next = rows.Count > limit
-            ? ActionApprovalListCursor.Encode(page[^1].CreatedAtUtc, page[^1].Id)
+            ? ActionApprovalListCursor.Encode(
+                request.ExternalResourceKind is null
+                    ? page[^1].CreatedAtUtc
+                    : page[^1].CompletedAtUtc!.Value,
+                page[^1].Id)
             : null;
         return new ActionApprovalListResponse(items, next);
     }
@@ -49,6 +60,22 @@ public sealed class ListActionApprovalsQueryHandler(
         catch (InvalidOperationException)
         {
             throw new RequestValidationException([new ValidationFailure("status", "is invalid.")]);
+        }
+    }
+
+    private static void ValidateExternalResourceFilter(string? resourceKind, string? resourceId)
+    {
+        if (resourceKind is null && resourceId is null)
+        {
+            return;
+        }
+
+        if (!ExternalActionAuditProjection.IsValidResourceIdentity(resourceKind, resourceId))
+        {
+            throw new RequestValidationException([
+                new ValidationFailure(
+                    "externalResource",
+                    "kind and id must be a supported exact pair with a positive decimal id.")]);
         }
     }
 }
