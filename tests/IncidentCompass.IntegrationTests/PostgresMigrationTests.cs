@@ -173,11 +173,11 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
     public async Task FrozenPricingAndLedgerMigrationsMatchRecordedHashes()
     {
         Assert.Equal(
-            "381865DC333433BF3D4BFE9535681A9F1BF21E24015688EBDA300F9AB03D2D73",
-            await Sha256Async("004-observability-cost.sql"));
+            "056C3E515D5B88B09850805753881EB4749207885B5FFEE758965518121FBCB8",
+            await Sha256WithCrlfNormalizedToLfAsync("004-observability-cost.sql"));
         Assert.Equal(
-            "6C1DB9BC11A12A610966881AF2DA75591ECD201C79707B75217B1C419C1ADB01",
-            await Sha256Async("008-triage-ledger.sql"));
+            "B7BAC3F7D992CE19D1DC6FFB5F6B940FE49256693EDEA7910E0AC499971DFB4A",
+            await Sha256WithCrlfNormalizedToLfAsync("008-triage-ledger.sql"));
     }
 
     [DockerAvailableFact]
@@ -655,7 +655,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             """, ("job", history.JobId), ("route", history.RouteId)));
     }
 
-    private static async Task<string> Sha256Async(string scriptName)
+    private static async Task<string> Sha256WithCrlfNormalizedToLfAsync(string scriptName)
     {
         var directory = new DirectoryInfo(Environment.CurrentDirectory);
         while (directory is not null)
@@ -663,9 +663,25 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             var path = Path.Combine(directory.FullName, "infra", "postgres", "init", scriptName);
             if (File.Exists(path))
             {
-                return Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(
+                var source = await File.ReadAllBytesAsync(
                     path,
-                    TestContext.Current.CancellationToken)));
+                    TestContext.Current.CancellationToken);
+                var normalized = new byte[source.Length];
+                var writeIndex = 0;
+
+                for (var readIndex = 0; readIndex < source.Length; readIndex++)
+                {
+                    if (source[readIndex] == 0x0D && readIndex + 1 < source.Length && source[readIndex + 1] == 0x0A)
+                    {
+                        normalized[writeIndex++] = 0x0A;
+                        readIndex++;
+                        continue;
+                    }
+
+                    normalized[writeIndex++] = source[readIndex];
+                }
+
+                return Convert.ToHexString(SHA256.HashData(normalized.AsSpan(0, writeIndex)));
             }
 
             directory = directory.Parent;
