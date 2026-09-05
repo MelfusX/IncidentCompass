@@ -20,4 +20,8 @@ public sealed record AgentToolExecutionContext(
     public string PolicyVersion { get; init; } = string.Empty;
 
     public bool ApproveRiskyTools { get; init; }
+
+    public Signal? TriggerSignal { get; init; }
+
+    public string FaultFingerprint { get; init; } = string.Empty;
 }

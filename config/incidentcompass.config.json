@@ -16,10 +16,12 @@
   },
   "Roles": {
     "analysis": { "RouteId": "analysis-chat", "Instructions": "ref:instructions/analysis.md", "Tools": [],                "OutputSchema": "ref:schemas/analysis.json" },
-    "memory":   { "RouteId": "analysis-chat", "Instructions": "ref:instructions/memory.md",   "Tools": ["memory_search"], "OutputSchema": "ref:schemas/memory.json" }
+    "memory":   { "RouteId": "analysis-chat", "Instructions": "ref:instructions/memory.md",   "Tools": ["memory_search"], "OutputSchema": "ref:schemas/memory.json" },
+    "source":   { "RouteId": "analysis-chat", "Instructions": "ref:instructions/source.md",   "Tools": ["source_lookup"], "OutputSchema": "ref:schemas/source.json" }
   },
   "Tools": {
-    "memory_search": { "Kind": "internal", "EmbeddingRouteId": "memory-embed", "TopK": 5, "MinScore": 0.25 }
+    "memory_search": { "Kind": "internal", "EmbeddingRouteId": "memory-embed", "TopK": 5, "MinScore": 0.25 },
+    "source_lookup": { "Kind": "internal" }
   },
   "Rules": [
     { "Type": "rate_cap", "Tool": "*", "Scope": "attempt", "Max": 50 }

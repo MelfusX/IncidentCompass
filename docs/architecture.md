@@ -24,6 +24,8 @@ flowchart LR
   - `Intake/`: source normalization, input limits, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts for the Phase 1 ingestion flow.
   - `Investigation/`: Worker job claim/runtime seams that rehydrate claimed jobs by config hash and hand them to the governed investigation processor.
   - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
+  - `SourceContext/`: provider-neutral source lookup contracts, bounded stack-frame extraction and
+    the governed `source_lookup` worker tool.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, memory adapters, dormant pricing/audit adapters and other infrastructure adapters.
 - `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, renewable ownership-fenced leases, cancellation on ownership loss and per-process `MaxConcurrentJobs`.
@@ -56,6 +58,23 @@ The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `sign
 Phase 4 adds PostgreSQL-backed incident memory through `incidentcompass.memory_items` and `incidentcompass.memory_chunks`. File-backed memory sync reads runbooks, known incidents, operational notes, release notes and postmortems with optional service/component/release metadata. Within a configured seed owner, source path is the stable identity: changed files update and re-embed one active item, while removed files are deactivated and excluded from search. Each complete corpus is published atomically as an owner-scoped generation, so a divergent owner cannot deactivate another owner's items. API and Worker can sync the same owner concurrently under a corpus database lock. Runtime resync is opt-in, single-flight and cancellation-aware; it persists only timestamps, generation and a sanitized error code by seed tenant and owner for the memory-sync health status, so the API can read the Worker-persisted synchronization snapshot across process boundaries; it is not a Worker liveness probe. The manual `CurrentReleases` map is the single per-service release marker: memory retrieval labels matching evidence as current, stale, unversioned or service-mismatched before it reaches the model. Report publication derives and verifies the stored documentation-fit status from those durable artifacts. The configured embedding model is used by default; the mock embedder is reserved for tests and explicit mock-only checks. The `memory` role is the only shipped role granted `memory_search`; the orchestrator never searches memory directly.
 
 `memory_search` embeds the worker query once through the tool's configured `EmbeddingRouteId`, then asks PostgreSQL for a bounded vector candidate set of `min(100, TopK * 4)`. Exact tenant, embedding provider, embedding model, embedding dimension and active-item filters apply before vector ordering and the candidate limit. Application-owned ranking applies lexical coverage and fixed metadata rules, then returns the configured final `TopK`. Current evidence for the fault service and its snapshotted `CurrentReleases` marker ranks before stale or wrong-service evidence. Component and evidence-kind boosts require exact normalized query aliases; neither is inferred from model output or accepted as a tool argument. Ties resolve by combined score, vector score and chunk UUID. A model/provider/dimension mismatch returns an honest empty result instead of falling back to fuzzy retrieval. Successful matches are written as attempt-level `RetrievedItem` artifacts with `domain_ref = memory_item:<id>`, and those artifacts commit in the same transaction as the `ToolResult` artifact and ledger event.
+## Read-only source context
+
+`source_lookup` has an empty model-facing argument object. The backend supplies the redacted trigger
+signal, fault service and the service's single snapshotted `CurrentReleases` marker. Infrastructure
+selects only an exact host-configured `(service, release)` local root, maps standard .NET frames
+heuristically, canonicalizes every candidate below that root and reads bounded UTF-8 text excerpts.
+Build-path prefixes are host-owned translation hints; traversal, foreign roots, sibling-prefix
+confusion, ambiguous suffixes and symlink/reparse escapes fail closed. Remote checkout and
+Source Link/PDB mapping are outside this adapter.
+
+Successful excerpts use existing attempt-level `RetrievedItem` persistence and the existing
+`triage_evidence.kind = RetrievedItem` value, with a closed `evidenceKind = SourceCode` artifact
+payload and `source:` domain reference. Grounding validates the payload shape and release against
+the job snapshot; report reads expose that artifact payload alongside the citation. A current-attempt outcome reader applies canonical
+no-match or connector-unavailable limitations before final publication, so model prose cannot omit
+those outcomes or turn them into evidence.
+
 ## Phase 5 Grounded Reports
 
 Phase 5 makes `publish_report` a backend-grounded closeout instead of a model-authored row write. The model supplies report fields and evidence `referenceId` values, but the backend validates the report shape, rejects non-citable or out-of-attempt references, derives `is_mass_issue` from the job-level `NeighborSet`, derives evidence kind from artifact state and `memory_items.kind`, and persists `triage_reports`, `triage_evidence`, job/fault terminal state and `ReportPublished` in one transaction. `WorkerOutput` artifacts are never citable. `GET /api/v1/triage-reports/{id}` returns the report and grounded evidence, including the cited artifact payload.

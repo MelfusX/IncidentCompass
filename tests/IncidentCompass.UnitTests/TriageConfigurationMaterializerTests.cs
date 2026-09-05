@@ -261,6 +261,49 @@ public sealed class TriageConfigurationMaterializerTests
     }
 
     [Fact]
+    public void Materialize_SourceLookupCanOnlyBeGrantedToSourceRole()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["source_lookup"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)((JsonObject)node["Roles"]!)["analysis"]!)["Tools"] = new JsonArray("source_lookup");
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_RemovingSourceRoleLeavesHostConfigurationValidAndToolDisabled()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["source_lookup"] = new JsonObject { ["Kind"] = "internal" };
+
+        var configuration = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+
+        Assert.DoesNotContain("source", configuration.Roles.Keys);
+        Assert.Contains("source_lookup", configuration.Tools.Keys);
+    }
+
+    [Fact]
+    public void Materialize_SourceRoleWithoutGrantLeavesRoleToolSurfaceEmpty()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["source_lookup"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)node["Roles"]!)["source"] = new JsonObject
+        {
+            ["RouteId"] = "analysis-chat",
+            ["Instructions"] = "ref:instructions/source.md",
+            ["Tools"] = new JsonArray(),
+            ["OutputSchema"] = "ref:schemas/source.json"
+        };
+
+        var configuration = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+
+        Assert.Empty(configuration.Roles["source"].Tools);
+    }
+
+    [Fact]
     public void Materialize_InvalidConfiguredRedactionPattern_FailsLoadValidation()
     {
         var node = ValidConfigNode();
@@ -293,7 +336,9 @@ public sealed class TriageConfigurationMaterializerTests
     {
         ["ref:instructions/orchestrator.md"] = "orchestrator body",
         ["ref:instructions/analysis.md"] = "analysis body",
-        ["ref:schemas/analysis.json"] = "{ \"type\": \"object\" }"
+        ["ref:schemas/analysis.json"] = "{ \"type\": \"object\" }",
+        ["ref:instructions/source.md"] = "source body",
+        ["ref:schemas/source.json"] = "{ \"type\": \"object\" }"
     };
 
     private static JsonObject ValidConfigNode()

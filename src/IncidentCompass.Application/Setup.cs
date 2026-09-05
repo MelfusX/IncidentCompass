@@ -13,6 +13,7 @@ using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Redaction;
 using IncidentCompass.Application.Investigation;
 using IncidentCompass.Application.Memory;
+using IncidentCompass.Application.SourceContext;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,6 +47,7 @@ public static class Setup
         services.AddGovernanceCore();
         services.AddInvestigationCore();
         services.AddMemoryCore();
+        services.AddSourceContextCore();
 
         return services;
     }
