@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Notifications;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Intake;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,7 @@ public sealed class TriageConfigurationValidationParityTests
         { "redaction", false, false, "Redaction.Patterns[0].Name" },
         { "dangling-role-route", true, false, "Roles.analysis.RouteId" },
         { "valid-external-action", true, true, null },
+        { "valid-telegram-action", true, true, null },
         { "valid-mixed-case-external-action", true, true, null },
         { "unsafe-external-action-id", false, false, "Tools.notify:test" },
         { "external-action-in-role", true, false, "Roles.analysis.Tools" },
@@ -41,6 +43,11 @@ public sealed class TriageConfigurationValidationParityTests
         { "action-target-mismatch", true, false, "Tools.notify_test.LogicalTargetId" },
         { "read-reclassified-as-action", true, false, "Tools.memory_search.Kind" },
         { "action-mode-loosens-global", true, false, "Tools.notify_test.Mode" },
+        { "duplicate-notification-route", true, false, "Actions.NotificationRoutes.ToolId" },
+        { "notification-selector-not-normalized", false, false, "Actions.NotificationRoutes.ServiceName" },
+        { "notification-empty-severity", false, false, "Actions.NotificationRoutes.Severities" },
+        { "notification-null-routes", false, false, "Actions.NotificationRoutes" },
+        { "notification-null-severities", false, false, "Actions.NotificationRoutes.Severities" },
         { "wildcard-approval", true, false, "Rules.requires_approval.Tool" },
         { "read-tool-approval", true, false, "Rules.requires_approval.Tool" }
     };
@@ -163,6 +170,13 @@ public sealed class TriageConfigurationValidationParityTests
             case "valid-external-action":
                 AddExternalAction(root);
                 return;
+            case "valid-telegram-action":
+                AddExternalAction(
+                    root,
+                    TelegramNotificationToolDescriptor.ToolId,
+                    TelegramNotificationToolDescriptor.LogicalTargetId,
+                    "telegram_ops");
+                return;
             case "valid-mixed-case-external-action":
                 AddExternalAction(root, "Action_Test.v1-Edge");
                 return;
@@ -212,6 +226,30 @@ public sealed class TriageConfigurationValidationParityTests
                 root["Actions"]!["DefaultMode"] = "dry_run";
                 root["Tools"]!["notify_test"]!["Mode"] = "live";
                 return;
+            case "duplicate-notification-route":
+                AddExternalAction(root);
+                root["Actions"]!["NotificationRoutes"]!.AsArray().Add(new JsonObject
+                {
+                    ["RouteId"] = "telegram_backup",
+                    ["ToolId"] = "notify_test",
+                    ["Severities"] = new JsonArray("critical")
+                });
+                return;
+            case "notification-selector-not-normalized":
+                AddExternalAction(root);
+                root["Actions"]!["NotificationRoutes"]![0]!["ServiceName"] = "Checkout";
+                return;
+            case "notification-empty-severity":
+                AddExternalAction(root);
+                root["Actions"]!["NotificationRoutes"]![0]!["Severities"] = new JsonArray();
+                return;
+            case "notification-null-routes":
+                root["Actions"]!["NotificationRoutes"] = null;
+                return;
+            case "notification-null-severities":
+                AddExternalAction(root);
+                root["Actions"]!["NotificationRoutes"]![0]!["Severities"] = null;
+                return;
             case "wildcard-approval":
                 AddExternalAction(root);
                 root["Rules"]!.AsArray().Add(new JsonObject
@@ -234,16 +272,31 @@ public sealed class TriageConfigurationValidationParityTests
         }
     }
 
-    private static void AddExternalAction(JsonObject root, string toolId = "notify_test")
+    private static void AddExternalAction(
+        JsonObject root,
+        string toolId = "notify_test",
+        string logicalTargetId = "telegram:ops",
+        string routeId = "telegram_ops")
     {
         root["Tools"]![toolId] = new JsonObject
         {
             ["Kind"] = "external_action",
             ["Category"] = "notification",
-            ["LogicalTargetId"] = "telegram:ops"
+            ["LogicalTargetId"] = logicalTargetId
         };
         root["Actions"]!["AllowedTools"] = new JsonArray(toolId);
         root["Actions"]!["DefaultMode"] = "live";
+        root["Actions"]!["NotificationRoutes"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["RouteId"] = routeId,
+                ["ToolId"] = toolId,
+                ["ServiceName"] = "checkout",
+                ["Environment"] = "production",
+                ["Severities"] = new JsonArray("error", "critical", "fatal")
+            }
+        };
     }
 
     private static ServiceProvider CreateServices(
@@ -267,6 +320,7 @@ public sealed class TriageConfigurationValidationParityTests
             new AgentToolDescriptor("memory_search", AgentToolCapability.ImmediateRead),
             new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead),
             new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead),
+            TelegramNotificationToolDescriptor.Value,
             new AgentToolDescriptor(
                 "notify_test",
                 AgentToolCapability.ExternalAction,

@@ -133,8 +133,10 @@ Approved action dispatch is a separate Worker path. The Worker rechecks current 
 tightening guard, recomputes the registered adapter-binding fingerprint and passes the immutable
 stored bytes plus the action id only to the exact registered external-action capability. Frozen or
 newly tightened dry-run performs no adapter call; disabled, approval-tightened, unregistered and
-binding-drift cases fail closed with bounded durable evidence. Production composition currently
-registers no external-action adapter.
+binding-drift cases fail closed with bounded durable evidence. Application composition registers
+only the non-secret Telegram descriptor for public configuration validation. The workflow, adapter,
+host binding and credentials are registered only in the Worker host. API and test host configuration
+do not require or receive Telegram credentials.
 
 The durable claim is the at-most-once boundary. Once it records an owner, random fence and database
 deadline, no automatic path may call that adapter again. Exceptions, timeout, cancellation and crash
@@ -151,3 +153,13 @@ repository or API authority. The adapter does not log authorization headers, res
 issue bodies. Authentication, rate-limit, timeout and malformed-response failures are reduced to a
 closed sanitized code before they reach durable tool outcomes or report limitations. Caller/job
 cancellation propagates instead of being misreported as a connector timeout.
+
+Telegram routing separates public policy from secret host authority. The snapshotted configuration
+contains at most 32 ordered route ids with optional normalized service/environment selectors and a
+closed severity subset. First match wins; there is no fanout and no recipient, endpoint, token or
+message template in the route. The Worker binds the selected route id to one fixed chat id and bot
+token through `IncidentCompass__Telegram__RouteId`, `__ChatId` and `__BotToken`. The adapter accepts
+only backend-generated report and route ids, builds the bounded message itself, always targets
+`https://api.telegram.org`, follows no redirects and sends no `parse_mode`. Provider bodies, request
+paths and tokens are never returned or durably recorded. Once a mutating send starts, exceptions and
+cancellation are outcome-unknown and are not retried.

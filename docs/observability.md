@@ -53,6 +53,12 @@ claim. Definitive success or failure writes one bounded `ActionResult` and `Acti
 with terminal state. Dry-run uses the same terminal evidence with zero adapter calls. Exceptions,
 timeouts, cancellation and expired in-doubt claims use the closed `dispatch_outcome_unknown` failure;
 logs and ledger rows do not contain frozen payload bytes, provider bodies, credentials or routes.
+For Telegram notifications, an unclaimed predecessor that is replaced records the existing bounded
+superseded terminal evidence. A started predecessor denies a successor. Confirmed live success and
+outcome-unknown start a 30-minute database-clock cooldown measured from durable dispatch start;
+simulated, requested, rejected, expired and definitive pre-mutation failures do not. Telegram success
+keeps only the bounded provider kind and
+message id in the action result, never the token, chat id, request path or raw response.
 
 ## Failure Behavior
 
@@ -71,7 +77,7 @@ The source uses fixed operation names and a closed `outcome` vocabulary: `claime
 Additional sensitive actions should use durable audit records when implemented:
 
 - quota exceeded;
-- external-action before/after correlation once production action adapters are added;
+- additional external-action before/after correlation beyond the existing action lifecycle events;
 - cost rollups once IC-BL-014 consumes `ModelCall` rows and pricing records.
 
 ## OTLP Ingress

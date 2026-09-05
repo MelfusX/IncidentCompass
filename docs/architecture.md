@@ -25,6 +25,9 @@ flowchart LR
   - `Intake/`: source normalization, input limits, redaction, fingerprinting, fault grouping, triage-job creation and grounded intake artifacts for the Phase 1 ingestion flow.
   - `Investigation/`: Worker job claim/runtime seams that rehydrate claimed jobs by config hash and hand them to the governed investigation processor.
   - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
+  - `Notifications/`: ordered notification routing and the non-secret Telegram tool descriptor.
+    The Worker-owned workflow accepts report identity and a configured route id, not recipient or
+    message text.
   - `SourceContext/`: provider-neutral source lookup contracts, bounded stack-frame extraction and
     the governed `source_lookup` worker tool.
   - `Tickets/`: system-neutral ticket-search contracts, backend signal-field extraction and the
@@ -161,8 +164,9 @@ claim remains recoverable after lease expiry. At the attempt ceiling, one same-c
 is allowed only when the exact proposal already exists; another lost recovery claim dead-letters.
 A workflow may submit only through the existing
 post-report proposal use case. The queue adds no policy path, action adapter or ledger vocabulary,
-and `action_approvals` remains the only approval and dispatch outbox. Production composition registers
-no evaluation workflow or external-action adapter in this slice.
+and `action_approvals` remains the only approval and dispatch outbox. Application composition
+registers the non-secret Telegram descriptor so API startup can validate public routes without
+credentials. Worker composition alone registers the workflow, host binding and adapter.
 
 An action proposal freezes approval contract v1 over the immutable origin report id, exact tool id,
 category, effective mode, logical target, secret-free adapter binding fingerprint, canonical payload
@@ -191,6 +195,17 @@ caps read ledger facts through that same transaction. Accepted proposal caps cou
 rows, whether the resulting state is requested or auto-approved. A denial after safe origin resolution writes one bounded
 `PolicyDecision` and no action rows. Missing, foreign, failed or superseded origins write nothing.
 
+Telegram routing is part of the immutable triage configuration. It is an ordered list of at most 32
+routes with unique route, tool and logical-target bindings. A route can match exact normalized service
+and environment selectors plus a closed severity subset; the first match wins and there is no fanout.
+The selected route contributes only its id. The Worker-owned binding supplies the one fixed chat id,
+bot token and fixed `https://api.telegram.org` authority. Proposal creation runs under the fault lock:
+exact proposal replay wins first, unclaimed notification proposals are superseded, an already-started
+notification denies a successor, and a database-clock 30-minute cooldown measured from durable
+dispatch start follows confirmed live success or `dispatch_outcome_unknown`. Dry-run, requested,
+rejected, expired and definitive
+pre-mutation failure do not start that cooldown.
+
 `/api/v1/action-approvals` exposes compact tenant-scoped lists, immutable review details, approve and
 reject. Review details are reconstructed from tuple and provenance rows, not the `ProposedAction`
 artifact JSON. The Worker action pump first expires requested rows, fails superseded unclaimed rows
@@ -204,5 +219,5 @@ commit atomically under the fence.
 The dispatcher never automatically invokes an action again after claim. An exception, timeout,
 cancellation or process loss after invocation leaves either an immediate outcome-unknown result or an
 in-doubt row that deadline recovery closes as `dispatch_outcome_unknown`. A late completion cannot
-cross the fence/deadline transition. Synthetic integration tests are the only proposal caller and
-external-action implementation in this slice; production composition registers no real action adapter.
+cross the fence/deadline transition. Telegram HTTP tests use deterministic in-process handlers; the
+automated suite never calls the real provider.

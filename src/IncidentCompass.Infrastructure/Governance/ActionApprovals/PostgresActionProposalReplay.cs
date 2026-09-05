@@ -7,6 +7,80 @@ namespace IncidentCompass.Infrastructure.Governance.ActionApprovals;
 
 internal static class PostgresActionProposalReplay
 {
+    public static async Task<string?> ApplyNotificationGuardAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        GovernedActionProposal proposal,
+        GroundedActionProposalContext origin,
+        CancellationToken cancellationToken)
+    {
+        var unclaimed = await ReadUnclaimedAsync(
+            connection, transaction, proposal, origin.FaultId, cancellationToken);
+        if (unclaimed.Count > 32)
+        {
+            return "notification_history_exceeded";
+        }
+
+        foreach (var action in unclaimed)
+        {
+            await PostgresActionProposalWriter.SupersedeAsync(
+                connection, transaction, action, cancellationToken);
+        }
+
+        await using var command = new NpgsqlCommand("""
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM incidentcompass.action_approvals a
+                    WHERE a.tenant_id = @tenant_id AND a.fault_id = @fault_id
+                      AND a.tool_id = @tool_id AND a.state = 'approved'
+                      AND a.dispatch_started_at IS NOT NULL)
+                    THEN 'notification_in_flight'
+                WHEN EXISTS (
+                    SELECT 1 FROM incidentcompass.action_approvals a
+                    WHERE a.tenant_id = @tenant_id AND a.fault_id = @fault_id
+                      AND a.tool_id = @tool_id AND a.mode = 'live'
+                      AND a.dispatch_started_at >= clock_timestamp() - interval '30 minutes'
+                      AND (a.state = 'executed' OR
+                           (a.state = 'failed' AND a.failure_code = 'dispatch_outcome_unknown')))
+                    THEN 'notification_cooldown'
+                ELSE NULL
+            END;
+            """, connection, transaction);
+        command.AddParameter("tenant_id", proposal.TenantId);
+        command.AddParameter("fault_id", origin.FaultId);
+        command.AddParameter("tool_id", proposal.ToolId);
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task<IReadOnlyList<ActionApprovalRecord>> ReadUnclaimedAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        GovernedActionProposal proposal,
+        Guid faultId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT " + PostgresActionApprovalReader.Columns + """
+            FROM incidentcompass.action_approvals a
+            WHERE a.tenant_id = @tenant_id AND a.fault_id = @fault_id
+              AND a.tool_id = @tool_id AND a.state IN ('requested', 'approved')
+              AND a.dispatch_started_at IS NULL
+            ORDER BY a.created_at_utc, a.id
+            LIMIT 33;
+            """, connection, transaction);
+        command.AddParameter("tenant_id", proposal.TenantId);
+        command.AddParameter("fault_id", faultId);
+        command.AddParameter("tool_id", proposal.ToolId);
+        var rows = new List<ActionApprovalRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(PostgresActionApprovalReader.Read(reader));
+        }
+
+        return rows;
+    }
+
     public static async Task<ActionApprovalRecord?> FindAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

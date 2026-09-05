@@ -1,4 +1,8 @@
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.PostReportActions;
+using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Notifications;
+using IncidentCompass.Infrastructure.Notifications.Telegram;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -33,6 +37,18 @@ public static class Setup
         services.TryAddEnumerable(ServiceDescriptor.Singleton<
             IValidateOptions<PostReportActionEvaluationOptions>,
             PostReportActionEvaluationOptionsValidator>());
+        services
+            .AddOptions<TelegramOptions>()
+            .Bind(configuration.GetSection(TelegramOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<TelegramOptions>,
+            TelegramOptionsValidator>());
+
+        services.AddSingleton<IPostReportActionWorkflow, TelegramNotificationWorkflow>();
+        services.AddSingleton<TelegramNotificationActionTool>();
+        services.AddSingleton<IExternalActionTool>(
+            serviceProvider => serviceProvider.GetRequiredService<TelegramNotificationActionTool>());
 
         services.AddScoped<IUserContext>(
             serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());
@@ -41,6 +57,7 @@ public static class Setup
         services.TryAddSingleton<WorkerActionPump>();
         services.TryAddSingleton<PostReportActionEvaluationLeaseRenewer>();
         services.TryAddSingleton<PostReportActionEvaluationPump>();
+        services.AddHostedService<TelegramConfigurationStartupValidator>();
         services.AddHostedService<Worker>();
         services.AddHostedService<ActionDispatchWorker>();
         services.AddHostedService<PostReportActionEvaluationWorker>();

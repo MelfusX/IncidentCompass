@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Domain.Incidents.Actions;
 using IncidentCompass.Domain.Incidents.Statuses;
 using IncidentCompass.Infrastructure.Postgres;
 using IncidentCompass.Infrastructure.Tickets;
@@ -128,6 +129,16 @@ internal sealed class PostgresActionProposalRepository(
             if (!string.Equals(origin.ConfigHash, proposal.Configuration.ConfigHash, StringComparison.Ordinal))
             {
                 await DenyAsync("configuration_invalid");
+            }
+
+            if (proposal.RegisteredTool.Category == ActionCategory.Notification)
+            {
+                var notificationDenial = await PostgresActionProposalReplay.ApplyNotificationGuardAsync(
+                    connection, transaction, proposal, origin, cancellationToken);
+                if (notificationDenial is not null)
+                {
+                    await DenyAsync(notificationDenial);
+                }
             }
 
             var facts = new PostgresActionToolRuleFactReader(connection, transaction, origin);
