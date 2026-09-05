@@ -77,11 +77,12 @@ The single live tool rule engine and the immediate/action capability contracts l
 `SourceContext/` contains the provider-neutral read port, bounded signal frame extraction and tool;
 filesystem roots, canonicalization and file reads stay in Infrastructure. Report-level context
 outcome contracts and backend limitation policy live under `Investigation/Reports/Context/`.
-`Tickets/` contains the provider-neutral search and action-history ports, bounded signal-field
-extraction, read worker tool, ticket-create descriptor, eligibility check and canonical payload
-factory. Provider query syntax, HTTP transport, credentials, response parsing, ranking, durable
-history queries and write adapters stay under `Infrastructure/Tickets/`. Ticket writes must enter
-through the governed post-report proposal, approval and dispatch path, never a worker role tool.
+`Tickets/` contains the provider-neutral search, cited-update-evidence and action-history ports,
+bounded signal-field extraction, read worker tool, ticket-create and ticket-update descriptors,
+eligibility checks and canonical payload rules. Provider query syntax, HTTP transport, credentials,
+response parsing, ranking, durable evidence/history queries and write adapters stay under
+`Infrastructure/Tickets/`. Ticket writes must enter through the governed post-report proposal,
+approval and dispatch path, never a worker role tool.
 
 The Worker keeps triage-job and approved-action scheduling in separate pump/task-set types. The action
 pump owns only bounded polling, task observation and shutdown draining; current-policy checks, exact

@@ -9,6 +9,7 @@ public sealed class TicketPortArchitectureTests
     {
         var methods = typeof(ITicketSearch).GetMethods();
         var historyMethods = typeof(ITicketActionHistory).GetMethods();
+        var updateMethods = typeof(ITicketUpdateEvidenceResolver).GetMethods();
         var applicationTypes = typeof(ITicketSearch).Assembly.GetTypes()
             .Where(type => type.Namespace == "IncidentCompass.Application.Tickets")
             .ToArray();
@@ -18,6 +19,10 @@ public sealed class TicketPortArchitectureTests
 
         Assert.Equal("SearchAsync", Assert.Single(methods).Name);
         Assert.Equal("ReadPriorAsync", Assert.Single(historyMethods).Name);
+        Assert.Equal("ResolveAsync", Assert.Single(updateMethods).Name);
+        Assert.DoesNotContain(updateMethods.SelectMany(static method => method.GetParameters()),
+            parameter => ContainsProviderOrTransportConcept(parameter.ParameterType.Name) ||
+                         ContainsProviderOrTransportConcept(parameter.Name ?? string.Empty));
         Assert.DoesNotContain(applicationTypes,
             type => ContainsProviderOrTransportConcept(type.Name));
         Assert.DoesNotContain(requestProperties,

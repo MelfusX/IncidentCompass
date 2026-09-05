@@ -49,12 +49,16 @@ public static class Setup
 
         services.AddSingleton<IPostReportActionWorkflow, TelegramNotificationWorkflow>();
         services.AddSingleton<IPostReportActionWorkflow, TicketCreatePostReportActionWorkflow>();
+        services.AddSingleton<IPostReportActionWorkflow, TicketUpdatePostReportActionWorkflow>();
         services.AddSingleton<TelegramNotificationActionTool>();
         services.AddSingleton<IExternalActionTool>(
             serviceProvider => serviceProvider.GetRequiredService<TelegramNotificationActionTool>());
         services.AddScoped<GitHubIssuesTicketCreate>();
         services.AddScoped<IExternalActionTool>(
             serviceProvider => serviceProvider.GetRequiredService<GitHubIssuesTicketCreate>());
+        services.AddScoped<GitHubIssueCommentExternalActionTool>();
+        services.AddScoped<IExternalActionTool>(serviceProvider =>
+            serviceProvider.GetRequiredService<GitHubIssueCommentExternalActionTool>());
 
         services.AddScoped<IUserContext>(
             serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());

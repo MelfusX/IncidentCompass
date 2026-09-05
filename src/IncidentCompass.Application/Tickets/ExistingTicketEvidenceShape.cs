@@ -9,8 +9,16 @@ public static class ExistingTicketEvidenceShape
         ["evidenceKind", "provider", "repository", "issueNumber", "title", "status", "assignee", "createdAtUtc", "url", "score"],
         StringComparer.Ordinal);
 
-    public static bool IsCitable(string? domainRef, string payloadJson, string? configuredRepository)
+    public static bool IsCitable(string? domainRef, string payloadJson, string? configuredRepository) =>
+        TryReadTicketId(domainRef, payloadJson, configuredRepository, out _);
+
+    public static bool TryReadTicketId(
+        string? domainRef,
+        string payloadJson,
+        string? configuredRepository,
+        out string ticketId)
     {
+        ticketId = string.Empty;
         if (string.IsNullOrWhiteSpace(domainRef) || string.IsNullOrWhiteSpace(configuredRepository))
         {
             return false;
@@ -28,7 +36,7 @@ public static class ExistingTicketEvidenceShape
             var repository = ReadString(payload, "repository");
             var number = ReadPositiveInt(payload, "issueNumber");
             var expectedUrl = $"https://github.com/{repository}/issues/{number}";
-            return HasClosedShape(payload) &&
+            var isCitable = HasClosedShape(payload) &&
                 ReadString(payload, "evidenceKind") == "ExistingTicket" &&
                 ReadString(payload, "provider") == "github" &&
                 string.Equals(repository, configuredRepository, StringComparison.Ordinal) &&
@@ -41,6 +49,12 @@ public static class ExistingTicketEvidenceShape
                 DateTimeOffset.TryParse(ReadString(payload, "createdAtUtc"), CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out _) &&
                 ReadScore(payload) is >= 0 and <= 1;
+            if (isCitable)
+            {
+                ticketId = number.ToString(CultureInfo.InvariantCulture);
+            }
+
+            return isCitable;
         }
         catch (JsonException)
         {
@@ -67,12 +81,14 @@ public static class ExistingTicketEvidenceShape
             : null;
 
     private static int ReadPositiveInt(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var value) && value.TryGetInt32(out var number) && number > 0
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+        value.TryGetInt32(out var number) && number > 0
             ? number
             : 0;
 
     private static double? ReadScore(JsonElement root) =>
-        root.TryGetProperty("score", out var value) && value.TryGetDouble(out var score)
+        root.TryGetProperty("score", out var value) && value.ValueKind == JsonValueKind.Number &&
+        value.TryGetDouble(out var score)
             ? score
             : null;
 }

@@ -68,6 +68,15 @@ failures expose only stable codes, and a response that becomes unreadable after 
 duplicate lookup, but tokens, Authorization headers, repository authority, request paths and raw
 provider bodies never enter ledger rows or logs.
 
+GitHub ticket update uses a distinct action category and stores only bounded canonical provider,
+issue-number and comment-id metadata on confirmed success. The cited `ExistingTicket` target is
+resolved and rechecked from durable report evidence; missing, foreign, malformed or ambiguous targets
+produce stable closed failures without a provider write. Target/comment preflight and POST failures
+expose only stable codes. The frozen comment body and marker may be used for exact duplicate lookup,
+but neither they nor raw provider bodies, credentials, headers, repository authority or request paths
+enter ledger rows or logs. An unreadable or interrupted response after comment POST begins is recorded
+as `dispatch_outcome_unknown` and is not resent.
+
 ## Failure Behavior
 
 Model calls are part of the Worker investigation loop. Required durable side effects, including ledger budget/model-call events and final report commit events, are treated as part of the workflow state. The Worker does not expose foreground success to an API caller after a missing required durable write.

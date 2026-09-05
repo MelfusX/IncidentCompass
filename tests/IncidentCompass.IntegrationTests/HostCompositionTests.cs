@@ -110,8 +110,12 @@ public sealed class HostCompositionTests
         Assert.Contains("system", userContext.Roles);
         Assert.Contains(scope.ServiceProvider.GetServices<IPostReportActionWorkflow>(),
             workflow => workflow.ToolId == TicketCreateTool.ToolId);
+        Assert.Contains(scope.ServiceProvider.GetServices<IPostReportActionWorkflow>(),
+            workflow => workflow.ToolId == TicketUpdatePostReportActionWorkflow.UpdateToolId);
         Assert.Contains(scope.ServiceProvider.GetServices<IExternalActionTool>(),
             tool => tool.Definition.Name == TicketCreateTool.ToolId);
+        Assert.Contains(scope.ServiceProvider.GetServices<IExternalActionTool>(),
+            tool => tool.Definition.Name == TicketUpdatePostReportActionWorkflow.UpdateToolId);
     }
 
     [Fact]
@@ -170,6 +174,18 @@ public sealed class HostCompositionTests
         Assert.DoesNotContain(
             scope.ServiceProvider.GetServices<IExternalActionTool>(),
             tool => tool.Definition.Name == TicketCreateTool.ToolId);
+        Assert.True(registry.TryGet(
+            TicketUpdatePostReportActionWorkflow.UpdateToolId, out var updateDescriptor));
+        Assert.Equal(
+            TicketUpdatePostReportActionWorkflow.UpdateLogicalTargetId,
+            updateDescriptor.LogicalTargetId);
+        Assert.DoesNotContain(
+            scope.ServiceProvider.GetRequiredService<PostReportActionWorkflowCatalog>().Workflows,
+            workflow => workflow.ToolId == TicketUpdatePostReportActionWorkflow.UpdateToolId);
+        Assert.DoesNotContain(
+            scope.ServiceProvider.GetServices<IExternalActionTool>(),
+            tool => tool.Definition.Name == TicketUpdatePostReportActionWorkflow.UpdateToolId);
+        Assert.Null(host.Services.GetRequiredService<IConfiguration>()["IncidentCompass:Tickets:GitHub:Token"]);
     }
 
     [Fact]
@@ -230,7 +246,7 @@ public sealed class HostCompositionTests
             () => StartGitHubValidatorAsync(host.Services));
 
         Assert.Equal(
-            "GitHub issue host binding does not match the enabled public ticket-create action.",
+            "GitHub issue host binding does not match an enabled public ticket action.",
             exception.Message);
         Assert.DoesNotContain("owner/repo", exception.ToString(), StringComparison.Ordinal);
     }
@@ -244,6 +260,37 @@ public sealed class HostCompositionTests
             ["IncidentCompass:Tickets:GitHub:Repository"] = "repo",
             ["IncidentCompass:Tickets:GitHub:Token"] = "github-host-token-sentinel"
         });
+
+        await StartGitHubValidatorAsync(host.Services);
+    }
+
+    [Fact]
+    public async Task WorkerGitHubBinding_RejectsEnabledTicketUpdateWithoutHostCredential()
+    {
+        using var host = CreateTicketHost(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+            ["IncidentCompass:Tickets:GitHub:Repository"] = "repo"
+        }, useUpdate: true);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => StartGitHubValidatorAsync(host.Services));
+
+        Assert.Equal(
+            "GitHub issue host binding does not match an enabled public ticket action.",
+            exception.Message);
+        Assert.DoesNotContain("owner/repo", exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WorkerGitHubBinding_AcceptsExactEnabledTicketUpdateBinding()
+    {
+        using var host = CreateTicketHost(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+            ["IncidentCompass:Tickets:GitHub:Repository"] = "repo",
+            ["IncidentCompass:Tickets:GitHub:Token"] = "github-host-token-sentinel"
+        }, useUpdate: true);
 
         await StartGitHubValidatorAsync(host.Services);
     }
@@ -513,7 +560,9 @@ public sealed class HostCompositionTests
         }
     };
 
-    private static IHost CreateTicketHost(IReadOnlyDictionary<string, string?> ticketValues)
+    private static IHost CreateTicketHost(
+        IReadOnlyDictionary<string, string?> ticketValues,
+        bool useUpdate = false)
     {
         var values = new Dictionary<string, string?>(ticketValues)
         {
@@ -531,32 +580,41 @@ public sealed class HostCompositionTests
                 services.AddInfrastructure(context.Configuration);
                 services.RemoveAll<ITriageConfigurationRepository>();
                 services.AddSingleton<ITriageConfigurationRepository>(
-                    new StaticNotificationConfiguration(CreateTicketConfiguration()));
+                    new StaticNotificationConfiguration(CreateTicketConfiguration(useUpdate)));
                 services.AddWorker(context.Configuration);
             })
             .Build();
     }
 
-    private static TriageConfiguration CreateTicketConfiguration() => new(
-        "ticket-host-composition",
-        new Dictionary<string, TriageProviderSettings>(StringComparer.Ordinal),
-        new Dictionary<string, TriageRouteSettings>(StringComparer.Ordinal),
-        new OrchestratorSettings("orchestrator", "chat", ["delegate", "publish_report"],
-            new OrchestratorBudgetSettings(1, 1000, 30)),
-        new Dictionary<string, TriageRoleSettings>(StringComparer.Ordinal),
-        new Dictionary<string, TriageToolSettings>(StringComparer.Ordinal)
-        {
-            [TicketCreateTool.ToolId] = new(
-                "external_action", null, null, null, "ticket_create",
-                TicketCreateTool.LogicalTargetId)
-        },
-        [],
-        new IngestionSettings("tenant", ["tester"]),
-        new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")),
-        RedactionSettings.Default)
+    private static TriageConfiguration CreateTicketConfiguration(bool useUpdate)
     {
-        Actions = new TriageActionSettings([TicketCreateTool.ToolId], "live", false, 60)
-    };
+        var toolId = useUpdate
+            ? TicketUpdatePostReportActionWorkflow.UpdateToolId
+            : TicketCreateTool.ToolId;
+        var category = useUpdate ? "ticket_update" : "ticket_create";
+        var logicalTargetId = useUpdate
+            ? TicketUpdatePostReportActionWorkflow.UpdateLogicalTargetId
+            : TicketCreateTool.LogicalTargetId;
+        return new(
+            "ticket-host-composition",
+            new Dictionary<string, TriageProviderSettings>(StringComparer.Ordinal),
+            new Dictionary<string, TriageRouteSettings>(StringComparer.Ordinal),
+            new OrchestratorSettings("orchestrator", "chat", ["delegate", "publish_report"],
+                new OrchestratorBudgetSettings(1, 1000, 30)),
+            new Dictionary<string, TriageRoleSettings>(StringComparer.Ordinal),
+            new Dictionary<string, TriageToolSettings>(StringComparer.Ordinal)
+            {
+                [toolId] = new(
+                    "external_action", null, null, null, category, logicalTargetId)
+            },
+            [],
+            new IngestionSettings("tenant", ["tester"]),
+            new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")),
+            RedactionSettings.Default)
+        {
+            Actions = new TriageActionSettings([toolId], "live", false, 60)
+        };
+    }
 
     private static Task StartTelegramValidatorAsync(IServiceProvider services)
     {
