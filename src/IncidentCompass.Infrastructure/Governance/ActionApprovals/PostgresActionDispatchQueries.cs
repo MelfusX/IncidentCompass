@@ -37,6 +37,17 @@ internal static class PostgresActionDispatchQueries
             limit,
             cancellationToken);
 
+    public static Task<IReadOnlyList<ActionDispatchCandidate>> FindRecoveryAsync(
+        NpgsqlConnection connection,
+        int limit,
+        CancellationToken cancellationToken) =>
+        FindAsync(
+            connection,
+            "a.state = 'approved' AND a.dispatch_started_at IS NOT NULL " +
+            "AND a.dispatch_deadline_at <= clock_timestamp()",
+            limit,
+            cancellationToken);
+
     private static async Task<IReadOnlyList<ActionDispatchCandidate>> FindAsync(
         NpgsqlConnection connection,
         string predicate,

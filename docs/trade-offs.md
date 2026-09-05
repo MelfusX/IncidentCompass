@@ -154,11 +154,18 @@ unused so fresh and upgraded databases preserve migration integrity.
 
 IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingRecord`, `IPricingRepository`, `PostgresObservabilityRepository` and the `incidentcompass.ai_model_pricing` half of `infra/postgres/init/004-observability-cost.sql`. Live model usage is recorded as `ModelCall` and `BudgetEvent` ledger rows; cost rollup is deferred until a reporting workflow consumes those rows.
 
-## Durable Approval Boundary Before External Adapters
+## At-Most-Once Action Dispatch Prefers Visible Uncertainty
 
-The post-report action slice lands the immutable approval tuple, provenance, operator API, shared
-policy-backed proposal use case and atomic dispatch-state primitives before any production caller or
-external adapter. Synthetic tests prove denial, approval, replay and concurrency behavior without
-granting side-effect authority. The trade-off is that an approved row is not executed in this slice.
-There is intentionally no retry endpoint or automatic pump until the later dispatcher work can
-preserve fencing, current-report checks and at-most-once invocation behavior end to end.
+The post-report action path separates immutable proposal/approval from a bounded Worker dispatcher.
+The dispatcher locks the fault before the action, rechecks current report and policy, freezes one
+owner/fence/deadline claim and calls the exact registered adapter with the stored bytes and action id.
+It never automatically invokes that action again after claim. Dry-run terminates without a call, and
+binding or policy drift fails closed.
+
+This is deliberately at-most-once backend invocation, not exactly-once delivery. If a provider accepts
+the request but the response or terminal database commit is lost, IncidentCompass cannot prove the
+external outcome. Recovery records `dispatch_outcome_unknown` after the database deadline and fences
+late completion instead of risking a duplicate side effect. A later adapter may use the action id as
+its own idempotency key, but IncidentCompass does not rely on provider idempotency for correctness.
+Synthetic tools prove the workflow without granting production side-effect authority; production
+callers and real notification/ticket adapters remain separate work.

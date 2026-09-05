@@ -33,7 +33,9 @@ flowchart LR
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading,
   action approval/provenance repositories, model clients, embedding clients, memory adapters, a
   dormant pricing adapter and other infrastructure adapters.
-- `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, renewable ownership-fenced leases, cancellation on ownership loss and per-process `MaxConcurrentJobs`.
+- `IncidentCompass.Worker`: DB-backed background host with separate bounded triage-job and approved-action
+  pumps. Triage jobs use renewable ownership-fenced leases and per-process `MaxConcurrentJobs`; approved
+  actions use immutable dispatch fences, deadlines and at-most-once backend invocation.
 
 ## Phase 1 Intake Flow
 
@@ -173,5 +175,16 @@ rows, whether the resulting state is requested or auto-approved. A denial after 
 
 `/api/v1/action-approvals` exposes compact tenant-scoped lists, immutable review details, approve and
 reject. Review details are reconstructed from tuple and provenance rows, not the `ProposedAction`
-artifact JSON. Synthetic integration tests are the only proposal caller in this slice. There is no
-production proposal caller, Worker action pump or real action adapter.
+artifact JSON. The Worker action pump first expires requested rows, fails superseded unclaimed rows
+and recovers expired in-doubt claims, then scans approved candidates. Each candidate is rechecked in
+its own fault-first transaction and receives one owner, fence, database start and deadline. Before an
+adapter call, the dispatcher verifies the exact registered capability, current policy tightening and
+the frozen binding fingerprint. Dry-run records a simulated result with no call. A live call receives
+the stored payload bytes and durable action id; terminal state, `ActionResult` and `ActionCompleted`
+commit atomically under the fence.
+
+The dispatcher never automatically invokes an action again after claim. An exception, timeout,
+cancellation or process loss after invocation leaves either an immediate outcome-unknown result or an
+in-doubt row that deadline recovery closes as `dispatch_outcome_unknown`. A late completion cannot
+cross the fence/deadline transition. Synthetic integration tests are the only proposal caller and
+external-action implementation in this slice; production composition registers no real action adapter.

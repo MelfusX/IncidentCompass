@@ -14,6 +14,10 @@ public interface IActionDispatchRepository
         int limit,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ActionDispatchCandidate>> FindRecoveryCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken);
+
     Task<ActionDispatchClaim?> TryClaimAsync(
         Guid actionId,
         string dispatchOwner,
@@ -27,4 +31,6 @@ public interface IActionDispatchRepository
     Task<bool> TryExpireAsync(Guid actionId, CancellationToken cancellationToken);
 
     Task<bool> TryFailSupersededAsync(Guid actionId, CancellationToken cancellationToken);
+
+    Task<bool> TryFailOutcomeUnknownAsync(Guid actionId, CancellationToken cancellationToken);
 }

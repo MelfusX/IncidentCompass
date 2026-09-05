@@ -194,6 +194,7 @@ public static class Setup
         services.TryAddScoped<IActionProposalRepository, PostgresActionProposalRepository>();
         services.TryAddScoped<IActionApprovalReviewRepository, PostgresActionReviewRepository>();
         services.TryAddScoped<IActionDispatchRepository, PostgresActionDispatchRepository>();
+        services.TryAddScoped<IApprovedActionDispatcher, ApprovedActionDispatcher>();
         return services;
     }
 }

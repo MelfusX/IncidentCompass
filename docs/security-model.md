@@ -121,6 +121,20 @@ contains the frozen safe tuple, canonical payload and backend-derived provenance
 adapter binding inputs, credentials, raw routes, prompts, transcripts and evidence bodies. No current
 API endpoint edits payloads, dispatches an action or retries an outcome.
 
+Approved action dispatch is a separate Worker path. The Worker rechecks current policy only as a
+tightening guard, recomputes the registered adapter-binding fingerprint and passes the immutable
+stored bytes plus the action id only to the exact registered external-action capability. Frozen or
+newly tightened dry-run performs no adapter call; disabled, approval-tightened, unregistered and
+binding-drift cases fail closed with bounded durable evidence. Production composition currently
+registers no external-action adapter.
+
+The durable claim is the at-most-once boundary. Once it records an owner, random fence and database
+deadline, no automatic path may call that adapter again. Exceptions, timeout, cancellation and crash
+recovery become `dispatch_outcome_unknown`; deadline recovery fences a late completion. This prefers a
+visible uncertain result over a duplicate external side effect. Adapters own credentials and endpoint
+authority, must observe cancellation and must normalize provider exceptions before returning across
+the Application port.
+
 The GitHub Issues token is bound only from Worker host configuration, normally the
 `IncidentCompass__Tickets__GitHub__Token` environment variable. It is absent from public triage
 configuration, config snapshots, tool definitions, prompts, artifacts and report payloads. The

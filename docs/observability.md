@@ -41,6 +41,12 @@ artifact or provenance rows. Rejections before that origin boundary write no led
 foreign-report oracle. Accepted proposal rate caps count `ActionProposed`, not only allowed policy
 decisions, so requested and auto-approved proposals consume the same cap.
 
+Approved dispatch writes `ActionDispatchStarted` in the same transaction as its durable owner/fence
+claim. Definitive success or failure writes one bounded `ActionResult` and `ActionCompleted` atomically
+with terminal state. Dry-run uses the same terminal evidence with zero adapter calls. Exceptions,
+timeouts, cancellation and expired in-doubt claims use the closed `dispatch_outcome_unknown` failure;
+logs and ledger rows do not contain frozen payload bytes, provider bodies, credentials or routes.
+
 ## Failure Behavior
 
 Model calls are part of the Worker investigation loop. Required durable side effects, including ledger budget/model-call events and final report commit events, are treated as part of the workflow state. The Worker does not expose foreground success to an API caller after a missing required durable write.
@@ -58,7 +64,7 @@ The source uses fixed operation names and a closed `outcome` vocabulary: `claime
 Additional sensitive actions should use durable audit records when implemented:
 
 - quota exceeded;
-- governed standalone tool execution once a caller is wired into IC-BL-010;
+- external-action before/after correlation once production action adapters are added;
 - cost rollups once IC-BL-014 consumes `ModelCall` rows and pricing records.
 
 ## OTLP Ingress
