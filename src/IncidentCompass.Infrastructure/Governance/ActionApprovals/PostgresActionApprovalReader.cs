@@ -15,7 +15,9 @@ internal static class PostgresActionApprovalReader
         (SELECT count(*)::integer FROM incidentcompass.action_approval_provenance p WHERE p.action_id = a.id),
         a.created_at_utc, a.expires_at_utc, a.decision_actor, a.decision_at_utc,
         a.rejection_reason, a.dispatch_owner, a.dispatch_fence, a.dispatch_started_at,
-        a.dispatch_deadline_at, a.result_payload, a.result_summary, a.failure_code, a.completed_at_utc
+        a.dispatch_deadline_at, a.result_payload, a.result_summary, a.failure_code, a.completed_at_utc,
+        a.external_resource_kind, a.external_resource_id,
+        a.external_before_state, a.external_after_state
         """ + "\n";
 
     public static ActionApprovalRecord Read(NpgsqlDataReader reader) => new(
@@ -52,5 +54,22 @@ internal static class PostgresActionApprovalReader
         reader.IsDBNull(30) ? null : reader.GetFieldValue<byte[]>(30),
         reader.IsDBNull(31) ? null : reader.GetString(31),
         reader.IsDBNull(32) ? null : reader.GetString(32),
-        reader.IsDBNull(33) ? null : reader.GetDateTimeOffset(33));
+        reader.IsDBNull(33) ? null : reader.GetDateTimeOffset(33),
+        ReadAuditProjection(reader));
+
+    private static ExternalActionAuditProjection? ReadAuditProjection(NpgsqlDataReader reader)
+    {
+        if (reader.IsDBNull(34))
+        {
+            return null;
+        }
+
+        var projection = new ExternalActionAuditProjection(
+            reader.GetString(34),
+            reader.GetString(35),
+            reader.GetString(36),
+            reader.GetString(37));
+        projection.Validate();
+        return projection;
+    }
 }

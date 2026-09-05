@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
 
 namespace IncidentCompass.Infrastructure.Notifications.Telegram;
@@ -35,13 +37,15 @@ public static class TelegramNotificationResponseParser
 
             var canonical = new JsonObject
             {
-                ["messageId"] = parsedMessageId.ToString(),
+                ["messageId"] = parsedMessageId.ToString(CultureInfo.InvariantCulture),
                 ["provider"] = "telegram"
             };
             return new ExternalActionExecutionResult(
                 true,
                 Encoding.UTF8.GetBytes(CanonicalJsonSerializer.Canonicalize(canonical)),
-                "Telegram accepted the notification.");
+                "Telegram accepted the notification.",
+                AuditProjection: ExternalActionAuditProjection.TelegramMessage(
+                    parsedMessageId.ToString(CultureInfo.InvariantCulture)));
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {

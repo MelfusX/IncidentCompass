@@ -5,4 +5,6 @@ namespace IncidentCompass.Application.Governance.ActionApprovals.List;
 public sealed record ListActionApprovalsQuery(
     string? Status,
     int? Limit,
-    string? Cursor) : IRequest<ActionApprovalListResponse>;
+    string? Cursor,
+    string? ExternalResourceKind = null,
+    string? ExternalResourceId = null) : IRequest<ActionApprovalListResponse>;

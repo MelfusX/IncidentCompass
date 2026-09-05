@@ -30,6 +30,9 @@
     <None Update="Fixtures\**\*.*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\samples\incidents\tester-ticket-action-injection.json"
+          Link="Samples\Incidents\tester-ticket-action-injection.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -79,7 +79,9 @@ internal static class ActionApprovalTestSupport
         string tenantId = "tenant-action-tests",
         string? serializedConfigJson = null,
         string reportStatus = "Completed",
-        bool includeEvidence = true)
+        bool includeEvidence = true,
+        string signalSummary = "action test signal",
+        string reportSummary = "action test report")
     {
         var suffix = Guid.NewGuid().ToString("N");
         var signalId = Guid.NewGuid();
@@ -97,7 +99,7 @@ internal static class ActionApprovalTestSupport
                 id, tenant_id, source, fingerprint, fingerprint_version, fingerprint_strength,
                 service_name, environment, error_type, summary, body, observed_at_utc, received_at_utc)
             VALUES (@signal_id, @tenant_id, 'tester', @fingerprint, 1, 'strong',
-                    'orders', 'test', 'TimeoutException', 'action test signal', '{}'::jsonb,
+                    'orders', 'test', 'TimeoutException', @signal_summary, '{}'::jsonb,
                     clock_timestamp(), clock_timestamp());
 
             INSERT INTO incidentcompass.faults (
@@ -120,7 +122,7 @@ internal static class ActionApprovalTestSupport
             INSERT INTO incidentcompass.triage_reports (
                 id, job_id, fault_id, status, summary, classification, confidence,
                 documentation_fit, limitations, config_hash, created_at_utc)
-            VALUES (@report_id, @job_id, @fault_id, @report_status, 'action test report',
+            VALUES (@report_id, @job_id, @fault_id, @report_status, @report_summary,
                     @classification, 'High', 'Current', ARRAY[]::text[], @config_hash, clock_timestamp());
 
             INSERT INTO incidentcompass.triage_evidence (
@@ -132,12 +134,13 @@ internal static class ActionApprovalTestSupport
                 fault_id, job_id, attempt, event_type, tool_name, rationale,
                 payload_ref, config_hash, created_at_utc)
             VALUES (@fault_id, @job_id, 1, 'ReportPublished', 'publish_report',
-                    'action test report', @payload_ref, @config_hash, clock_timestamp());
+                    @report_summary, @payload_ref, @config_hash, clock_timestamp());
             """,
             ("config_hash", configHash),
             ("serialized_config", serializedConfigJson ?? "{\"CurrentReleases\":{\"orders\":\"v1\"}}"),
             ("signal_id", signalId),
             ("tenant_id", tenantId),
+            ("signal_summary", signalSummary),
             ("fingerprint", "fingerprint-" + suffix),
             ("fault_id", faultId),
             ("job_id", jobId),
@@ -146,6 +149,7 @@ internal static class ActionApprovalTestSupport
             ("content_hash", "artifact-" + suffix),
             ("report_id", reportId),
             ("report_status", reportStatus),
+            ("report_summary", reportSummary),
             ("classification", reportStatus == "InsufficientEvidence" ? "Unknown" : "KnownIncident"),
             ("include_evidence", includeEvidence),
             ("payload_ref", "report:" + reportId));

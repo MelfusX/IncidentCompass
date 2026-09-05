@@ -23,4 +23,8 @@ public sealed record ActionApprovalDetailsResponse(
     DateTimeOffset? CompletedAtUtc,
     string? ResultSummary,
     string? FailureCode,
+    string? ExternalResourceKind,
+    string? ExternalResourceId,
+    string? ExternalBeforeState,
+    string? ExternalAfterState,
     IReadOnlyList<ActionApprovalProvenanceResponse> Provenance);

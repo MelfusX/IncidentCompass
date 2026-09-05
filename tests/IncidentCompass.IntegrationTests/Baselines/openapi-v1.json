@@ -498,7 +498,7 @@
         "tags": [
           "action-approvals"
         ],
-        "summary": "List tenant-scoped action approval summaries with stable keyset pagination.",
+        "summary": "List tenant-scoped action approvals with paired external-resource filtering.",
         "operationId": "ListActionApprovals",
         "parameters": [
           {
@@ -522,6 +522,20 @@
           },
           {
             "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "externalResourceKind",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "externalResourceId",
             "in": "query",
             "schema": {
               "type": "string"
@@ -819,6 +833,10 @@
           "completedAtUtc",
           "resultSummary",
           "failureCode",
+          "externalResourceKind",
+          "externalResourceId",
+          "externalBeforeState",
+          "externalAfterState",
           "provenance"
         ],
         "type": "object",
@@ -909,6 +927,30 @@
               "string"
             ]
           },
+          "externalResourceKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalResourceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalBeforeState": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalAfterState": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "provenance": {
             "type": "array",
             "items": {
@@ -935,7 +977,11 @@
           "createdAtUtc",
           "expiresAtUtc",
           "decisionAtUtc",
-          "completedAtUtc"
+          "completedAtUtc",
+          "externalResourceKind",
+          "externalResourceId",
+          "externalBeforeState",
+          "externalAfterState"
         ],
         "type": "object",
         "properties": {
@@ -1011,6 +1057,30 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "externalResourceKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalResourceId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalBeforeState": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "externalAfterState": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

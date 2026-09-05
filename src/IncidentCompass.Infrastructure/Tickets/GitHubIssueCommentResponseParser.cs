@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
 
 namespace IncidentCompass.Infrastructure.Tickets;
@@ -81,16 +82,18 @@ public static class GitHubIssueCommentResponseParser
 
     internal static ExternalActionExecutionResult Success(int issueNumber, long commentId)
     {
+        var normalizedIssueNumber = issueNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var result = new JsonObject
         {
             ["commentId"] = commentId.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["issueNumber"] = issueNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["issueNumber"] = normalizedIssueNumber,
             ["provider"] = "github"
         };
         return new ExternalActionExecutionResult(
             true,
             Encoding.UTF8.GetBytes(CanonicalJsonSerializer.Canonicalize(result)),
-            "GitHub accepted the issue comment.");
+            "GitHub accepted the issue comment.",
+            AuditProjection: ExternalActionAuditProjection.GitHubIssueCommentAdded(normalizedIssueNumber));
     }
 
     internal static ExternalActionExecutionResult Failure(string code)

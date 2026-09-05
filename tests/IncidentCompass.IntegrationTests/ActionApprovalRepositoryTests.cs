@@ -229,7 +229,10 @@ public sealed class ActionApprovalRepositoryTests(PostgresRepositoryFixture post
             connectionString, new ThrowingActionApprovalFaultInjector(ActionApprovalFaultPoint.BeforeTerminalLedger));
         var terminal = new ActionTerminalRequest(
             action.Id, claim.Fence, ActionApprovalState.Executed,
-            Encoding.UTF8.GetBytes("{\"externalId\":\"ticket-1\"}"), "Ticket created.", null);
+            Encoding.UTF8.GetBytes("{\"issueNumber\":\"1\",\"provider\":\"github\"}"),
+            "Ticket created.",
+            null,
+            ExternalActionAuditProjection.GitHubIssueCreated("1"));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             failing.GetRequiredService<IActionDispatchRepository>().CompleteAsync(
                 terminal, TestContext.Current.CancellationToken));

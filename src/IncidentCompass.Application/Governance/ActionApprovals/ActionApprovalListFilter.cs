@@ -6,4 +6,6 @@ public sealed record ActionApprovalListFilter(
     ActionApprovalState? Status,
     DateTimeOffset? BeforeCreatedAtUtc,
     Guid? BeforeActionId,
-    int Limit);
+    int Limit,
+    string? ExternalResourceKind = null,
+    string? ExternalResourceId = null);

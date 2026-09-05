@@ -17,4 +17,8 @@ public sealed record ActionApprovalListItemResponse(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset ExpiresAtUtc,
     DateTimeOffset? DecisionAtUtc,
-    DateTimeOffset? CompletedAtUtc);
+    DateTimeOffset? CompletedAtUtc,
+    string? ExternalResourceKind,
+    string? ExternalResourceId,
+    string? ExternalBeforeState,
+    string? ExternalAfterState);

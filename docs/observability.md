@@ -53,6 +53,11 @@ claim. Definitive success or failure writes one bounded `ActionResult` and `Acti
 with terminal state. Dry-run uses the same terminal evidence with zero adapter calls. Exceptions,
 timeouts, cancellation and expired in-doubt claims use the closed `dispatch_outcome_unknown` failure;
 logs and ledger rows do not contain frozen payload bytes, provider bodies, credentials or routes.
+Confirmed live Telegram and GitHub success additionally stores a compact typed projection in that
+same terminal transaction. It contains only external resource kind/id and one closed state change:
+`not_sent` to `sent`, `absent` to `open`, or `open` to `comment_added`. Dry-run, definitive failure and
+outcome-unknown leave the projection null and remain observable through their stable `ActionResult`
+and `ActionCompleted` outcome. Projection fields are immutable after terminal commit.
 For Telegram notifications, an unclaimed predecessor that is replaced records the existing bounded
 superseded terminal evidence. A started predecessor denies a successor. Confirmed live success and
 outcome-unknown start a 30-minute database-clock cooldown measured from durable dispatch start;

@@ -36,4 +36,5 @@ public sealed record ActionApprovalRecord(
     byte[]? ResultPayload,
     string? ResultSummary,
     string? FailureCode,
-    DateTimeOffset? CompletedAtUtc);
+    DateTimeOffset? CompletedAtUtc,
+    ExternalActionAuditProjection? AuditProjection = null);
