@@ -104,7 +104,16 @@ the salt changes every pseudonym and breaks counts across the rotation boundary.
 
 ## Tools
 
-Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. The current immediate Worker path still treats `ApprovalRequired` as a denial with a report limitation; a later slice will wire eligible post-report action tools to the separate durable approval lifecycle. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.
+Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. Immediate reads and external actions are separate backend capabilities: role grants accept only immediate tools, `Actions.AllowedTools` accepts only exact registered external tools, and external actions are never advertised to the investigation model. Startup and `config validate` reject capability mismatches, wildcard or read-tool approval targets and action metadata that disagrees with registration. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.
+
+Post-report proposal creation is backend-owned and starts only from a current immutable published
+report and its exact configuration snapshot. The registered tool selects category, logical target
+and binding; arguments cannot replace them. Global disabled mode denies, dry-run cannot be loosened,
+and every non-notification write requires approval. The shared rule engine reads external preconditions
+and accepted-proposal caps only through the fault-first proposal transaction after its current-origin
+and job recheck. Registered and configured tool ids use one bounded case-sensitive safe grammar. A
+safe-origin denial records only a closed reason code; input rejected before same-tenant origin resolution writes nothing. Proposal creation never
+invokes the external tool adapter.
 
 Approval decisions submit the exact observed payload and approval hashes. A stale lifecycle state,
 expiry, hash mismatch or superseded origin conflicts without approval. The public review surface

@@ -4,7 +4,7 @@
   "title": "IncidentCompass triage configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["Providers", "Routes", "Orchestrator", "Roles", "Tools", "Rules", "Ingestion", "FaultGrouping", "Redaction"],
+  "required": ["Providers", "Routes", "Orchestrator", "Roles", "Tools", "Rules", "Actions", "Ingestion", "FaultGrouping", "Redaction"],
   "properties": {
     "$schema": { "type": "string", "minLength": 1 },
     "Providers": {
@@ -25,12 +25,14 @@
     },
     "Tools": {
       "type": "object",
+      "propertyNames": { "$ref": "#/$defs/toolId" },
       "additionalProperties": { "$ref": "#/$defs/tool" }
     },
     "Rules": {
       "type": "array",
       "items": { "$ref": "#/$defs/rule" }
     },
+    "Actions": { "$ref": "#/$defs/actions" },
     "Ingestion": { "$ref": "#/$defs/ingestion" },
     "FaultGrouping": { "$ref": "#/$defs/faultGrouping" },
     "Redaction": { "$ref": "#/$defs/redaction" },
@@ -45,6 +47,10 @@
       "type": "string",
       "minLength": 1,
       "pattern": "\\S"
+    },
+    "toolId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,128}$"
     },
     "referenceString": {
       "type": "string",
@@ -112,7 +118,7 @@
         "Instructions": { "$ref": "#/$defs/referenceString" },
         "Tools": {
           "type": "array",
-          "items": { "$ref": "#/$defs/nonBlankString" },
+          "items": { "$ref": "#/$defs/toolId" },
           "uniqueItems": true
         },
         "OutputSchema": { "$ref": "#/$defs/referenceString" }
@@ -123,11 +129,20 @@
       "additionalProperties": false,
       "required": ["Kind"],
       "properties": {
-        "Kind": { "const": "internal" },
+        "Kind": { "enum": ["internal", "external_action"] },
         "EmbeddingRouteId": { "type": ["string", "null"] },
         "TopK": { "type": ["integer", "null"], "minimum": 1 },
-        "MinScore": { "type": ["number", "null"], "minimum": -1, "maximum": 1 }
-      }
+        "MinScore": { "type": ["number", "null"], "minimum": -1, "maximum": 1 },
+        "Category": { "enum": ["notification", "ticket_create", "ticket_update", "code_write", "branch_push", "pr_create", null] },
+        "LogicalTargetId": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+        "Mode": { "enum": ["live", "dry_run", "disabled", null] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "Kind": { "const": "external_action" } } },
+          "then": { "required": ["Category", "LogicalTargetId"] }
+        }
+      ]
     },
     "rule": {
       "type": "object",
@@ -135,10 +150,20 @@
       "required": ["Type", "Tool"],
       "properties": {
         "Type": { "enum": ["rate_cap", "precondition", "grounding", "requires_approval"] },
-        "Tool": { "$ref": "#/$defs/nonBlankString" },
+        "Tool": {
+          "anyOf": [
+            { "const": "*" },
+            { "$ref": "#/$defs/toolId" }
+          ]
+        },
         "Scope": { "enum": ["attempt", "job"] },
         "Max": { "type": ["integer", "null"], "minimum": 1 },
-        "RequiresSuccessfulToolResult": { "type": ["string", "null"] }
+        "RequiresSuccessfulToolResult": {
+          "anyOf": [
+            { "$ref": "#/$defs/toolId" },
+            { "type": "null" }
+          ]
+        }
       },
       "allOf": [
         {
@@ -150,6 +175,21 @@
           "then": { "required": ["RequiresSuccessfulToolResult"] }
         }
       ]
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["AllowedTools", "DefaultMode", "RequireApprovalForAll", "ApprovalTtlMinutes"],
+      "properties": {
+        "AllowedTools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/toolId" }
+        },
+        "DefaultMode": { "enum": ["live", "dry_run", "disabled"] },
+        "RequireApprovalForAll": { "type": "boolean" },
+        "ApprovalTtlMinutes": { "type": "integer", "minimum": 1, "maximum": 10080 }
+      }
     },
     "ingestion": {
       "type": "object",

@@ -54,21 +54,13 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
     }
 
     [DockerAvailableFact]
-    public async Task ProcessClaimedAsync_RequiresApprovalDeniesToolAndRecordsLimitation()
+    public async Task ConfigurationLoadRejectsApprovalRuleForImmediateTool()
     {
-        using var scope = await CreateScopeAsync(GovernanceScenario.RequiresApproval);
-        var ingested = await RunOneAsync(scope);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateScopeAsync(GovernanceScenario.RequiresApproval));
 
-        var decisions = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId!.Value, "PolicyDecision");
-        var toolResults = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "ToolResult");
-        var workerRationale = await ScalarAsync<string>(
-            scope.ConnectionString,
-            "SELECT redacted_payload->>'rationale' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'WorkerOutput';",
-            ("job_id", ingested.JobId.Value));
-
-        Assert.Contains(decisions, row => row.ToolName == "tool_x" && row.Decision == "ApprovalRequired");
-        Assert.DoesNotContain(toolResults, row => row.ToolName == "tool_x");
-        Assert.Contains("approval required", workerRationale, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Rules.requires_approval.Tool", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("external action tool id", exception.Message, StringComparison.Ordinal);
     }
 
     [DockerAvailableFact]
@@ -121,10 +113,10 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
             GovernanceScenario.Precondition,
             services =>
             {
-                services.RemoveAll<IAgentTool>();
-                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_x"));
+                services.RemoveAll<IImmediateAgentTool>();
+                services.AddScoped<IImmediateAgentTool>(_ => new SyntheticTool("tool_x"));
                 services.AddSingleton(blockingTool);
-                services.AddScoped<IAgentTool>(serviceProvider => serviceProvider.GetRequiredService<BlockingSyntheticTool>());
+                services.AddScoped<IImmediateAgentTool>(serviceProvider => serviceProvider.GetRequiredService<BlockingSyntheticTool>());
             });
         var ingested = await PostIngestAsync(scope.Client);
         var pump = new WorkerJobPump(
@@ -180,8 +172,10 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
             {
                 services.RemoveAll<IAiModelClient>();
                 services.AddScoped<IAiModelClient>(_ => new SyntheticGovernanceModelClient(scenario));
-                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_x"));
-                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_y"));
+                services.AddScoped<IImmediateAgentTool>(_ => new SyntheticTool("tool_x"));
+                services.AddScoped<IImmediateAgentTool>(_ => new SyntheticTool("tool_y"));
+                services.AddSingleton(new AgentToolDescriptor("tool_x", AgentToolCapability.ImmediateRead));
+                services.AddSingleton(new AgentToolDescriptor("tool_y", AgentToolCapability.ImmediateRead));
                 configureServices?.Invoke(services);
             });
         });
@@ -546,7 +540,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         }
     }
 
-    private sealed class SyntheticTool(string name) : IAgentTool
+    private sealed class SyntheticTool(string name) : IImmediateAgentTool
     {
         public AiToolDefinition Definition { get; } = new(name, "Synthetic test-only tool.", "v1", Element("{\"type\":\"object\"}"));
 
@@ -569,7 +563,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         }
     }
 
-    private sealed class BlockingSyntheticTool(string name) : IAgentTool
+    private sealed class BlockingSyntheticTool(string name) : IImmediateAgentTool
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Normalization;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Intake;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,7 +28,21 @@ public sealed class TriageConfigurationValidationParityTests
         { "grouping", false, false, "FaultGrouping.LookbackMinutes" },
         { "recurrence", false, false, "FaultGrouping.Recurrence.EscalateAfterCount" },
         { "redaction", false, false, "Redaction.Patterns[0].Name" },
-        { "dangling-role-route", true, false, "Roles.analysis.RouteId" }
+        { "dangling-role-route", true, false, "Roles.analysis.RouteId" },
+        { "valid-external-action", true, true, null },
+        { "valid-mixed-case-external-action", true, true, null },
+        { "unsafe-external-action-id", false, false, "Tools.notify:test" },
+        { "external-action-in-role", true, false, "Roles.analysis.Tools" },
+        { "immediate-read-in-actions", true, false, "Actions.AllowedTools" },
+        { "duplicate-action-grant", false, false, "Actions.AllowedTools" },
+        { "unknown-action", true, false, "Actions.AllowedTools" },
+        { "unregistered-external-action", true, false, "Tools.unknown_external" },
+        { "action-category-mismatch", true, false, "Tools.notify_test.Category" },
+        { "action-target-mismatch", true, false, "Tools.notify_test.LogicalTargetId" },
+        { "read-reclassified-as-action", true, false, "Tools.memory_search.Kind" },
+        { "action-mode-loosens-global", true, false, "Tools.notify_test.Mode" },
+        { "wildcard-approval", true, false, "Rules.requires_approval.Tool" },
+        { "read-tool-approval", true, false, "Rules.requires_approval.Tool" }
     };
 
     [Theory]
@@ -145,9 +160,90 @@ public sealed class TriageConfigurationValidationParityTests
             case "dangling-role-route":
                 root["Roles"]!["analysis"]!["RouteId"] = "missing-route";
                 return;
+            case "valid-external-action":
+                AddExternalAction(root);
+                return;
+            case "valid-mixed-case-external-action":
+                AddExternalAction(root, "Action_Test.v1-Edge");
+                return;
+            case "unsafe-external-action-id":
+                AddExternalAction(root, "notify:test");
+                return;
+            case "external-action-in-role":
+                AddExternalAction(root);
+                root["Roles"]!["analysis"]!["Tools"]!.AsArray().Add("notify_test");
+                return;
+            case "immediate-read-in-actions":
+                root["Actions"]!["AllowedTools"] = new JsonArray("memory_search");
+                return;
+            case "duplicate-action-grant":
+                AddExternalAction(root);
+                root["Actions"]!["AllowedTools"] = new JsonArray("notify_test", "notify_test");
+                return;
+            case "unknown-action":
+                root["Actions"]!["AllowedTools"] = new JsonArray("missing_action");
+                return;
+            case "unregistered-external-action":
+                root["Tools"]!["unknown_external"] = new JsonObject
+                {
+                    ["Kind"] = "external_action",
+                    ["Category"] = "notification",
+                    ["LogicalTargetId"] = "telegram:ops"
+                };
+                root["Actions"]!["AllowedTools"] = new JsonArray("unknown_external");
+                return;
+            case "action-category-mismatch":
+                AddExternalAction(root);
+                root["Tools"]!["notify_test"]!["Category"] = "ticket_create";
+                return;
+            case "action-target-mismatch":
+                AddExternalAction(root);
+                root["Tools"]!["notify_test"]!["LogicalTargetId"] = "telegram:other";
+                return;
+            case "read-reclassified-as-action":
+                root["Tools"]!["memory_search"]!["Kind"] = "external_action";
+                root["Tools"]!["memory_search"]!["Category"] = "notification";
+                root["Tools"]!["memory_search"]!["LogicalTargetId"] = "telegram:ops";
+                root["Roles"]!["memory"]!["Tools"] = new JsonArray();
+                root["Actions"]!["AllowedTools"] = new JsonArray("memory_search");
+                return;
+            case "action-mode-loosens-global":
+                AddExternalAction(root);
+                root["Actions"]!["DefaultMode"] = "dry_run";
+                root["Tools"]!["notify_test"]!["Mode"] = "live";
+                return;
+            case "wildcard-approval":
+                AddExternalAction(root);
+                root["Rules"]!.AsArray().Add(new JsonObject
+                {
+                    ["Type"] = "requires_approval",
+                    ["Tool"] = "*",
+                    ["Scope"] = "attempt"
+                });
+                return;
+            case "read-tool-approval":
+                root["Rules"]!.AsArray().Add(new JsonObject
+                {
+                    ["Type"] = "requires_approval",
+                    ["Tool"] = "memory_search",
+                    ["Scope"] = "attempt"
+                });
+                return;
             default:
                 throw new ArgumentOutOfRangeException(nameof(fixtureName), fixtureName, "Unknown fixture.");
         }
+    }
+
+    private static void AddExternalAction(JsonObject root, string toolId = "notify_test")
+    {
+        root["Tools"]![toolId] = new JsonObject
+        {
+            ["Kind"] = "external_action",
+            ["Category"] = "notification",
+            ["LogicalTargetId"] = "telegram:ops"
+        };
+        root["Actions"]!["AllowedTools"] = new JsonArray(toolId);
+        root["Actions"]!["DefaultMode"] = "live";
     }
 
     private static ServiceProvider CreateServices(
@@ -166,6 +262,21 @@ public sealed class TriageConfigurationValidationParityTests
             new TesterSignalNormalizer(),
             new OtelShapedSignalNormalizer(),
             new UserReportSignalNormalizer()
+        ]));
+        services.AddSingleton<IAgentToolRegistry>(new AgentToolRegistry([
+            new AgentToolDescriptor("memory_search", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor(
+                "notify_test",
+                AgentToolCapability.ExternalAction,
+                IncidentCompass.Domain.Incidents.Actions.ActionCategory.Notification,
+                "telegram:ops"),
+            new AgentToolDescriptor(
+                "Action_Test.v1-Edge",
+                AgentToolCapability.ExternalAction,
+                IncidentCompass.Domain.Incidents.Actions.ActionCategory.Notification,
+                "telegram:ops")
         ]));
         services.AddSingleton<TriageConfigurationLoadValidator>();
         services.AddSingleton<TriageConfigurationMaterializer>();

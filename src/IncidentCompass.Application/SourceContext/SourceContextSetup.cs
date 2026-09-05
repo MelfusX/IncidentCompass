@@ -9,7 +9,8 @@ internal static class SourceContextSetup
     public static IServiceCollection AddSourceContextCore(this IServiceCollection services)
     {
         services.TryAddScoped<ISourceContextLookup, UnavailableSourceContextLookup>();
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IAgentTool, SourceLookupTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IImmediateAgentTool, SourceLookupTool>());
+        services.AddSingleton(new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead));
         return services;
     }
 }

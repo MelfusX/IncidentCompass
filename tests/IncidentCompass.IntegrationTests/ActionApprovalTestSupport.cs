@@ -17,7 +17,8 @@ internal static class ActionApprovalTestSupport
     public static ServiceProvider CreateServices(
         string connectionString,
         IActionApprovalTransactionFaultInjector? faultInjector = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -33,6 +34,7 @@ internal static class ActionApprovalTestSupport
         var services = new ServiceCollection();
         services.AddApplication(configuration);
         services.AddInfrastructure(configuration);
+        configureServices?.Invoke(services);
         if (faultInjector is not null)
         {
             services.RemoveAll<IActionApprovalTransactionFaultInjector>();
@@ -71,7 +73,10 @@ internal static class ActionApprovalTestSupport
 
     public static async Task<ActionApprovalOriginFixture> SeedOriginAsync(
         string connectionString,
-        string tenantId = "tenant-action-tests")
+        string tenantId = "tenant-action-tests",
+        string? serializedConfigJson = null,
+        string reportStatus = "Completed",
+        bool includeEvidence = true)
     {
         var suffix = Guid.NewGuid().ToString("N");
         var signalId = Guid.NewGuid();
@@ -83,7 +88,7 @@ internal static class ActionApprovalTestSupport
         await ExecuteAsync(connectionString, """
             INSERT INTO incidentcompass.triage_config_snapshots (
                 config_hash, serialized_config, instructions, created_at_utc)
-            VALUES (@config_hash, '{"CurrentReleases":{"orders":"v1"}}'::jsonb, '{}'::jsonb, clock_timestamp());
+            VALUES (@config_hash, CAST(@serialized_config AS jsonb), '{}'::jsonb, clock_timestamp());
 
             INSERT INTO incidentcompass.signals (
                 id, tenant_id, source, fingerprint, fingerprint_version, fingerprint_strength,
@@ -112,12 +117,13 @@ internal static class ActionApprovalTestSupport
             INSERT INTO incidentcompass.triage_reports (
                 id, job_id, fault_id, status, summary, classification, confidence,
                 documentation_fit, limitations, config_hash, created_at_utc)
-            VALUES (@report_id, @job_id, @fault_id, 'Completed', 'action test report',
-                    'KnownIncident', 'High', 'Current', ARRAY[]::text[], @config_hash, clock_timestamp());
+            VALUES (@report_id, @job_id, @fault_id, @report_status, 'action test report',
+                    @classification, 'High', 'Current', ARRAY[]::text[], @config_hash, clock_timestamp());
 
             INSERT INTO incidentcompass.triage_evidence (
                 id, report_id, kind, artifact_id, reference, created_at_utc)
-            VALUES (gen_random_uuid(), @report_id, 'TriggerSignal', @artifact_id, @domain_ref, clock_timestamp());
+            SELECT gen_random_uuid(), @report_id, 'TriggerSignal', @artifact_id, @domain_ref, clock_timestamp()
+            WHERE @include_evidence;
 
             INSERT INTO incidentcompass.triage_ledger (
                 fault_id, job_id, attempt, event_type, tool_name, rationale,
@@ -126,6 +132,7 @@ internal static class ActionApprovalTestSupport
                     'action test report', @payload_ref, @config_hash, clock_timestamp());
             """,
             ("config_hash", configHash),
+            ("serialized_config", serializedConfigJson ?? "{\"CurrentReleases\":{\"orders\":\"v1\"}}"),
             ("signal_id", signalId),
             ("tenant_id", tenantId),
             ("fingerprint", "fingerprint-" + suffix),
@@ -135,6 +142,9 @@ internal static class ActionApprovalTestSupport
             ("domain_ref", "signal:" + signalId),
             ("content_hash", "artifact-" + suffix),
             ("report_id", reportId),
+            ("report_status", reportStatus),
+            ("classification", reportStatus == "InsufficientEvidence" ? "Unknown" : "KnownIncident"),
+            ("include_evidence", includeEvidence),
             ("payload_ref", "report:" + reportId));
         return new ActionApprovalOriginFixture(
             tenantId, signalId, faultId, jobId, reportId, artifactId, configHash);

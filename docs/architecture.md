@@ -140,7 +140,7 @@ Follow `docs/code-organization.md` for maintainability guardrails. In short: kee
 
 ## Phase 3 Governance Rails
 
-Phase 3 keeps the system a layered monolith and adds the product-core governance rails around worker tools. Worker roles receive only registered backend tools that are both configured and granted to that role. Proposed worker calls are recorded as `ToolProposed`, evaluated by the single live `WorkerToolRuleEngine` over current-attempt ledger state by default, recorded as `PolicyDecision`, and successful executions commit a `ToolResult` artifact plus `ToolResult` ledger event atomically. `ToolResult` status and `BudgetEvent` deltas are stored in first-class ledger state, not parsed from rationale text. Configured rule scopes are limited to `attempt` and `job` for the MVP; `fault` scope remains deferred. The shipped immediate read tools are `memory_search`, `source_lookup` and `ticket_search`; synthetic `tool_x`/`tool_y` exist only in integration-test composition for cross-tool governance cases.
+Phase 3 keeps the system a layered monolith and adds the product-core governance rails around worker tools. Worker roles receive only registered backend tools that are both configured and granted to that role. Proposed worker calls are recorded as `ToolProposed`, evaluated by the single live `ToolRuleEngine` over current-attempt ledger state by default, recorded as `PolicyDecision`, and successful executions commit a `ToolResult` artifact plus `ToolResult` ledger event atomically. `ToolResult` status and `BudgetEvent` deltas are stored in first-class ledger state, not parsed from rationale text. Configured rule scopes are limited to `attempt` and `job` for the MVP; `fault` scope remains deferred. The shipped immediate read tools are `memory_search`, `source_lookup` and `ticket_search`; synthetic `tool_x`/`tool_y` exist only in integration-test composition for cross-tool governance cases.
 
 ## Post-report Action Approval Boundary
 
@@ -150,13 +150,28 @@ bytes and payload hash, plus a deterministic provenance hash. Provenance contain
 origin report and its persisted same-job evidence from the report attempt. Trust labels are derived
 from artifact kind by the backend; model-supplied labels and working/output artifacts are rejected.
 
+`IAgentTool` contains common definition and validation only. `IImmediateAgentTool` is the only
+capability visible to investigation workers. `IExternalActionTool` is a separate post-report
+capability with a backend-registered category, logical target and secret-free binding fingerprint.
+Configuration cannot reclassify one capability as the other. The snapshotted `Actions` section has
+an exact `AllowedTools` grant, a global `live`, `dry_run` or `disabled` ceiling, a force-approval
+control and a bounded approval TTL. Per-tool mode can only tighten the global mode. Every category
+except `notification` always requires approval, regardless of configuration.
+
 Proposal, decision, claim and terminal operations use PostgreSQL transactions with action-specific
 ledger events. Report publication and all action transitions acquire one shared fault-row lock before
 job, report or action locks. This makes the latest-report check a serialized boundary and avoids an
 action/publication lock inversion. Candidate scans are nonlocking and bounded; each candidate is
 rechecked in its own fault-first transaction.
 
+The backend-owned proposal use case resolves a same-tenant current published report, reloads its
+exact configuration snapshot and calls the shared `ToolRuleEngine` only after the proposal transaction
+has acquired the fault lock, rechecked current origin and locked its job. External preconditions and
+caps read ledger facts through that same transaction. Accepted proposal caps count all `ActionProposed`
+rows, whether the resulting state is requested or auto-approved. A denial after safe origin resolution writes one bounded
+`PolicyDecision` and no action rows. Missing, foreign, failed or superseded origins write nothing.
+
 `/api/v1/action-approvals` exposes compact tenant-scoped lists, immutable review details, approve and
 reject. Review details are reconstructed from tuple and provenance rows, not the `ProposedAction`
-artifact JSON. This slice intentionally has no production proposal caller, Worker action pump,
-provider registry or real action adapter.
+artifact JSON. Synthetic integration tests are the only proposal caller in this slice. There is no
+production proposal caller, Worker action pump or real action adapter.

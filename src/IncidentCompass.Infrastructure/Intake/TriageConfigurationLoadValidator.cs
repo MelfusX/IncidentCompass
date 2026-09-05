@@ -1,18 +1,22 @@
 using System.Text.Json;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
 
 namespace IncidentCompass.Infrastructure.Intake;
 
-internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry normalizerRegistry)
+internal sealed class TriageConfigurationLoadValidator(
+    SignalNormalizerRegistry normalizerRegistry,
+    IAgentToolRegistry toolRegistry)
 {
     private static readonly HashSet<string> RouteKinds = new(["Chat", "Embedding"], StringComparer.Ordinal);
     private static readonly HashSet<string> ProviderKinds = new(["Mock", "OpenAICompatible"], StringComparer.Ordinal);
-    private static readonly HashSet<string> ToolKinds = new(["internal"], StringComparer.Ordinal);
     private const string MemoryRoleName = "memory";
     private const string MemorySearchToolName = "memory_search";
     private static readonly HashSet<string> OrchestratorTools = new(["delegate", "publish_report"], StringComparer.Ordinal);
+    private readonly TriageToolConfigurationLoadValidator toolValidator = new(toolRegistry);
+
     public void Validate(TriageConfiguration configuration)
     {
         FaultGroupingSettingsLoadValidator.Validate(configuration.FaultGrouping);
@@ -23,7 +27,7 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         ValidateRoutes(configuration.Providers, configuration.Routes);
         ValidateOrchestrator(configuration.Routes, configuration.Orchestrator);
         ValidateRoles(configuration.Routes, configuration.Tools, configuration.Roles);
-        ValidateTools(configuration.Routes, configuration.Tools);
+        toolValidator.Validate(configuration.Routes, configuration.Tools, configuration.Actions);
         TriageRuleLoadValidator.Validate(configuration.Tools, configuration.Rules);
     }
     private void ValidateAllowedSources(IngestionSettings settings)
@@ -130,6 +134,10 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "a configured worker tool id");
                 }
+                if (string.Equals(tools[toolName].Kind, "external_action", StringComparison.Ordinal))
+                {
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "an immediate internal tool id");
+                }
                 if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal) &&
                     !string.Equals(roleName, MemoryRoleName, StringComparison.Ordinal))
                 {
@@ -145,38 +153,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "ticket_search granted only to the tickets role");
                 }
-            }
-        }
-    }
-
-    private static void ValidateTools(
-        IReadOnlyDictionary<string, TriageRouteSettings> routes,
-        IReadOnlyDictionary<string, TriageToolSettings> tools)
-    {
-        foreach (var (toolName, tool) in tools)
-        {
-            RequireKey(toolName, "Tools");
-            RequireKnown("Tools." + toolName + ".Kind", tool.Kind, ToolKinds);
-            if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal))
-            {
-                RequireNonBlank("Tools." + toolName + ".EmbeddingRouteId", tool.EmbeddingRouteId ?? string.Empty);
-                RequireEmbeddingRoute(routes, tool.EmbeddingRouteId!, "Tools." + toolName + ".EmbeddingRouteId");
-                if (tool.TopK is <= 0)
-                {
-                    throw Invalid("Tools." + toolName + ".TopK", tool.TopK.Value.ToString(), "a positive integer when set");
-                }
-
-                if (tool.MinScore is < -1 or > 1)
-                {
-                    throw Invalid("Tools." + toolName + ".MinScore", tool.MinScore.Value.ToString(), "a score between -1 and 1 when set");
-                }
-
-                continue;
-            }
-
-            if (!string.IsNullOrWhiteSpace(tool.EmbeddingRouteId))
-            {
-                RequireEmbeddingRoute(routes, tool.EmbeddingRouteId, "Tools." + toolName + ".EmbeddingRouteId");
             }
         }
     }

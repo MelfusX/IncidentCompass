@@ -8,7 +8,8 @@ internal static class MemorySetup
 {
     public static IServiceCollection AddMemoryCore(this IServiceCollection services)
     {
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IAgentTool, MemorySearchTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IImmediateAgentTool, MemorySearchTool>());
+        services.AddSingleton(new AgentToolDescriptor("memory_search", AgentToolCapability.ImmediateRead));
 
         return services;
     }

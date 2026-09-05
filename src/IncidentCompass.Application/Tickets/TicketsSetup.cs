@@ -9,7 +9,8 @@ internal static class TicketsSetup
     public static IServiceCollection AddTicketsCore(this IServiceCollection services)
     {
         services.TryAddScoped<ITicketSearch, UnavailableTicketSearch>();
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IAgentTool, TicketSearchTool>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IImmediateAgentTool, TicketSearchTool>());
+        services.AddSingleton(new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead));
         return services;
     }
 }

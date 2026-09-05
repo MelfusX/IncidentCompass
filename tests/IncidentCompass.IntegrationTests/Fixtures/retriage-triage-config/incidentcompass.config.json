@@ -28,6 +28,7 @@
   "Rules": [
     { "Type": "rate_cap", "Tool": "*", "Scope": "attempt", "Max": 50 }
   ],
+  "Actions": { "AllowedTools": [], "DefaultMode": "disabled", "RequireApprovalForAll": false, "ApprovalTtlMinutes": 60 },
   "Ingestion": { "DefaultTenant": "local", "AllowedSources": ["otel", "user", "tester", "manual"] },
   "Redaction": {
     "AttributeKeys": [],

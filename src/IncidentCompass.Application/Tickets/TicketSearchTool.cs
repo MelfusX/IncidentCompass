@@ -9,7 +9,7 @@ using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Tickets;
 
-internal sealed class TicketSearchTool(ITicketSearch ticketSearch, TimeProvider timeProvider) : IAgentTool
+internal sealed class TicketSearchTool(ITicketSearch ticketSearch, TimeProvider timeProvider) : IImmediateAgentTool
 {
     public AiToolDefinition Definition { get; } = new(
         "ticket_search",

@@ -9,9 +9,4 @@ public interface IAgentTool
     AiToolDefinition Definition { get; }
 
     ToolValidationResult Validate(JsonElement arguments);
-
-    Task<ToolExecutionResult> ExecuteAsync(
-        AgentToolExecutionContext context,
-        JsonElement sanitizedArguments,
-        CancellationToken cancellationToken);
 }

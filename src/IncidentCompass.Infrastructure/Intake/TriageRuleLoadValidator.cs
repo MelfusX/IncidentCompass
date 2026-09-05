@@ -51,6 +51,14 @@ internal static class TriageRuleLoadValidator
 
                 break;
             case "requires_approval":
+                if (string.Equals(rule.Tool, "*", StringComparison.Ordinal) ||
+                    !tools.TryGetValue(rule.Tool, out var approvalTool) ||
+                    !string.Equals(approvalTool.Kind, "external_action", StringComparison.Ordinal))
+                {
+                    throw Invalid("Rules.requires_approval.Tool", rule.Tool, "an exact configured external action tool id");
+                }
+
+                break;
             case "grounding":
                 break;
         }
