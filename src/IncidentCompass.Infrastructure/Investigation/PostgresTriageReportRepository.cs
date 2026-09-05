@@ -1,25 +1,26 @@
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Domain.Incidents;
+using IncidentCompass.Infrastructure.Governance.PostReportActions;
 using IncidentCompass.Infrastructure.Postgres;
 using IncidentCompass.Infrastructure.Tickets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
-
 namespace IncidentCompass.Infrastructure.Investigation;
 
 internal sealed class PostgresTriageReportRepository(
     PostgresDataSourceProvider dataSourceProvider,
     ITriageReportFinalCommitFaultInjector faultInjector,
+    ITriageReportPublicationIntentWriter publicationIntentWriter,
+    ITriageReportPublicationIntentFaultInjector publicationIntentFaultInjector,
     TimeProvider timeProvider,
     ILogger<PostgresTriageReportRepository> logger,
     IOptions<GitHubIssuesOptions> ticketOptions) : ITriageReportRepository
 {
-    private readonly PostgresReportEvidenceGrounder evidenceGrounder =
-        new(ticketOptions.Value.ConfiguredRepository);
+    private readonly PostgresReportEvidenceGrounder evidenceGrounder = new(ticketOptions.Value.ConfiguredRepository);
     private readonly PostgresDocumentationFitResolver documentationFitResolver = new();
-
     public Task<Guid> PublishAsync(
         TriageJob job,
         string workerId,
@@ -28,7 +29,6 @@ internal sealed class PostgresTriageReportRepository(
         PostgresOperation.ExecuteAsync(
             "publish triage report",
             () => PublishTransactionAsync(job, workerId, report, cancellationToken));
-
     private async Task<Guid> PublishTransactionAsync(
         TriageJob job,
         string workerId,
@@ -38,11 +38,9 @@ internal sealed class PostgresTriageReportRepository(
         var now = timeProvider.GetUtcNow();
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
         try
         {
-            await PostgresFaultTransactionLock.LockAsync(
-                connection, transaction, job.FaultId, cancellationToken);
+            await PostgresFaultTransactionLock.LockAsync(connection, transaction, job.FaultId, cancellationToken);
             var evidence = await evidenceGrounder.GroundAsync(connection, transaction, job, report.Evidence, cancellationToken);
             if (job.IsReTriage && !evidence.Any(evidenceItem => evidenceItem.Kind == "RecurrenceState"))
             {
@@ -55,19 +53,28 @@ internal sealed class PostgresTriageReportRepository(
             {
                 throw new InvalidOperationException($"Triage job '{job.Id}' could not be completed for attempt {job.Attempt}.");
             }
-
             var supersedesReportId = await PostgresReportLifecycleWriter.FindLatestReportForUpdateAsync(
                 connection, transaction, job.FaultId, cancellationToken);
             if (job.IsReTriage && supersedesReportId != job.SupersedesReportId)
             {
                 throw new InvalidOperationException($"Re-triage job '{job.Id}' no longer has its scheduled predecessor.");
             }
-
             var reportId = await InsertReportAsync(connection, transaction, job, report, isMassIssue, supersedesReportId, now, cancellationToken);
             await PostgresTriageEvidenceWriter.ReplaceAsync(connection, transaction, reportId, evidence, now, cancellationToken);
             await MarkFaultTerminalAsync(connection, transaction, job, report.Status, now, cancellationToken);
             await faultInjector.BeforeReportPublishedLedgerEventAsync(cancellationToken);
             await PostgresReportPublishedEventWriter.InsertAsync(connection, transaction, job, reportId, report.Summary, now, cancellationToken);
+            if (report.Status == TriageReportStatus.Completed)
+            {
+                var context = await PostgresReportPublicationIntentWriter.ReadFaultContextAsync(
+                    connection, transaction, job.FaultId, cancellationToken);
+                await publicationIntentWriter.WriteAsync(
+                    job, reportId, context.TenantId, context.ServiceName, context.Environment,
+                    context.Severity, now,
+                    (intent, token) => PostgresReportPublicationIntentWriter.InsertAsync(
+                        connection, transaction, intent, token), cancellationToken);
+                await publicationIntentFaultInjector.AfterIntentInsertedAsync(cancellationToken);
+            }
             await transaction.CommitAsync(cancellationToken);
             return reportId;
         }
@@ -77,9 +84,7 @@ internal sealed class PostgresTriageReportRepository(
             throw;
         }
     }
-
-    private static async Task<bool> MarkJobSucceededAsync(
-        NpgsqlConnection connection,
+    private static async Task<bool> MarkJobSucceededAsync(NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TriageJob job,
         string workerId,
@@ -105,7 +110,6 @@ internal sealed class PostgresTriageReportRepository(
         command.AddParameter("worker_id", workerId);
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
-
     private static async Task<bool?> ReadIsMassIssueAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -129,7 +133,6 @@ internal sealed class PostgresTriageReportRepository(
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return value is DBNull or null ? null : (bool)value;
     }
-
     private static async Task<Guid> InsertReportAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -165,7 +168,6 @@ internal sealed class PostgresTriageReportRepository(
         command.AddParameter("created_at_utc", now);
         return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
-
     private async Task MarkFaultTerminalAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -184,13 +186,11 @@ internal sealed class PostgresTriageReportRepository(
         command.AddParameter("status", status == TriageReportStatus.InsufficientEvidence ? "InsufficientEvidence" : "Completed");
         command.AddParameter("now", now);
         command.AddParameter("fault_id", job.FaultId);
-
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
         if (updated == 1 || (updated == 0 && job.IsReTriage))
         {
             return;
         }
-
         logger.LogError(
             "Fault {FaultId} was not terminalized while publishing triage report for job {JobId}.",
             job.FaultId,

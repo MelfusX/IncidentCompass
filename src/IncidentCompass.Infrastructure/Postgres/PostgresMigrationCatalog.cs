@@ -26,6 +26,7 @@ internal static class PostgresMigrationCatalog
         new(11, "v0.2-report-listing", ["020-report-listing.sql"]),
         new(12, "v0.2-memory-seed-sync-status", ["021-memory-seed-sync-status.sql"]),
         new(13, "v0.2-triage-job-retry-budget", ["022-triage-job-retry-budget.sql"]),
-        new(14, "v0.3-action-approvals-outbox", ["023-action-approvals-outbox.sql"])
+        new(14, "v0.3-action-approvals-outbox", ["023-action-approvals-outbox.sql"]),
+        new(15, "v0.3-post-report-action-intents", ["024-post-report-action-intents.sql"])
     ];
 }

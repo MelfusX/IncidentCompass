@@ -106,6 +106,14 @@ the salt changes every pseudonym and breaks counts across the rotation boundary.
 
 Tool execution must go through backend policy. Risky tools require approval or must be rejected. The LLM must not receive infrastructure credentials. The investigation loop gives the orchestrator only backend-owned `delegate` and `publish_report` actions; `delegate.role` is generated from configuration and validated again before execution. Worker-tool proposals are recorded as `ToolProposed`, checked against role grants and ledger-backed rules, recorded as `PolicyDecision`, and only allowed backend calls execute. Unknown, unregistered, ungranted and invalid worker tool calls fail closed with audit-visible decisions. Immediate reads and external actions are separate backend capabilities: role grants accept only immediate tools, `Actions.AllowedTools` accepts only exact registered external tools, and external actions are never advertised to the investigation model. Startup and `config validate` reject capability mismatches, wildcard or read-tool approval targets and action metadata that disagrees with registration. Report publication is also fail-closed: the model may name evidence references, but the backend accepts only citable artifacts from the same job/current attempt, never `WorkerOutput`, derives evidence kind and `is_mass_issue` itself, and marks prior reports as untrusted hypotheses in the artifact payload.
 
+The durable post-report evaluation queue is backend-owned. Report publication selects only startup-
+registered workflows whose exact tool id, workflow version, category and logical target match the
+external-action registry, then commits their intents atomically with the report. Canonical workflow
+input contains only the origin report id, tool id, version and optional bounded route id. It cannot
+carry report or evidence text, model output, provider input, credentials or an adapter-selected
+destination. Invalid input, missing exact catalog membership and exhausted attempts fail closed.
+Evaluation may invoke only the existing governed proposal use case; it never receives adapter authority.
+
 Post-report proposal creation is backend-owned and starts only from a current immutable published
 report and its exact configuration snapshot. The registered tool selects category, logical target
 and binding; arguments cannot replace them. Global disabled mode denies, dry-run cannot be loosened,

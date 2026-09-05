@@ -2,7 +2,9 @@ using System.Runtime.CompilerServices;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Infrastructure;
+using IncidentCompass.Domain.Incidents.Actions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -79,10 +81,12 @@ public sealed class HostCompositionTests
 
         // Investigation/action workers + Infrastructure warmups for config and optional memory seeding.
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        Assert.Equal(4, hostedServices.Length);
+        Assert.Equal(5, hostedServices.Length);
         Assert.Contains(hostedServices, service => service is WorkerService);
         Assert.Contains(hostedServices, service =>
             service.GetType().FullName == "IncidentCompass.Worker.ActionDispatchWorker");
+        Assert.Contains(hostedServices, service =>
+            service.GetType().FullName == "IncidentCompass.Worker.PostReportActionEvaluationWorker");
         Assert.Contains(hostedServices, service =>
             service.GetType().FullName == "IncidentCompass.Infrastructure.Intake.TriageConfigurationWarmupHostedService");
         Assert.Contains(hostedServices, service =>
@@ -95,6 +99,34 @@ public sealed class HostCompositionTests
         Assert.Equal("system", userContext.UserId);
         Assert.Null(userContext.TenantId);
         Assert.Contains("system", userContext.Roles);
+    }
+
+    [Fact]
+    public void WorkerHostServices_RejectInvalidPostReportWorkflowCatalogAtStartup()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IncidentCompass:Application:ApiVersion"] = "v1",
+                ["IncidentCompass:Postgres:ConnectionStringName"] = "IncidentCompass"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTestApplication(configuration);
+        services.AddInfrastructure(configuration);
+        services.AddSingleton<IPostReportActionWorkflow, InvalidPostReportActionWorkflow>();
+        services.AddWorker(configuration);
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => provider.GetServices<IHostedService>().ToArray());
+
+        Assert.Contains("does not match its backend descriptor", exception.Message);
     }
 
     [Fact]
@@ -336,5 +368,34 @@ public sealed class HostCompositionTests
         }
 
         return [];
+    }
+
+    private sealed class InvalidPostReportActionWorkflow : IPostReportActionWorkflow
+    {
+        public string ToolId => "missing_action";
+
+        public int WorkflowVersion => 1;
+
+        public ActionCategory Category => ActionCategory.Notification;
+
+        public string LogicalTargetId => "missing:target";
+
+        public Task<(bool ShouldEnqueue, string? RouteId)> SelectAsync(
+            string tenantId,
+            Guid originReportId,
+            Guid faultId,
+            Guid jobId,
+            int attempt,
+            string configHash,
+            string serviceName,
+            string environment,
+            string? severity,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<PostReportActionWorkflowResult> EvaluateAsync(
+            PostReportActionIntent intent,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

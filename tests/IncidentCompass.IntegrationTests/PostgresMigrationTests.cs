@@ -37,8 +37,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
         Assert.Equal(
@@ -70,8 +70,33 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
+    }
+
+    [DockerAvailableFact]
+    public async Task FailedVersion15LeavesVersion14DurableAndThenUpgradesCleanly()
+    {
+        await using var database = await MigrationDatabase.CreateAsync(fixture);
+        using (var failing = CreateServiceProvider(
+                   database.ConnectionString, new FailingMigrationInjector(15)))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => failing
+                .GetRequiredService<PostgresMigrationRunner>()
+                .MigrateAsync(TestContext.Current.CancellationToken));
+        }
+
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+            await ReadAppliedVersionsAsync(database.ConnectionString));
+        Assert.Equal("Failed", (await ReadMigrationRecordAsync(database.ConnectionString, 15))!.Status);
+
+        await RunMigrationsAsync(database.ConnectionString);
+
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            await ReadAppliedVersionsAsync(database.ConnectionString));
+        Assert.True(await HasRequiredV02IndexesAndColumnsAsync(database.ConnectionString));
     }
 
     [DockerAvailableFact]
@@ -379,6 +404,25 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                        'triage_ledger_tool_status_check',
                        'triage_ledger_status_shape_check',
                        'triage_ledger_action_ref_check')) = 6
+                AND
+                EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'incidentcompass'
+                      AND table_name = 'post_report_action_intents')
+                AND
+                EXISTS (
+                    SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'incidentcompass'
+                      AND indexname = 'ix_post_report_action_intents_candidates')
+                AND
+                (SELECT count(*)
+                 FROM pg_trigger
+                 WHERE NOT tgisinternal
+                   AND tgname IN (
+                       'trg_post_report_action_intents_transition',
+                       'trg_post_report_action_intents_no_delete')) = 2
                 AND
                 EXISTS (
                     SELECT 1

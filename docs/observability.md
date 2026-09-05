@@ -41,6 +41,13 @@ artifact or provenance rows. Rejections before that origin boundary write no led
 foreign-report oracle. Accepted proposal rate caps count `ActionProposed`, not only allowed policy
 decisions, so requested and auto-approved proposals consume the same cap.
 
+Post-report evaluation intents deliberately add no new triage-ledger event kind. Their immutable
+identity, fenced processing state, database-clock lease, attempt count, next retry time and bounded
+closed error code remain inspectable in `incidentcompass.post_report_action_intents`; any accepted
+proposal then uses the existing action events above. Intent input contains only identifiers, exact
+tool/workflow version and an optional bounded route id. Logs must not copy its bytes, report or
+evidence bodies, prompts, provider responses, credentials or adapter routes.
+
 Approved dispatch writes `ActionDispatchStarted` in the same transaction as its durable owner/fence
 claim. Definitive success or failure writes one bounded `ActionResult` and `ActionCompleted` atomically
 with terminal state. Dry-run uses the same terminal evidence with zero adapter calls. Exceptions,

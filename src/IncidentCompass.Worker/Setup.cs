@@ -26,14 +26,24 @@ public static class Setup
         services.TryAddEnumerable(ServiceDescriptor.Singleton<
             IValidateOptions<ActionDispatchOptions>,
             ActionDispatchOptionsValidator>());
+        services
+            .AddOptions<PostReportActionEvaluationOptions>()
+            .Bind(configuration.GetSection(PostReportActionEvaluationOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<PostReportActionEvaluationOptions>,
+            PostReportActionEvaluationOptionsValidator>());
 
         services.AddScoped<IUserContext>(
             serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());
         services.TryAddSingleton<WorkerJobLeaseRenewer>();
         services.TryAddSingleton<WorkerJobPump>();
         services.TryAddSingleton<WorkerActionPump>();
+        services.TryAddSingleton<PostReportActionEvaluationLeaseRenewer>();
+        services.TryAddSingleton<PostReportActionEvaluationPump>();
         services.AddHostedService<Worker>();
         services.AddHostedService<ActionDispatchWorker>();
+        services.AddHostedService<PostReportActionEvaluationWorker>();
 
         return services;
     }
