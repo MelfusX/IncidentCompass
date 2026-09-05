@@ -111,7 +111,7 @@ Common commands:
 ```powershell
 dotnet restore IncidentCompass.slnx
 dotnet build IncidentCompass.slnx
-dotnet test IncidentCompass.slnx
+dotnet test --solution IncidentCompass.slnx
 dotnet format IncidentCompass.slnx --verify-no-changes --verbosity minimal
 powershell -ExecutionPolicy Bypass -File scripts\package-vulnerability-gate.ps1
 powershell -ExecutionPolicy Bypass -File scripts\code-organization-gate.ps1
@@ -121,7 +121,7 @@ For persistence-sensitive changes:
 
 ```powershell
 $env:INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS = "true"
-dotnet test tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj
+dotnet test --project tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj
 ```
 
 ## Contribution And Release Flow

@@ -50,4 +50,4 @@ jobs:
       - name: Test
         env:
           INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS: "true"
-        run: dotnet test IncidentCompass.slnx --configuration Release --no-build
+        run: dotnet test --solution IncidentCompass.slnx --configuration Release --no-build
