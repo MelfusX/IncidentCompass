@@ -97,7 +97,7 @@ try {
         $env:INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ResultPath))
         $env:INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS = "true"
 
-        dotnet test tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj --no-build --filter FullyQualifiedName~TriageInvestigationRealLlmSmokeTests
+        dotnet test --project tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj --no-build --filter FullyQualifiedName~TriageInvestigationRealLlmSmokeTests
         $exitCode = $LASTEXITCODE
     } finally {
         Restore-EnvironmentVariables $savedEnvironment

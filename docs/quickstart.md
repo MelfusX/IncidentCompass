@@ -138,7 +138,7 @@ triage config and config snapshots. Without a salt, matching identifiers are rep
 ~~~powershell
 dotnet restore IncidentCompass.slnx
 dotnet build IncidentCompass.slnx
-dotnet test IncidentCompass.slnx
+dotnet test --solution IncidentCompass.slnx
 ~~~
 
 PostgreSQL repository tests use Testcontainers. Outside CI they skip when Docker is unavailable; in
