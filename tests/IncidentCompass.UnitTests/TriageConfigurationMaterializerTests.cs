@@ -304,6 +304,41 @@ public sealed class TriageConfigurationMaterializerTests
     }
 
     [Fact]
+    public void Materialize_TicketSearchCanOnlyBeGrantedToTicketsRole()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["ticket_search"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)((JsonObject)node["Roles"]!)["analysis"]!)["Tools"] = new JsonArray("ticket_search");
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_RemovingTicketsRoleOrGrantDisablesTicketSurfaceWithoutHostFailure()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["ticket_search"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)node["Roles"]!)["tickets"] = new JsonObject
+        {
+            ["RouteId"] = "analysis-chat",
+            ["Instructions"] = "ref:instructions/tickets.md",
+            ["Tools"] = new JsonArray(),
+            ["OutputSchema"] = "ref:schemas/tickets.json"
+        };
+
+        var ungranted = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+        ((JsonObject)node["Roles"]!).Remove("tickets");
+        var removed = CreateMaterializer().Materialize("hash-2", node, ResolvedReferences());
+
+        Assert.Empty(ungranted.Roles["tickets"].Tools);
+        Assert.DoesNotContain("tickets", removed.Roles.Keys);
+        Assert.Contains("ticket_search", removed.Tools.Keys);
+    }
+
+    [Fact]
     public void Materialize_InvalidConfiguredRedactionPattern_FailsLoadValidation()
     {
         var node = ValidConfigNode();
@@ -338,7 +373,9 @@ public sealed class TriageConfigurationMaterializerTests
         ["ref:instructions/analysis.md"] = "analysis body",
         ["ref:schemas/analysis.json"] = "{ \"type\": \"object\" }",
         ["ref:instructions/source.md"] = "source body",
-        ["ref:schemas/source.json"] = "{ \"type\": \"object\" }"
+        ["ref:schemas/source.json"] = "{ \"type\": \"object\" }",
+        ["ref:instructions/tickets.md"] = "tickets body",
+        ["ref:schemas/tickets.json"] = "{ \"type\": \"object\" }"
     };
 
     private static JsonObject ValidConfigNode()

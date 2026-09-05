@@ -20,6 +20,7 @@ using IncidentCompass.Infrastructure.Observability;
 using IncidentCompass.Infrastructure.Postgres;
 using IncidentCompass.Infrastructure.Security;
 using IncidentCompass.Infrastructure.SourceContext;
+using IncidentCompass.Infrastructure.Tickets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -45,6 +46,7 @@ public static class Setup
         services.AddIntakeInfrastructure(configuration);
         services.AddMemoryInfrastructure(configuration);
         services.AddSourceContextInfrastructure(configuration);
+        services.AddTicketInfrastructure(configuration);
         // Infrastructure supplies the background identity used by Worker hosts.
         // API foreground auth must bind IUserContext explicitly.
         services.TryAddScoped<IBackgroundUserContext, SystemUserContext>();

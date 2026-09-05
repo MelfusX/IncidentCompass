@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using IncidentCompass.Worker;
+using IncidentCompass.Application.Tickets;
+using IncidentCompass.Infrastructure.Tickets;
 using WorkerService = IncidentCompass.Worker.Worker;
 
 namespace IncidentCompass.IntegrationTests;
@@ -239,6 +241,38 @@ public sealed class HostCompositionTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1024, response.Vector.Count);
+    }
+
+    [Fact]
+    public async Task HostServices_ValidateAndComposeGitHubTicketSearchWithoutARealCall()
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+            ["IncidentCompass:Tickets:GitHub:Repository"] = "repo",
+            ["IncidentCompass:Tickets:GitHub:Token"] = "host-secret"
+        });
+
+        await host.StartAsync();
+        using var scope = host.Services.CreateScope();
+
+        Assert.IsType<GitHubIssuesTicketSearch>(scope.ServiceProvider.GetRequiredService<ITicketSearch>());
+    }
+
+    [Fact]
+    public async Task HostServices_RejectInvalidGitHubRepositoryIdentityOnStart()
+    {
+        using var host = CreateHostWithConfiguration(new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Tickets:GitHub:Owner"] = "owner",
+            ["IncidentCompass:Tickets:GitHub:Repository"] = "other/repo"
+        });
+
+        var exception = await Record.ExceptionAsync(() => host.StartAsync());
+
+        Assert.NotNull(exception);
+        Assert.Contains(GetOptionsValidationFailures(exception),
+            failure => failure.Contains("Repository", StringComparison.Ordinal));
     }
 
     private static IHost CreateHostWithConfiguration(

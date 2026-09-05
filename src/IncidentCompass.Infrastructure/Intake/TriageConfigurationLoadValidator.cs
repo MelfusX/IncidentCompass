@@ -13,7 +13,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
     private const string MemoryRoleName = "memory";
     private const string MemorySearchToolName = "memory_search";
     private static readonly HashSet<string> OrchestratorTools = new(["delegate", "publish_report"], StringComparer.Ordinal);
-
     public void Validate(TriageConfiguration configuration)
     {
         FaultGroupingSettingsLoadValidator.Validate(configuration.FaultGrouping);
@@ -27,7 +26,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         ValidateTools(configuration.Routes, configuration.Tools);
         TriageRuleLoadValidator.Validate(configuration.Tools, configuration.Rules);
     }
-
     private void ValidateAllowedSources(IngestionSettings settings)
     {
         foreach (var source in settings.AllowedSources)
@@ -38,7 +36,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             }
         }
     }
-
     private static void ValidateCurrentReleases(IReadOnlyDictionary<string, string> currentReleases)
     {
         foreach (var (service, release) in currentReleases)
@@ -47,7 +44,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             RequireNonBlank("CurrentReleases." + service, release);
         }
     }
-
     private static void ValidateProviders(IReadOnlyDictionary<string, TriageProviderSettings> providers)
     {
         foreach (var (providerId, provider) in providers)
@@ -56,7 +52,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             RequireKnown("Providers." + providerId + ".Kind", provider.Kind, ProviderKinds);
         }
     }
-
     private static void ValidateRoutes(
         IReadOnlyDictionary<string, TriageProviderSettings> providers,
         IReadOnlyDictionary<string, TriageRouteSettings> routes)
@@ -83,7 +78,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             }
         }
     }
-
     private static void ValidateOrchestrator(
         IReadOnlyDictionary<string, TriageRouteSettings> routes,
         OrchestratorSettings orchestrator)
@@ -145,6 +139,11 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
                     !string.Equals(roleName, "source", StringComparison.Ordinal))
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "source_lookup granted only to the source role");
+                }
+                if (string.Equals(toolName, "ticket_search", StringComparison.Ordinal) &&
+                    !string.Equals(roleName, "tickets", StringComparison.Ordinal))
+                {
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "ticket_search granted only to the tickets role");
                 }
             }
         }

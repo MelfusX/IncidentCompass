@@ -57,6 +57,20 @@ public sealed class TriageConfigSchemaTests
         Assert.False(result.IsValid);
     }
 
+    [Fact]
+    public void PublicTriageConfigurationHasNoTicketCredentialOrRepositorySurface()
+    {
+        var configurationNode = LoadConfiguration();
+        var ticketSurface = configurationNode["Roles"]!["tickets"]!.ToJsonString() +
+            configurationNode["Tools"]!["ticket_search"]!.ToJsonString();
+        var schema = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.schema.json"));
+
+        Assert.DoesNotContain("token", ticketSurface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("github", ticketSurface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("repository", ticketSurface, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ticket token", schema, StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static EvaluationResults EvaluateFixture(JsonNode configuration) => Evaluate(configuration);
 
     private static EvaluationResults Evaluate(JsonNode configuration)

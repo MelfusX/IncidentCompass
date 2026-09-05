@@ -26,6 +26,8 @@ flowchart LR
   - `Memory/`: memory search contracts, seed records and the governed `memory_search` worker tool.
   - `SourceContext/`: provider-neutral source lookup contracts, bounded stack-frame extraction and
     the governed `source_lookup` worker tool.
+  - `Tickets/`: system-neutral ticket-search contracts, backend signal-field extraction and the
+    governed read-only `ticket_search` worker tool.
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading, model clients, embedding clients, memory adapters, dormant pricing/audit adapters and other infrastructure adapters.
 - `IncidentCompass.Worker`: DB-backed background job host with PostgreSQL polling, renewable ownership-fenced leases, cancellation on ownership loss and per-process `MaxConcurrentJobs`.
@@ -74,6 +76,27 @@ payload and `source:` domain reference. Grounding validates the payload shape an
 the job snapshot; report reads expose that artifact payload alongside the citation. A current-attempt outcome reader applies canonical
 no-match or connector-unavailable limitations before final publication, so model prose cannot omit
 those outcomes or turn them into evidence.
+
+## Read-only ticket context
+
+`ticket_search` has an empty model-facing argument object. The backend supplies only bounded fault
+fingerprint and service plus redacted trigger-signal component, error type, error message and known
+labels. The Application port contains search request/result concepts only and has no provider DTO,
+HTTP, repository-selection or write operation. GitHub Issues is the first Infrastructure adapter;
+tests also exercise a differently shaped mock tracker through the same port.
+
+The GitHub adapter sends one bounded request to the fixed `https://api.github.com` authority, with
+redirects disabled and a repository selected only by validated host options. The query is capped at
+256 characters and four `OR` operators. At most 50 issues are considered, pull requests and
+cross-repository or non-canonical candidates are rejected, and deterministic normalized features
+produce a six-decimal score. Matches below `0.15` are omitted; at most five remain, ordered by score
+then issue number. GitHub result ordering is not treated as IncidentCompass relevance.
+
+Successful matches use the existing attempt-level `RetrievedItem` persistence and
+`triage_evidence.kind = RetrievedItem`, with a closed `evidenceKind = ExistingTicket` payload and
+`ticket:github:` domain reference. Issue bodies are transient ranking input and are never placed in
+tool output, artifacts or reports. The shared durable outcome policy adds canonical no-match or
+connector-unavailable limitations before publication even if the model omits them.
 
 ## Phase 5 Grounded Reports
 
