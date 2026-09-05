@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using IncidentCompass.Application.Notifications;
 using IncidentCompass.Infrastructure.Notifications.Telegram;
 using Microsoft.Extensions.Options;
 

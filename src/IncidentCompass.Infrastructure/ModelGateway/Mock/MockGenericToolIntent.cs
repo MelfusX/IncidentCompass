@@ -1,5 +1,5 @@
-using IncidentCompass.Application.Core.ModelClients;
 using System.Text.RegularExpressions;
+using IncidentCompass.Application.Core.ModelClients;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.Mock;
 

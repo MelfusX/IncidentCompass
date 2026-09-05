@@ -1,7 +1,6 @@
 using System.Text.Json;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.Get;
-using IncidentCompass.Infrastructure.Intake;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 

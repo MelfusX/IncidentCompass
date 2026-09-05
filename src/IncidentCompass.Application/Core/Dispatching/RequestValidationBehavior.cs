@@ -1,6 +1,5 @@
 using FluentValidation;
 using FluentValidation.Results;
-using IncidentCompass.Application.Core.Dispatching;
 
 namespace IncidentCompass.Application.Core.Dispatching;
 

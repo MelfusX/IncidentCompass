@@ -1,7 +1,5 @@
 using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Application.Governance.PostReportActions;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.Worker;
 

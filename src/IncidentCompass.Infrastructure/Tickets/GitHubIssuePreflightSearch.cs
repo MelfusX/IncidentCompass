@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using IncidentCompass.Application.Governance.Tools;
 
 namespace IncidentCompass.Infrastructure.Tickets;
 

@@ -6,6 +6,17 @@
          silently resolving a different version. Regenerate by running `dotnet restore`
          after changing a PackageReference, then commit the updated lock files. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!-- Style rules in .editorconfig are reported by the compiler, so a style regression
+         is visible in every build and not only when `dotnet format` runs. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- IDE0005 (unnecessary using directive) only participates in build analysis when the
+         compiler produces a documentation file (dotnet/roslyn#41640). XML doc comments are
+         not a project convention, so CS1591 is suppressed rather than documenting every
+         public member. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
 </Project>

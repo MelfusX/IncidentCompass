@@ -1,9 +1,9 @@
 using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
-using Microsoft.Extensions.Options;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Worker;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.IntegrationTests;
 

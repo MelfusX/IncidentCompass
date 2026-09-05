@@ -3,12 +3,12 @@ using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
-using Microsoft.Extensions.Options;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
+using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.UnitTests;
 

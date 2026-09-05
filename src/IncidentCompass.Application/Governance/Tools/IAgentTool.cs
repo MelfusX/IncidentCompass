@@ -1,6 +1,6 @@
+using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Governance.Validation;
-using System.Text.Json;
 
 namespace IncidentCompass.Application.Governance.Tools;
 

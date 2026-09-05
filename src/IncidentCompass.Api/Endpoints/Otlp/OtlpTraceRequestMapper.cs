@@ -1,5 +1,5 @@
-using Google.Protobuf;
 using System.Text.Json.Nodes;
+using Google.Protobuf;
 using IncidentCompass.Application.Intake.IngestSignal;
 using OpenTelemetry.Proto.Collector.Trace.V1;
 using OpenTelemetry.Proto.Trace.V1;

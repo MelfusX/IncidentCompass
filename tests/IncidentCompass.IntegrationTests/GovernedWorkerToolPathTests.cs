@@ -8,7 +8,6 @@ using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Worker;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;

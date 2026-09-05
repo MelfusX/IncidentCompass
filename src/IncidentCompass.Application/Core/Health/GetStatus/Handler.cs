@@ -1,5 +1,5 @@
-using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Configuration;
+using IncidentCompass.Application.Core.Dispatching;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Application.Core.Health;

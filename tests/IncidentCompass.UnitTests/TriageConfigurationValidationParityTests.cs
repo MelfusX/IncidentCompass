@@ -1,6 +1,6 @@
 using System.Text.Json.Nodes;
-using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Governance.Tools;
+using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Notifications;
 using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Configuration;

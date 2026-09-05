@@ -1,6 +1,6 @@
+using System.Text.Json;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Domain.Incidents;
-using System.Text.Json;
 
 namespace IncidentCompass.Application.Governance.Tools;
 

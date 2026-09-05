@@ -1,6 +1,4 @@
 using IncidentCompass.Application.Governance.ActionApprovals;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.Worker;
 

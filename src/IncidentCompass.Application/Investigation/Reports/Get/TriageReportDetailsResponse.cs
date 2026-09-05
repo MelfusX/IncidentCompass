@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace IncidentCompass.Application.Investigation.Reports.Get;
 
 public sealed record TriageReportDetailsResponse(

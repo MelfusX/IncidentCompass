@@ -1,5 +1,5 @@
-using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.PostReportActions;
+using IncidentCompass.Application.Governance.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

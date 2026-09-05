@@ -1,0 +1,33 @@
+# EditorConfig root configuration for IncidentCompass.
+#
+# These rules are enforced during the build via <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+# in Directory.Build.props: violations of the severities set below (e.g. unused usings,
+# formatting, namespace style) surface as build warnings/errors, not just editor squiggles.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{json,yml,yaml,csproj,props,targets,slnx,xml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_using_directive_placement = outside_namespace:warning
+
+# Enforced diagnostics (see EnforceCodeStyleInBuild above).
+dotnet_diagnostic.IDE0005.severity = warning  # Unused usings
+dotnet_diagnostic.IDE0055.severity = warning  # Formatting
+dotnet_diagnostic.IDE0161.severity = warning  # File-scoped namespaces
+dotnet_diagnostic.IDE0065.severity = warning  # Using directive placement

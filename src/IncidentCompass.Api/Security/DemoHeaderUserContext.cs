@@ -1,6 +1,5 @@
 using IncidentCompass.Api.Configuration;
 using IncidentCompass.Application.Core.Security;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Api.Security;

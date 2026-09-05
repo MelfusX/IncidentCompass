@@ -1,7 +1,7 @@
 using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Investigation.Reports.Get;
-using IncidentCompass.Application.Investigation.Reports.List;
 using IncidentCompass.Application.Investigation.Reports.GetLatest;
+using IncidentCompass.Application.Investigation.Reports.List;
 
 namespace IncidentCompass.Api;
 

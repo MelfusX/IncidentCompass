@@ -8,7 +8,6 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Memory;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
