@@ -83,7 +83,7 @@ Before making non-trivial changes, read the relevant public docs:
 ## Code Organization
 
 - Follow `docs/code-organization.md`.
-- Keep production classes under 200 physical lines unless a local exception is clearly easier to defend than a split.
+- Keep production classes under 400 physical lines unless a local exception is clearly easier to defend than a split.
 - Keep one public/internal type per file: class, record, struct, enum or interface.
 - Use feature/action folders for Application use cases: `Command.cs`, `Query.cs`, `Handler.cs`, `Validator.cs`, `Response.cs`.
 - Keep handlers as orchestration. Put parsing, policy, persistence detail and provider detail behind named collaborators.
