@@ -77,12 +77,17 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
             new EmbeddingRequest(query, route.Model, context.Job.Id.ToString()),
             cancellationToken);
 
-        var matches = MemorySearchLexicalFilter.Apply(
+        var topK = NormalizeTopK(toolSettings.TopK);
+        var candidates = await memoryRepository.SearchAsync(
+            new MemorySearchRequest(context.TenantId, embedding.Provider, embedding.Model,
+                embedding.Vector.Count, embedding.Vector, CalculateCandidateCount(topK), NormalizeMinScore(toolSettings.MinScore)),
+            cancellationToken);
+        var matches = MemorySearchReranker.Rank(
             query,
-            await memoryRepository.SearchAsync(
-                new MemorySearchRequest(context.TenantId, embedding.Provider, embedding.Model,
-                    embedding.Vector.Count, embedding.Vector, NormalizeTopK(toolSettings.TopK), NormalizeMinScore(toolSettings.MinScore)),
-                cancellationToken));
+            context.Configuration,
+            context.FaultServiceName,
+            candidates,
+            topK);
 
         var artifacts = matches
             .Select(match => CreateRetrievedArtifact(context, embedding, match))
@@ -183,5 +188,10 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
     private static double NormalizeMinScore(double? minScore)
     {
         return Math.Clamp(minScore ?? DefaultMinScore, -1.0, 1.0);
+    }
+
+    private static int CalculateCandidateCount(int topK)
+    {
+        return Math.Min(100, topK * 4);
     }
 }

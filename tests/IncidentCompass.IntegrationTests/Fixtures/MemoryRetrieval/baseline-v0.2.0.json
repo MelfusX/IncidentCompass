@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "corpusVersion": "memory-retrieval-corpus-v1",
+  "strategy": "production-v0.2.0-vector-topk-then-lexical",
+  "topK": 5,
+  "deterministic": {
+    "queries": [
+      {
+        "queryId": "false-empty-checkout-timeout",
+        "returnedChunkIds": [],
+        "returnedItemIds": [],
+        "relevantChunkCount": 2,
+        "relevantChunkHits": 0,
+        "chunkRecallAt5": 0,
+        "relevantItemCount": 2,
+        "relevantItemHits": 0,
+        "itemRecallAt5": 0,
+        "firstRelevantChunkRank": 6
+      },
+      {
+        "queryId": "current-inventory-mitigation",
+        "returnedChunkIds": [
+          "20000000-0000-0000-0000-000000000006",
+          "20000000-0000-0000-0000-000000000003",
+          "20000000-0000-0000-0000-000000000005"
+        ],
+        "returnedItemIds": [
+          "10000000-0000-0000-0000-000000000005",
+          "10000000-0000-0000-0000-000000000003",
+          "10000000-0000-0000-0000-000000000004"
+        ],
+        "relevantChunkCount": 1,
+        "relevantChunkHits": 1,
+        "chunkRecallAt5": 1,
+        "relevantItemCount": 1,
+        "relevantItemHits": 1,
+        "itemRecallAt5": 1,
+        "firstRelevantChunkRank": 2
+      },
+      {
+        "queryId": "payments-component-variant",
+        "returnedChunkIds": [
+          "20000000-0000-0000-0000-000000000004",
+          "20000000-0000-0000-0000-000000000001"
+        ],
+        "returnedItemIds": [
+          "10000000-0000-0000-0000-000000000003",
+          "10000000-0000-0000-0000-000000000001"
+        ],
+        "relevantChunkCount": 1,
+        "relevantChunkHits": 1,
+        "chunkRecallAt5": 1,
+        "relevantItemCount": 1,
+        "relevantItemHits": 1,
+        "itemRecallAt5": 1,
+        "firstRelevantChunkRank": 1
+      },
+      {
+        "queryId": "known-incident-pool",
+        "returnedChunkIds": [
+          "20000000-0000-0000-0000-000000000001",
+          "20000000-0000-0000-0000-000000000002"
+        ],
+        "returnedItemIds": [
+          "10000000-0000-0000-0000-000000000001",
+          "10000000-0000-0000-0000-000000000002"
+        ],
+        "relevantChunkCount": 1,
+        "relevantChunkHits": 1,
+        "chunkRecallAt5": 1,
+        "relevantItemCount": 1,
+        "relevantItemHits": 1,
+        "itemRecallAt5": 1,
+        "firstRelevantChunkRank": 2
+      },
+      {
+        "queryId": "stock-reservation-query-variant",
+        "returnedChunkIds": [
+          "20000000-0000-0000-0000-000000000004",
+          "20000000-0000-0000-0000-000000000002",
+          "20000000-0000-0000-0000-000000000001"
+        ],
+        "returnedItemIds": [
+          "10000000-0000-0000-0000-000000000003",
+          "10000000-0000-0000-0000-000000000002",
+          "10000000-0000-0000-0000-000000000001"
+        ],
+        "relevantChunkCount": 2,
+        "relevantChunkHits": 2,
+        "chunkRecallAt5": 1,
+        "relevantItemCount": 2,
+        "relevantItemHits": 2,
+        "itemRecallAt5": 1,
+        "firstRelevantChunkRank": 1
+      },
+      {
+        "queryId": "stale-only-procedure",
+        "returnedChunkIds": ["20000000-0000-0000-0000-000000000005"],
+        "returnedItemIds": ["10000000-0000-0000-0000-000000000004"],
+        "relevantChunkCount": 1,
+        "relevantChunkHits": 1,
+        "chunkRecallAt5": 1,
+        "relevantItemCount": 1,
+        "relevantItemHits": 1,
+        "itemRecallAt5": 1,
+        "firstRelevantChunkRank": 1
+      },
+      {
+        "queryId": "explicit-no-match",
+        "returnedChunkIds": [],
+        "returnedItemIds": [],
+        "relevantChunkCount": 0,
+        "relevantChunkHits": 0,
+        "chunkRecallAt5": 0,
+        "relevantItemCount": 0,
+        "relevantItemHits": 0,
+        "itemRecallAt5": 0,
+        "firstRelevantChunkRank": 6
+      },
+      {
+        "queryId": "inactive-item-no-match",
+        "returnedChunkIds": [
+          "20000000-0000-0000-0000-000000000001",
+          "20000000-0000-0000-0000-000000000006",
+          "20000000-0000-0000-0000-000000000002",
+          "20000000-0000-0000-0000-000000000003"
+        ],
+        "returnedItemIds": [
+          "10000000-0000-0000-0000-000000000001",
+          "10000000-0000-0000-0000-000000000005",
+          "10000000-0000-0000-0000-000000000002",
+          "10000000-0000-0000-0000-000000000003"
+        ],
+        "relevantChunkCount": 0,
+        "relevantChunkHits": 0,
+        "chunkRecallAt5": 0,
+        "relevantItemCount": 0,
+        "relevantItemHits": 0,
+        "itemRecallAt5": 0,
+        "firstRelevantChunkRank": 6
+      }
+    ],
+    "metrics": {
+      "chunkMacroRecallAt5": 0.8333333333333334,
+      "chunkMicroRecallAt5": 0.75,
+      "itemMacroRecallAt5": 0.8333333333333334,
+      "itemMicroRecallAt5": 0.75,
+      "meanFirstRelevantChunkRank": 2.1666666666666665,
+      "noMatchPrecision": 0.5,
+      "noMatchFalsePositiveCount": 1,
+      "positiveQueryCount": 6,
+      "trueNoMatchQueryCount": 2,
+      "predictedNoMatchCount": 2
+    }
+  },
+  "diagnostics": {
+    "warmupCallsPerStrategy": 5,
+    "measuredCallsPerStrategy": 30,
+    "production": {
+      "medianMilliseconds": 14.893799999999999,
+      "p95Milliseconds": 23.9371
+    },
+    "legacy": {
+      "medianMilliseconds": 10.47545,
+      "p95Milliseconds": 11.8377
+    }
+  }
+}

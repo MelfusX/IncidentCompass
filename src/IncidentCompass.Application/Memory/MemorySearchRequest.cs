@@ -6,5 +6,5 @@ internal sealed record MemorySearchRequest(
     string EmbeddingModel,
     int EmbeddingDimensions,
     IReadOnlyList<float> QueryVector,
-    int TopK,
+    int CandidateCount,
     double MinScore);
