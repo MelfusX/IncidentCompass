@@ -20,6 +20,8 @@ internal static class HealthEndpoints
             })
             .WithName("GetApiV1Health")
             .WithSummary("Liveness probe for the API host.")
+            .AllowAnonymous()
+            .DisableRateLimiting()
             .Produces<HealthStatus>(StatusCodes.Status200OK);
 
         api.MapGet("/health/memory-sync", async (
@@ -28,6 +30,8 @@ internal static class HealthEndpoints
                 Results.Ok(await syncStatus.GetAsync(cancellationToken)))
             .WithName("GetMemorySeedSyncStatus")
             .WithSummary("Metadata-only Worker memory synchronization status persisted in PostgreSQL.")
+            .AllowAnonymous()
+            .DisableRateLimiting()
             .Produces<MemorySeedSyncSnapshot>(StatusCodes.Status200OK);
 
         return api;

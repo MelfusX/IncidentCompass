@@ -18,8 +18,19 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/v1/logs": {
@@ -30,8 +41,19 @@
         "responses": {
           "200": {
             "description": "OK"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/health": {
@@ -93,8 +115,19 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/incidents": {
@@ -134,8 +167,19 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/faults/{id}": {
@@ -167,6 +211,12 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -177,7 +227,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/faults/{id}/ledger": {
@@ -209,6 +264,12 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -219,7 +280,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/triage-reports": {
@@ -297,6 +363,12 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -307,7 +379,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/triage-reports/{id}": {
@@ -339,6 +416,12 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -349,7 +432,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     },
     "/api/v1/faults/{faultId}/triage-report": {
@@ -381,6 +469,12 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "429": {
+            "description": "Too Many Requests"
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -391,7 +485,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "IncidentCompassApiKey": []
+          }
+        ]
       }
     }
   },
@@ -1218,6 +1317,14 @@
             ]
           }
         }
+      }
+    },
+    "securitySchemes": {
+      "IncidentCompassApiKey": {
+        "type": "apiKey",
+        "description": "Host-issued IncidentCompass API key.",
+        "name": "X-IncidentCompass-Key",
+        "in": "header"
       }
     }
   },

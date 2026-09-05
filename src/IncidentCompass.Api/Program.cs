@@ -21,12 +21,16 @@ if (validationExitCode.HasValue)
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous().DisableRateLimiting();
 }
 
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.MapHealthChecks("/health");
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+app.MapHealthChecks("/health").AllowAnonymous().DisableRateLimiting();
 app.MapApiV1();
 app.MapOtlpEndpoints();
 

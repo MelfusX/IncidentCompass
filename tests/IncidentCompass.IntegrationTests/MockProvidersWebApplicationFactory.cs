@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.IntegrationTests;
 
@@ -16,6 +17,9 @@ public sealed class MockProvidersWebApplicationFactory : WebApplicationFactory<P
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseExplicitMockProviders();
+        // TestServer must not inherit the Windows EventLog provider, which requires host ACLs
+        // and can mask the actual startup assertion with an unrelated access failure.
+        builder.ConfigureLogging(static logging => logging.ClearProviders());
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IMemorySeedSyncStatusReader>();
