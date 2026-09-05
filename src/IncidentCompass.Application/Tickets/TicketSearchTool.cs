@@ -22,8 +22,6 @@ internal sealed class TicketSearchTool(ITicketSearch ticketSearch, TimeProvider 
             ["properties"] = new JsonObject()
         }));
 
-    public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Read-only existing-ticket search.");
-
     public ToolValidationResult Validate(JsonElement arguments)
     {
         if (arguments.ValueKind != JsonValueKind.Object || arguments.EnumerateObject().Any())

@@ -550,8 +550,6 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
     {
         public AiToolDefinition Definition { get; } = new(name, "Synthetic test-only tool.", "v1", Element("{\"type\":\"object\"}"));
 
-        public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Synthetic test tool is safe.");
-
         public ToolValidationResult Validate(JsonElement arguments)
         {
             return arguments.ValueKind == JsonValueKind.Object
@@ -578,8 +576,6 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public AiToolDefinition Definition { get; } = new(name, "Blocking synthetic test-only tool.", "v1", Element("{\"type\":\"object\"}"));
-
-        public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Synthetic test tool is safe.");
 
         public ToolValidationResult Validate(JsonElement arguments) => ToolValidationResult.Valid(arguments.Clone());
 

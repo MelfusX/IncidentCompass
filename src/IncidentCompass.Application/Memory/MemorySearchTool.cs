@@ -33,8 +33,6 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
             ["required"] = new JsonArray("query")
         }));
 
-    public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Read-only tenant-scoped memory retrieval.");
-
     public ToolValidationResult Validate(JsonElement arguments)
     {
         if (arguments.ValueKind != JsonValueKind.Object)

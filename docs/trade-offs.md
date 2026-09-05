@@ -138,10 +138,15 @@ releasing its slot. A job left in `Processing` becomes claimable after its curre
 This protects the durable ownership boundary, but it cannot forcibly interrupt a provider or tool that
 ignores its cancellation token. The shipped model and tool paths propagate cancellation; custom adapters
 must do the same to avoid work that can no longer publish a result.
-## Dormant Components Kept for the Roadmap
+## One Live Worker Tool Policy Path
 
-Two upstream-derived component groups are intentionally retained but not registered in DI.
+`WorkerToolRuleEngine` is the single tool-policy mechanism. It applies role grants and configured
+rules before the registered backend tool can execute, while triage-ledger events provide the durable
+audit trail. The earlier standalone executor and audit repository were removed instead of retaining a
+parallel policy interpretation. The released `infra/postgres/init/006-tool-audit.sql` migration stays
+byte-identical and its legacy table remains unused so fresh and upgraded databases preserve migration
+integrity.
 
-IC-BL-010 keeps the standalone governed tool execution/audit stack dormant: `ToolPolicy`, `ToolRisk`, `ToolPolicyDecision`, `ToolPolicyMetadata`, `GovernedAgentToolExecutor`, `AgentToolAuditLogWriter`, `IToolAuditLogRepository`, `PostgresToolAuditLogRepository` and `infra/postgres/init/006-tool-audit.sql`. The live Worker path uses its own role-scoped rule engine and triage-ledger audit events instead.
+## Dormant Pricing Components Kept for the Roadmap
 
 IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingRecord`, `IPricingRepository`, `PostgresObservabilityRepository` and the `incidentcompass.ai_model_pricing` half of `infra/postgres/init/004-observability-cost.sql`. Live model usage is recorded as `ModelCall` and `BudgetEvent` ledger rows; cost rollup is deferred until a reporting workflow consumes those rows.
