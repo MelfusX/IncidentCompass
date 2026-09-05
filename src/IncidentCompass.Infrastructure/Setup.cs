@@ -3,6 +3,7 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.ActionApprovals;
+using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Investigation.Jobs;
@@ -14,6 +15,7 @@ using IncidentCompass.Infrastructure.Embeddings.Mock;
 using IncidentCompass.Infrastructure.Embeddings.OpenAi;
 using IncidentCompass.Infrastructure.Governance;
 using IncidentCompass.Infrastructure.Governance.ActionApprovals;
+using IncidentCompass.Infrastructure.Governance.PostReportActions;
 using IncidentCompass.Infrastructure.Intake;
 using IncidentCompass.Infrastructure.Investigation;
 using IncidentCompass.Infrastructure.Memory;
@@ -52,10 +54,8 @@ public static class Setup
         services.AddTicketInfrastructure(configuration);
         // Infrastructure supplies the Worker identity; API auth binds IUserContext explicitly.
         services.TryAddScoped<IBackgroundUserContext, SystemUserContext>();
-
         return services;
     }
-
     public static IServiceCollection AddPostgresMigrations(this IServiceCollection services)
     {
         services.TryAddSingleton<IPostgresMigrationFailureInjector, NoPostgresMigrationFailureInjector>();
@@ -67,7 +67,6 @@ public static class Setup
 
         return services;
     }
-
     private static IServiceCollection AddGovernedInvestigationServices(this IServiceCollection services)
     {
         services.TryAddScoped<TriageLedgerAppender>();
@@ -76,10 +75,8 @@ public static class Setup
         services.TryAddScoped<WorkerRoleRunner>();
         services.TryAddScoped<AnalysisDelegateExecutor>();
         services.TryAddScoped<TriageReportPublisher>();
-
         return services;
     }
-
     private static IServiceCollection AddInfrastructureOptions(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -120,7 +117,6 @@ public static class Setup
 
         return services;
     }
-
     private static IServiceCollection AddModelGatewayAdapters(this IServiceCollection services)
     {
         services.AddHttpClient<OpenAiCompatibleModelClient>();
@@ -149,7 +145,6 @@ public static class Setup
 
         return services;
     }
-
     private static IServiceCollection AddEmbeddingAdapters(this IServiceCollection services)
     {
         services.AddHttpClient<OpenAiCompatibleEmbeddingClient>();
@@ -178,7 +173,6 @@ public static class Setup
 
         return services;
     }
-
     private static IServiceCollection AddPersistenceAdapters(this IServiceCollection services)
     {
         services.TryAddSingleton<PostgresDataSourceProvider>();
@@ -195,6 +189,12 @@ public static class Setup
         services.TryAddScoped<IActionApprovalReviewRepository, PostgresActionReviewRepository>();
         services.TryAddScoped<IActionDispatchRepository, PostgresActionDispatchRepository>();
         services.TryAddScoped<IApprovedActionDispatcher, ApprovedActionDispatcher>();
+        services.TryAddSingleton<PostReportActionWorkflowCatalog>();
+        services.TryAddScoped<ITriageReportPublicationIntentWriter, PostgresReportPublicationIntentWriter>();
+        services.TryAddScoped<ITriageReportPublicationIntentFaultInjector,
+            NoopTriageReportPublicationIntentFaultInjector>();
+        services.TryAddScoped<IPostReportActionIntentRepository,
+            PostgresPostReportActionIntentRepository>();
         return services;
     }
 }

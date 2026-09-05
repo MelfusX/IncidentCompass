@@ -154,6 +154,21 @@ unused so fresh and upgraded databases preserve migration integrity.
 
 IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingRecord`, `IPricingRepository`, `PostgresObservabilityRepository` and the `incidentcompass.ai_model_pricing` half of `infra/postgres/init/004-observability-cost.sql`. Live model usage is recorded as `ModelCall` and `BudgetEvent` ledger rows; cost rollup is deferred until a reporting workflow consumes those rows.
 
+## Durable Evaluation Queue Is Not A Second Action Outbox
+
+Report publication and evaluation cannot share one long transaction across arbitrary workflow code.
+IncidentCompass instead commits a minimal immutable intent with the report, then evaluates it through
+a separate bounded Worker pump. The queue uses database-clock renewable leases, random fences,
+bounded deterministic retries and a maximum attempt count. A crash or lost lease can therefore replay
+evaluation, so workflows must be deterministic and proposal creation uses a stable proposal key plus
+the existing proposal transaction's idempotency boundary.
+
+The queue stops at proposal creation. It has no adapter port, approval decision, dispatch state or
+new ledger vocabulary; `action_approvals` remains the only approval and external-dispatch outbox.
+This adds durable scheduling and recovery without creating a competing policy system. Production
+composition intentionally registers no evaluation workflow in this slice, so only synthetic Docker
+tests exercise the handoff.
+
 ## At-Most-Once Action Dispatch Prefers Visible Uncertainty
 
 The post-report action path separates immutable proposal/approval from a bounded Worker dispatcher.
