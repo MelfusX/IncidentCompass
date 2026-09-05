@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
@@ -76,12 +77,12 @@ internal sealed class TriageToolConfigurationLoadValidator(IAgentToolRegistry to
             RequireEmbeddingRoute(routes, tool.EmbeddingRouteId!, "Tools." + toolName + ".EmbeddingRouteId");
             if (tool.TopK is <= 0)
             {
-                throw Invalid("Tools." + toolName + ".TopK", tool.TopK.Value.ToString(), "a positive integer when set");
+                throw Invalid("Tools." + toolName + ".TopK", tool.TopK.Value.ToString(CultureInfo.InvariantCulture), "a positive integer when set");
             }
 
             if (tool.MinScore is < -1 or > 1)
             {
-                throw Invalid("Tools." + toolName + ".MinScore", tool.MinScore.Value.ToString(), "a score between -1 and 1 when set");
+                throw Invalid("Tools." + toolName + ".MinScore", tool.MinScore.Value.ToString(CultureInfo.InvariantCulture), "a score between -1 and 1 when set");
             }
 
             return;
@@ -128,7 +129,7 @@ internal sealed class TriageToolConfigurationLoadValidator(IAgentToolRegistry to
         RequireKnown("Actions.DefaultMode", actions.DefaultMode, ActionModes);
         if (actions.ApprovalTtlMinutes is < ActionApprovalLimits.MinimumTtlMinutes or > ActionApprovalLimits.MaximumTtlMinutes)
         {
-            throw Invalid("Actions.ApprovalTtlMinutes", actions.ApprovalTtlMinutes.ToString(), "an integer from 1 through 10080");
+            throw Invalid("Actions.ApprovalTtlMinutes", actions.ApprovalTtlMinutes.ToString(CultureInfo.InvariantCulture), "an integer from 1 through 10080");
         }
 
         var unique = new HashSet<string>(StringComparer.Ordinal);

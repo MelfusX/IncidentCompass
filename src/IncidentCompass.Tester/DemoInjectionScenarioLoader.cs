@@ -54,7 +54,7 @@ internal static class DemoInjectionScenarioLoader
         return DemoScenario.CreateInjection(envelope);
     }
 
-    private static IReadOnlyDictionary<string, object?> ReadMetadata(JsonElement metadata)
+    private static Dictionary<string, object?> ReadMetadata(JsonElement metadata)
     {
         if (metadata.ValueKind != JsonValueKind.Object)
         {

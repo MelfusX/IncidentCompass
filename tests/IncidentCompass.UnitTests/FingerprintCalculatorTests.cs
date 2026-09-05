@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Fingerprinting;
@@ -124,6 +125,6 @@ public sealed class FingerprintCalculatorTests
             DurationMs: 30000,
             Attributes: new JsonObject(),
             Body: new JsonObject(),
-            ObservedAtUtc: DateTimeOffset.Parse("2026-06-01T00:00:00Z"));
+            ObservedAtUtc: DateTimeOffset.Parse("2026-06-01T00:00:00Z", CultureInfo.InvariantCulture));
     }
 }

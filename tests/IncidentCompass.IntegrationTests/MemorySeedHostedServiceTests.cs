@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Infrastructure;
 using IncidentCompass.Infrastructure.Memory;
@@ -498,7 +499,7 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
                     ["IncidentCompass:Memory:Seed:TenantId"] = "local",
                     ["IncidentCompass:Memory:Seed:Owner"] = owner,
                     ["IncidentCompass:Memory:Seed:RuntimeResyncEnabled"] = runtimeResyncEnabled.ToString(),
-                    ["IncidentCompass:Memory:Seed:RuntimeResyncIntervalSeconds"] = runtimeResyncIntervalSeconds.ToString(),
+                    ["IncidentCompass:Memory:Seed:RuntimeResyncIntervalSeconds"] = runtimeResyncIntervalSeconds.ToString(CultureInfo.InvariantCulture),
                     ["IncidentCompass:Memory:Seed:SourceDirectory"] = sourceDirectory
                 });
             })

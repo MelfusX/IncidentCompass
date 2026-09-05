@@ -19,7 +19,7 @@ internal sealed partial class MemorySeedHostedService(
     MemorySeedSyncStatusPersistence statusPersistence,
     TimeProvider timeProvider,
     ILogger<MemorySeedHostedService> logger,
-    IRuntimeTelemetry? telemetry = null) : IHostedService
+    IRuntimeTelemetry? telemetry = null) : IHostedService, IDisposable
 {
     private const string MemorySearchToolName = "memory_search";
     private CancellationTokenSource? resyncCancellation;
@@ -190,4 +190,11 @@ internal sealed partial class MemorySeedHostedService(
 
     [LoggerMessage(LogLevel.Warning, "Memory seed runtime synchronization failed with {FailureType}.")]
     private static partial void LogRuntimeSyncFailed(ILogger logger, string failureType);
+
+    public void Dispose()
+    {
+        // Normal shutdown disposes and clears resyncCancellation in StopAsync; this is a
+        // defensive fallback in case the host tears this instance down without stopping it.
+        resyncCancellation?.Dispose();
+    }
 }

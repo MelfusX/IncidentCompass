@@ -10,13 +10,13 @@ internal sealed class RequestValidationBehavior<TRequest, TResponse>(
 {
     public async Task<TResponse> HandleAsync(
         TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        PipelineContinuation<TResponse> continuation,
         CancellationToken cancellationToken)
     {
         var validatorList = validators as IReadOnlyCollection<IValidator<TRequest>> ?? validators.ToArray();
         if (validatorList.Count == 0)
         {
-            return await next();
+            return await continuation();
         }
 
         // Validators run sequentially rather than via Task.WhenAll on purpose:
@@ -40,6 +40,6 @@ internal sealed class RequestValidationBehavior<TRequest, TResponse>(
             throw new RequestValidationException(failures);
         }
 
-        return await next();
+        return await continuation();
     }
 }

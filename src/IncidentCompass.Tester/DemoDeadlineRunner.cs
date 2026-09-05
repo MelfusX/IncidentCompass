@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace IncidentCompass.Tester;
 
 internal static class DemoDeadlineRunner
@@ -47,7 +49,7 @@ internal static class DemoDeadlineRunner
     private static string Format(TimeSpan timeout)
     {
         return timeout.TotalMinutes >= 1
-            ? timeout.TotalMinutes.ToString("0.#") + " minutes"
-            : timeout.TotalSeconds.ToString("0.#") + " seconds";
+            ? timeout.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture) + " minutes"
+            : timeout.TotalSeconds.ToString("0.#", CultureInfo.InvariantCulture) + " seconds";
     }
 }

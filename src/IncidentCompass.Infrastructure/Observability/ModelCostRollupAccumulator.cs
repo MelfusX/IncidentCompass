@@ -6,7 +6,7 @@ internal sealed class ModelCostRollupAccumulator(IReadOnlyList<ModelPricingInter
 {
     private const decimal TokensPerMillion = 1_000_000m;
     private readonly Dictionary<DateTimeOffset, MutableCostRollupHour> hours = [];
-    private readonly IReadOnlyDictionary<(string Provider, string Model), ModelPricingInterval[]> pricesByIdentity =
+    private readonly Dictionary<(string Provider, string Model), ModelPricingInterval[]> pricesByIdentity =
         prices
             .GroupBy(static price => (price.Provider, price.Model))
             .ToDictionary(

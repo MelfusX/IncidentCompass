@@ -1,6 +1,6 @@
 namespace IncidentCompass.Worker;
 
-internal sealed class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)
+internal sealed partial class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)
 {
     private readonly List<(Task DispatchTask, CancellationTokenSource Cancellation)> actions = [];
 
@@ -20,7 +20,7 @@ internal sealed class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)
             }
 
             actions.RemoveAt(index);
-            await ObserveAsync(action, cancellationToken, "Approved action dispatch failed after claim.");
+            await ObserveAsync(action, LogDispatchFailedAfterClaim, cancellationToken);
         }
     }
 
@@ -35,7 +35,7 @@ internal sealed class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)
 
         foreach (var action in running)
         {
-            await ObserveAsync(action, CancellationToken.None, "Approved action dispatch failed while draining.");
+            await ObserveAsync(action, LogDispatchFailedWhileDraining, CancellationToken.None);
         }
     }
 
@@ -54,8 +54,8 @@ internal sealed class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)
 
     private async Task ObserveAsync(
         (Task DispatchTask, CancellationTokenSource Cancellation) action,
-        CancellationToken cancellationToken,
-        string failureMessage)
+        Action<ILogger, Exception> logFailure,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -70,11 +70,17 @@ internal sealed class WorkerActionTaskSet(ILogger<WorkerActionPump> logger)
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, failureMessage);
+            logFailure(logger, exception);
         }
         finally
         {
             action.Cancellation.Dispose();
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Approved action dispatch failed after claim.")]
+    private static partial void LogDispatchFailedAfterClaim(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Approved action dispatch failed while draining.")]
+    private static partial void LogDispatchFailedWhileDraining(ILogger logger, Exception exception);
 }

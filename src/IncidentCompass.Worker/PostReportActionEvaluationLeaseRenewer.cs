@@ -2,7 +2,7 @@ using IncidentCompass.Application.Governance.PostReportActions;
 
 namespace IncidentCompass.Worker;
 
-public sealed class PostReportActionEvaluationLeaseRenewer(
+public sealed partial class PostReportActionEvaluationLeaseRenewer(
     ILogger<PostReportActionEvaluationLeaseRenewer> logger)
 {
     private static readonly TimeSpan MinimumRenewalInterval = TimeSpan.FromMilliseconds(100);
@@ -80,9 +80,12 @@ public sealed class PostReportActionEvaluationLeaseRenewer(
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, "Post-report workflow failed after its evaluation lease was lost.");
+            LogWorkflowFailedAfterLeaseLost(logger, exception);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-report workflow failed after its evaluation lease was lost.")]
+    private static partial void LogWorkflowFailedAfterLeaseLost(ILogger logger, Exception exception);
 
     private static async Task ObserveCancellationAsync(Task task)
     {

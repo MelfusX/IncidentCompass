@@ -36,7 +36,7 @@ internal static class TicketSearchContextExtractor
         return null;
     }
 
-    private static IReadOnlyList<string> ReadLabels(JsonElement attributes)
+    private static string[] ReadLabels(JsonElement attributes)
     {
         if (attributes.ValueKind != JsonValueKind.Object ||
             !attributes.TryGetProperty("incident.labels", out var labels) ||

@@ -61,10 +61,10 @@ internal static class MemorySeedFrontmatterParser
         ["kind", "service", "component", "release", "tags"],
         StringComparer.OrdinalIgnoreCase);
 
-    private static string? ReadOptional(IReadOnlyDictionary<string, string> values, string key) =>
+    private static string? ReadOptional(Dictionary<string, string> values, string key) =>
         values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
 
-    private static IReadOnlyList<string> ParseTags(string? value)
+    private static string[] ParseTags(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {

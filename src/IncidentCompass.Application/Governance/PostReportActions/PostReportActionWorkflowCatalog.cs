@@ -4,7 +4,7 @@ namespace IncidentCompass.Application.Governance.PostReportActions;
 
 public sealed class PostReportActionWorkflowCatalog
 {
-    private readonly IReadOnlyDictionary<(string ToolId, int Version), IPostReportActionWorkflow> workflows;
+    private readonly Dictionary<(string ToolId, int Version), IPostReportActionWorkflow> workflows;
 
     public PostReportActionWorkflowCatalog(
         IEnumerable<IPostReportActionWorkflow> registeredWorkflows,

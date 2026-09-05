@@ -255,7 +255,7 @@ public sealed class TicketUpdateActionWorkflowTests(PostgresRepositoryFixture po
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/comments"))
+            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/comments", StringComparison.Ordinal))
             {
                 return Json(HttpStatusCode.OK, Array.Empty<object>());
             }
@@ -284,6 +284,7 @@ public sealed class TicketUpdateActionWorkflowTests(PostgresRepositoryFixture po
 
         protected override void Dispose(bool disposing)
         {
+            base.Dispose(disposing);
         }
 
         private static HttpResponseMessage Json(HttpStatusCode status, object value) => new(status)

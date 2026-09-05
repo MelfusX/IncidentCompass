@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 
@@ -47,7 +48,7 @@ public static class NotificationRouteSelector
 
         if (actions.NotificationRoutes.Count > 32)
         {
-            return Fail("Actions.NotificationRoutes", actions.NotificationRoutes.Count.ToString(),
+            return Fail("Actions.NotificationRoutes", actions.NotificationRoutes.Count.ToString(CultureInfo.InvariantCulture),
                 "at most 32 ordered routes", out field, out value, out expectation);
         }
 

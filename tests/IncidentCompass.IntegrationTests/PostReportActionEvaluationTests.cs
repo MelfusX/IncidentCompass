@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Application.Governance.PostReportActions;
@@ -218,7 +219,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
         Assert.Equal(options.MaximumAttempts, Convert.ToInt32(await ActionApprovalTestSupport.ScalarAsync(
             database.ConnectionString,
             "SELECT attempt_count FROM incidentcompass.post_report_action_intents WHERE origin_report_id = @id;",
-            ("id", reportId))));
+            ("id", reportId)), CultureInfo.InvariantCulture));
 
         await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
         await pump.FillAvailableSlotsAsync(
@@ -234,7 +235,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
         Assert.Equal(options.MaximumAttempts, Convert.ToInt32(await ActionApprovalTestSupport.ScalarAsync(
             database.ConnectionString,
             "SELECT attempt_count FROM incidentcompass.post_report_action_intents WHERE origin_report_id = @id;",
-            ("id", reportId))));
+            ("id", reportId)), CultureInfo.InvariantCulture));
         Assert.Equal(1, await CountAsync(database.ConnectionString,
             "SELECT count(*) FROM incidentcompass.action_approvals WHERE origin_report_id = @id;",
             ("id", reportId)));
@@ -296,7 +297,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
         Assert.Equal(options.MaximumAttempts, Convert.ToInt32(await ActionApprovalTestSupport.ScalarAsync(
             database.ConnectionString,
             "SELECT attempt_count FROM incidentcompass.post_report_action_intents WHERE origin_report_id = @id;",
-            ("id", reportId))));
+            ("id", reportId)), CultureInfo.InvariantCulture));
         Assert.Equal(0, GetTool(services).ExecutionCalls);
     }
 

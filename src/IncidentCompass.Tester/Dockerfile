@@ -3,7 +3,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Directory.Build.props IncidentCompass.slnx ./
+COPY Directory.Build.props Directory.Packages.props IncidentCompass.slnx ./
 COPY src/IncidentCompass.Tester/IncidentCompass.Tester.csproj src/IncidentCompass.Tester/
 COPY src/IncidentCompass.Tester/packages.lock.json src/IncidentCompass.Tester/
 RUN dotnet restore src/IncidentCompass.Tester/IncidentCompass.Tester.csproj --locked-mode

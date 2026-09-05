@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Fingerprinting;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
@@ -15,17 +16,17 @@ internal static class FaultGroupingSettingsLoadValidator
     {
         if (settings.LookbackMinutes <= 0)
         {
-            throw Invalid("FaultGrouping.LookbackMinutes", settings.LookbackMinutes.ToString(), "a positive integer");
+            throw Invalid("FaultGrouping.LookbackMinutes", settings.LookbackMinutes.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (settings.SilenceWindowMinutes <= 0)
         {
-            throw Invalid("FaultGrouping.SilenceWindowMinutes", settings.SilenceWindowMinutes.ToString(), "a positive integer");
+            throw Invalid("FaultGrouping.SilenceWindowMinutes", settings.SilenceWindowMinutes.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (settings.FingerprintVersion <= 0)
         {
-            throw Invalid("FaultGrouping.FingerprintVersion", settings.FingerprintVersion.ToString(), "a positive integer");
+            throw Invalid("FaultGrouping.FingerprintVersion", settings.FingerprintVersion.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         ValidateFingerprintRules(settings.Rules);
@@ -33,12 +34,12 @@ internal static class FaultGroupingSettingsLoadValidator
 
         if (settings.Recurrence is { EscalateAfterCount: <= 0 } recurrence)
         {
-            throw Invalid("FaultGrouping.Recurrence.EscalateAfterCount", recurrence.EscalateAfterCount.ToString(), "a positive integer");
+            throw Invalid("FaultGrouping.Recurrence.EscalateAfterCount", recurrence.EscalateAfterCount.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (settings.MassIssue.MinNeighborCount <= 0)
         {
-            throw Invalid("FaultGrouping.MassIssue.MinNeighborCount", settings.MassIssue.MinNeighborCount.ToString(), "a positive integer");
+            throw Invalid("FaultGrouping.MassIssue.MinNeighborCount", settings.MassIssue.MinNeighborCount.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (!settings.MassIssue.TryGetMinimumFingerprintStrength(out _))
@@ -62,7 +63,7 @@ internal static class FaultGroupingSettingsLoadValidator
 
             if (rule.Version <= 0)
             {
-                throw Invalid(prefix + ".Version", rule.Version.ToString(), "a positive integer");
+                throw Invalid(prefix + ".Version", rule.Version.ToString(CultureInfo.InvariantCulture), "a positive integer");
             }
 
             ValidateSelector(prefix + ".ServiceName", rule.ServiceName);
@@ -105,7 +106,7 @@ internal static class FaultGroupingSettingsLoadValidator
 
             if (rule.SilenceWindowMinutes <= 0)
             {
-                throw Invalid(prefix + ".SilenceWindowMinutes", rule.SilenceWindowMinutes.ToString(), "a positive integer");
+                throw Invalid(prefix + ".SilenceWindowMinutes", rule.SilenceWindowMinutes.ToString(CultureInfo.InvariantCulture), "a positive integer");
             }
 
             ValidateSelector(prefix + ".ServiceName", rule.ServiceName);

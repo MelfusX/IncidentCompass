@@ -31,7 +31,7 @@ internal static partial class SourceStackTraceExtractor
         return [];
     }
 
-    private static IReadOnlyList<SourceFrameCandidate> ParseFrames(string value)
+    private static List<SourceFrameCandidate> ParseFrames(string value)
     {
         var frames = new List<SourceFrameCandidate>();
         foreach (Match match in DotNetFrameRegex().Matches(value))

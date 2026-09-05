@@ -69,7 +69,7 @@ internal static class MemorySearchLexicalFilter
     }
 
     private static bool HasSufficientCoverage(
-        IReadOnlySet<string> queryTokens,
+        HashSet<string> queryTokens,
         IReadOnlySet<string> valueTokens)
     {
         var requiredMatches = Math.Max(1, (queryTokens.Count + 1) / 2);

@@ -48,7 +48,7 @@ internal static class GitHubIssueRanker
             MidpointRounding.AwayFromZero);
     }
 
-    private static int Exact(string? phrase, string text, IReadOnlySet<string> labels)
+    private static int Exact(string? phrase, string text, HashSet<string> labels)
     {
         var normalized = TicketTextNormalizer.NormalizePhrase(phrase);
         return normalized.Length > 0 &&

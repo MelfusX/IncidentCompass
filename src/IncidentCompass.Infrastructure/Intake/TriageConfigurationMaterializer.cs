@@ -49,7 +49,7 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
         }
     }
 
-    private static IReadOnlyDictionary<string, T> RequireDictionary<T>(
+    private static Dictionary<string, T> RequireDictionary<T>(
         IReadOnlyDictionary<string, T>? values,
         string name,
         bool allowEmpty = false)
@@ -71,7 +71,7 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
         return value ?? throw TriageConfigurationLoadException.MissingSection(name);
     }
 
-    private static IReadOnlyDictionary<string, TriageRoleSettings> ResolveRoleReferences(
+    private static Dictionary<string, TriageRoleSettings> ResolveRoleReferences(
         IReadOnlyDictionary<string, TriageRoleSettings> roles,
         JsonObject referencesNode)
     {
@@ -95,7 +95,7 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
         };
     }
 
-    private static IReadOnlyCollection<TriageRuleSettings> NormalizeRules(IReadOnlyCollection<TriageRuleSettings> rules)
+    private static TriageRuleSettings[] NormalizeRules(IReadOnlyCollection<TriageRuleSettings> rules)
     {
         return rules
             .Select(rule => rule with
@@ -105,7 +105,7 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
             .ToArray();
     }
 
-    private static IReadOnlyDictionary<string, string> NormalizeCurrentReleases(
+    private static Dictionary<string, string> NormalizeCurrentReleases(
         IReadOnlyDictionary<string, string>? currentReleases)
     {
         return currentReleases?.ToDictionary(

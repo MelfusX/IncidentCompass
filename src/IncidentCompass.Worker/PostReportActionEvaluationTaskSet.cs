@@ -1,6 +1,6 @@
 namespace IncidentCompass.Worker;
 
-internal sealed class PostReportActionEvaluationTaskSet(
+internal sealed partial class PostReportActionEvaluationTaskSet(
     ILogger<PostReportActionEvaluationPump> logger)
 {
     private readonly List<(Task Task, CancellationTokenSource Cancellation)> evaluations = [];
@@ -21,8 +21,7 @@ internal sealed class PostReportActionEvaluationTaskSet(
             }
 
             evaluations.RemoveAt(index);
-            await ObserveAsync(evaluation, cancellationToken,
-                "Post-report action evaluation failed after claim.");
+            await ObserveAsync(evaluation, LogEvaluationFailedAfterClaim, cancellationToken);
         }
     }
 
@@ -37,8 +36,7 @@ internal sealed class PostReportActionEvaluationTaskSet(
 
         foreach (var evaluation in running)
         {
-            await ObserveAsync(evaluation, CancellationToken.None,
-                "Post-report action evaluation failed while draining.");
+            await ObserveAsync(evaluation, LogEvaluationFailedWhileDraining, CancellationToken.None);
         }
     }
 
@@ -57,8 +55,8 @@ internal sealed class PostReportActionEvaluationTaskSet(
 
     private async Task ObserveAsync(
         (Task Task, CancellationTokenSource Cancellation) evaluation,
-        CancellationToken cancellationToken,
-        string failureMessage)
+        Action<ILogger, Exception> logFailure,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -73,11 +71,17 @@ internal sealed class PostReportActionEvaluationTaskSet(
         }
         catch (Exception exception)
         {
-            logger.LogWarning(exception, failureMessage);
+            logFailure(logger, exception);
         }
         finally
         {
             evaluation.Cancellation.Dispose();
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-report action evaluation failed after claim.")]
+    private static partial void LogEvaluationFailedAfterClaim(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-report action evaluation failed while draining.")]
+    private static partial void LogEvaluationFailedWhileDraining(ILogger logger, Exception exception);
 }

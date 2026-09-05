@@ -2,7 +2,7 @@ namespace IncidentCompass.Application.Governance.Tools;
 
 internal sealed class ExternalActionToolRegistry : IExternalActionToolRegistry
 {
-    private readonly IReadOnlyDictionary<string, IExternalActionTool> tools;
+    private readonly Dictionary<string, IExternalActionTool> tools;
 
     public ExternalActionToolRegistry(
         IEnumerable<IExternalActionTool> registeredTools,

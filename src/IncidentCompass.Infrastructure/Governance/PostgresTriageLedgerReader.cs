@@ -1,3 +1,4 @@
+using System.Globalization;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
@@ -67,7 +68,7 @@ internal sealed class PostgresTriageLedgerReader(PostgresDataSourceProvider data
         command.AddParameter("tool_name", toolName);
         command.AddParameter("decision", decision.ToDbString());
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
     }
 
     public Task<bool> HasSuccessfulToolResultAsync(

@@ -397,6 +397,8 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
     private sealed class RepromptModelClient(RepromptScenario scenario) : IAiModelClient
     {
+        private static readonly string[] ValidWorkerKeyFacts = ["Valid worker output."];
+
         private int orchestratorCalls;
 
         public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
@@ -483,7 +485,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
             return Response(request, JsonSerializer.Serialize(new
             {
-                keyFacts = new[] { "Valid worker output." },
+                keyFacts = ValidWorkerKeyFacts,
                 candidateClassification = "SimpleKnownError",
                 needsDeeperContext = false,
                 rationale = "Valid worker output."

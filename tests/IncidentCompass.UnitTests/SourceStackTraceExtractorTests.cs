@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application.SourceContext;
 using IncidentCompass.Domain.Incidents;
@@ -6,6 +7,8 @@ namespace IncidentCompass.UnitTests;
 
 public sealed class SourceStackTraceExtractorTests
 {
+    private static readonly string[] NonFrameStringArray = ["not", "a string"];
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -62,7 +65,7 @@ public sealed class SourceStackTraceExtractorTests
         var signal = CreateSignal(
             new Dictionary<string, object?>
             {
-                ["exception.stacktrace"] = new[] { "not", "a string" },
+                ["exception.stacktrace"] = NonFrameStringArray,
                 ["exception.stack_trace"] = "not a frame"
             },
             new Dictionary<string, object?>
@@ -102,7 +105,7 @@ public sealed class SourceStackTraceExtractorTests
         string? description,
         string? errorMessage)
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z");
+        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
         return new Signal(
             Guid.NewGuid(), "tenant", "otel", null, null, null, FingerprintStrength.Strong, true,
             null, false, null, null, null, null, null, "checkout", "test", null, "Error",

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Diagnostics;
 
 namespace IncidentCompass.Api;
 
-internal sealed class ApiExceptionHandler(
+internal sealed partial class ApiExceptionHandler(
     ILogger<ApiExceptionHandler> logger)
     : IExceptionHandler
 {
@@ -28,7 +28,7 @@ internal sealed class ApiExceptionHandler(
     {
         if (exception is DomainException)
         {
-            logger.LogError(exception, "A domain exception reached the API error boundary.");
+            LogDomainExceptionReachedBoundary(logger, exception);
         }
 
         return exception switch
@@ -42,4 +42,7 @@ internal sealed class ApiExceptionHandler(
             _ => null
         };
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "A domain exception reached the API error boundary.")]
+    private static partial void LogDomainExceptionReachedBoundary(ILogger logger, Exception exception);
 }

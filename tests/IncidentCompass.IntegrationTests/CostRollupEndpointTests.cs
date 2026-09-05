@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -166,7 +167,7 @@ public sealed class CostRollupEndpointTests(PostgresRepositoryFixture postgres)
             VALUES (@fault, @job, 1, 'ModelCall', @rationale, @config, @at);
             """,
             ("fault", origin.FaultId), ("job", origin.JobId), ("config", origin.ConfigHash),
-            ("at", DateTimeOffset.Parse(atUtc)),
+            ("at", DateTimeOffset.Parse(atUtc, CultureInfo.InvariantCulture)),
             ("rationale", JsonSerializer.Serialize(new
             {
                 kind = "orchestrator",
@@ -202,8 +203,8 @@ public sealed class CostRollupEndpointTests(PostgresRepositoryFixture postgres)
             "SET enable_seqscan = off; EXPLAIN (COSTS OFF) " + PostgresModelCostRollupRepository.ModelCallsSql,
             connection);
         command.Parameters.AddWithValue("tenant_id", "tenant-a");
-        command.Parameters.AddWithValue("from_utc", DateTimeOffset.Parse("2026-08-03T10:00:00Z"));
-        command.Parameters.AddWithValue("to_utc", DateTimeOffset.Parse("2026-08-03T11:00:00Z"));
+        command.Parameters.AddWithValue("from_utc", DateTimeOffset.Parse("2026-08-03T10:00:00Z", CultureInfo.InvariantCulture));
+        command.Parameters.AddWithValue("to_utc", DateTimeOffset.Parse("2026-08-03T11:00:00Z", CultureInfo.InvariantCulture));
         var lines = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
         while (await reader.ReadAsync(TestContext.Current.CancellationToken)) lines.Add(reader.GetString(0));

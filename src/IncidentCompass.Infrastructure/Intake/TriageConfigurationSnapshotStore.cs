@@ -6,7 +6,7 @@ using Npgsql;
 
 namespace IncidentCompass.Infrastructure.Intake;
 
-internal sealed class TriageConfigurationSnapshotStore(
+internal sealed partial class TriageConfigurationSnapshotStore(
     PostgresDataSourceProvider dataSourceProvider,
     TimeProvider timeProvider,
     ILogger<TriageConfigurationSnapshotStore> logger) : ITriageConfigurationSnapshotStore
@@ -44,12 +44,14 @@ internal sealed class TriageConfigurationSnapshotStore(
         }
         catch (PostgresConnectionConfigurationException exception)
         {
-            logger.LogWarning(
-                exception,
-                "Triage configuration snapshot for hash '{ConfigHash}' was not persisted because PostgreSQL is not configured.",
-                configHash);
+            LogSnapshotNotPersisted(logger, exception, configHash);
         }
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Triage configuration snapshot for hash '{ConfigHash}' was not persisted because PostgreSQL is not configured.")]
+    private static partial void LogSnapshotNotPersisted(ILogger logger, Exception exception, string configHash);
 
     public Task<TriageConfigurationSnapshotDocument?> GetAsync(
         string configHash,

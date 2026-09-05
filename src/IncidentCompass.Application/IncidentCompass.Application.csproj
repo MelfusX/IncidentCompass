@@ -5,18 +5,27 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentValidation" Version="12.1.1" />
-    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.11" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
   </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <!-- CA1716 fires on the "Get" feature-action namespaces (e.g. Governance.ActionApprovals.Get,
+         Investigation.Reports.Get). "Get"/"List"/"Create" are the documented CQRS-lite
+         feature/action folder convention (docs/code-organization.md); renaming them to dodge a
+         reserved-keyword-in-other-languages warning would break that convention project-wide.
+         CA1822 fires on ToolRuleEngine, a deliberately instantiable DI-composed governance
+         collaborator on the single tool-policy decision path. Making its methods static would
+         remove that seam; backlog item IC-BL-068 owns the shape of this file. -->
+    <NoWarn>$(NoWarn);CA1716;CA1822</NoWarn>
   </PropertyGroup>
 
 </Project>

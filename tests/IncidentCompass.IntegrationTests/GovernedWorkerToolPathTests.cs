@@ -427,6 +427,8 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
 
     private sealed class SyntheticGovernanceModelClient(GovernanceScenario scenario) : IAiModelClient
     {
+        private static readonly string[] SyntheticKeyFacts = ["Synthetic tool path exercised."];
+
         private int orchestratorCalls;
 
         public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
@@ -462,7 +464,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
             {
                 var toolName = scenario == GovernanceScenario.UnknownTool
                     ? "unknown_tool"
-                    : request.Tools?.FirstOrDefault()?.Name ?? "tool_x";
+                    : (request.Tools is { Count: > 0 } tools ? tools[0].Name : null) ?? "tool_x";
                 return Response(request, "propose " + toolName, [ToolCall("worker-" + toolName + "-" + Guid.NewGuid().ToString("N"), toolName, "{}")]);
             }
 
@@ -498,7 +500,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         {
             return JsonSerializer.Serialize(new
             {
-                keyFacts = new[] { "Synthetic tool path exercised." },
+                keyFacts = SyntheticKeyFacts,
                 candidateClassification = "SimpleKnownError",
                 needsDeeperContext = false,
                 rationale

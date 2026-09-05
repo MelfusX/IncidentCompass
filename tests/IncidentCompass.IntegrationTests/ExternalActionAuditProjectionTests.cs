@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using IncidentCompass.Application.Governance.ActionApprovals;
@@ -419,7 +420,7 @@ public sealed class ExternalActionAuditProjectionTests(PostgresRepositoryFixture
         string sql,
         Guid actionId) =>
         Convert.ToString(await ActionApprovalTestSupport.ScalarAsync(
-            connectionString, sql, ("id", actionId)))!;
+            connectionString, sql, ("id", actionId)), CultureInfo.InvariantCulture)!;
 
     private sealed record ProjectionCase(
         string ToolId,

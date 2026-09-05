@@ -84,7 +84,7 @@ internal sealed class TicketSearchTool(ITicketSearch ticketSearch, TimeProvider 
             timeProvider.GetUtcNow());
     }
 
-    private static JsonElement CreateOutput(TicketSearchResult result, IReadOnlyList<TriageArtifact> artifacts)
+    private static JsonElement CreateOutput(TicketSearchResult result, TriageArtifact[] artifacts)
     {
         var items = new JsonArray();
         for (var index = 0; index < result.Matches.Count; index++)

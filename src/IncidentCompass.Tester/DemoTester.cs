@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 
 namespace IncidentCompass.Tester;
@@ -14,7 +15,7 @@ internal sealed class DemoTester(HttpClient client, TesterOptions options)
     private async Task<int> RunWithinTotalDeadlineAsync(CancellationToken cancellationToken)
     {
         await EnsureHealthyAsync(cancellationToken);
-        var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+        var runId = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N")[..8];
         var emission = await OtlpDemoEmitter.EmitFailureAsync(ResolveOtlpTracesEndpoint(options.BaseUrl), runId, cancellationToken);
         Console.WriteLine($"OTLP SDK scenario exported error span {emission.TraceId}/{emission.SpanId} for {emission.ServiceName}.");
         var scenarios = DemoScenario.CreateAll(runId)
