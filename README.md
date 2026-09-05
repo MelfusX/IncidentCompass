@@ -82,8 +82,10 @@ complete the multi-turn trajectory or reach a correct conclusion.
   closed provenance, lifecycle audit events and API-key-only list, get, approve and reject APIs.
   A backend-owned proposal use case reuses the same rule engine as immediate reads, enforces exact
   registered action identity and snapshotted action grants, and creates requested or auto-approved
-  rows without invoking an adapter. Synthetic tests are the only caller in this slice; there is no
-  production proposal caller, action pump or external provider call.
+  rows without invoking an adapter. A bounded Worker dispatcher expires and supersedes stale rows,
+  claims approved rows with a durable fence, verifies current policy and adapter binding, then sends
+  the exact frozen bytes at most once. Synthetic tests are the only action caller and adapter; no
+  production external action or provider call ships in this slice.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -163,9 +165,10 @@ Start with [Architecture](docs/architecture.md), [Security model](docs/security-
 IncidentCompass is reference-quality software for local review, not a production incident platform.
 The current scope provides a minimal host-managed API-key boundary, not enterprise identity, RBAC,
 managed key distribution or a secret store. It also does not provide a stable extension framework,
-a UI, external action dispatch or provider adapters, an MCP surface, a usage dashboard or a general
-document-ingestion system. The action approval API records and reviews frozen proposals; it does not
-itself execute them.
+a UI, production external-action caller or provider adapter, an MCP surface, a usage dashboard or a
+general document-ingestion system. The action approval API records and reviews frozen proposals;
+the separate Worker dispatcher can execute only a registered backend adapter, and none is registered
+by the production composition in this slice.
 Demo auth and Compose defaults remain local-only; non-local operators must inject high-entropy key
 digests through protected host configuration and apply the usual transport and deployment controls.
 

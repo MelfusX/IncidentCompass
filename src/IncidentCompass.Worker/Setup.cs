@@ -19,12 +19,21 @@ public static class Setup
         services.TryAddEnumerable(ServiceDescriptor.Singleton<
             IValidateOptions<WorkerOptions>,
             WorkerOptionsValidator>());
+        services
+            .AddOptions<ActionDispatchOptions>()
+            .Bind(configuration.GetSection(ActionDispatchOptions.SectionName))
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            IValidateOptions<ActionDispatchOptions>,
+            ActionDispatchOptionsValidator>());
 
         services.AddScoped<IUserContext>(
             serviceProvider => serviceProvider.GetRequiredService<IBackgroundUserContext>());
         services.TryAddSingleton<WorkerJobLeaseRenewer>();
         services.TryAddSingleton<WorkerJobPump>();
+        services.TryAddSingleton<WorkerActionPump>();
         services.AddHostedService<Worker>();
+        services.AddHostedService<ActionDispatchWorker>();
 
         return services;
     }

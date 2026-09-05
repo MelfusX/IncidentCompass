@@ -9,6 +9,7 @@ internal sealed class PostgresActionDispatchRepository(
     IActionApprovalTransactionFaultInjector faultInjector) : IActionDispatchRepository
 {
     private readonly PostgresActionDispatchTransaction transitions = new(faultInjector);
+    private readonly PostgresActionDispatchRecovery recovery = new(faultInjector);
 
     public Task<IReadOnlyList<ActionDispatchCandidate>> FindCandidatesAsync(
         int limit,
@@ -24,6 +25,11 @@ internal sealed class PostgresActionDispatchRepository(
         int limit,
         CancellationToken cancellationToken) =>
         FindAsync(PostgresActionDispatchQueries.FindSupersededAsync, limit, cancellationToken);
+
+    public Task<IReadOnlyList<ActionDispatchCandidate>> FindRecoveryCandidatesAsync(
+        int limit,
+        CancellationToken cancellationToken) =>
+        FindAsync(PostgresActionDispatchQueries.FindRecoveryAsync, limit, cancellationToken);
 
     public Task<ActionDispatchClaim?> TryClaimAsync(
         Guid actionId,
@@ -57,6 +63,9 @@ internal sealed class PostgresActionDispatchRepository(
 
     public Task<bool> TryFailSupersededAsync(Guid actionId, CancellationToken cancellationToken) =>
         RunAsync(actionId, transitions.FailSupersededAsync, cancellationToken);
+
+    public Task<bool> TryFailOutcomeUnknownAsync(Guid actionId, CancellationToken cancellationToken) =>
+        RunAsync(actionId, recovery.FailOutcomeUnknownAsync, cancellationToken);
 
     private async Task<IReadOnlyList<ActionDispatchCandidate>> FindAsync(
         Func<NpgsqlConnection, int, CancellationToken, Task<IReadOnlyList<ActionDispatchCandidate>>> query,

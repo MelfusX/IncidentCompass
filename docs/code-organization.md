@@ -68,8 +68,9 @@ IncidentCompass.Application/
 
 `Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/`, `SourceContext/` and `Tickets/` are the current
 folders. `Governance/` contains the common worker-tool contract, validation primitives, triage
-ledger ports and post-report action approval contracts/use cases. PostgreSQL action approval,
-provenance and dispatch-transition implementations stay under `Infrastructure/Governance/ActionApprovals/`.
+ledger ports and post-report action approval contracts/use cases, including the deterministic approved
+action dispatcher. PostgreSQL action approval, provenance, claim, recovery and terminal-transition
+implementations stay under `Infrastructure/Governance/ActionApprovals/`.
 The single live tool rule engine and the immediate/action capability contracts live under
 `Governance/Tools/`; investigation-only execution orchestration stays under `Investigation/Jobs/`.
 `Memory/` contains memory_search contracts, seed records and retrieval orchestration.
@@ -79,6 +80,11 @@ outcome contracts and backend limitation policy live under `Investigation/Report
 `Tickets/` contains the provider-neutral search port, bounded signal-field extraction and worker
 tool. Provider query syntax, HTTP transport, credentials, response parsing and ranking stay under
 `Infrastructure/Tickets/`. Ticket writes must use a separate future port and governed action path.
+
+The Worker keeps triage-job and approved-action scheduling in separate pump/task-set types. The action
+pump owns only bounded polling, task observation and shutdown draining; current-policy checks, exact
+payload dispatch and terminal workflow decisions remain in Application, while database fencing remains
+in Infrastructure.
 
 Use `Query.cs` instead of `Command.cs` when the use case is read-only. Avoid repeating the full folder context in file names, such as `GetCurrentUserQuery.cs`, when `Users/GetCurrent/Query.cs` already communicates the intent.
 

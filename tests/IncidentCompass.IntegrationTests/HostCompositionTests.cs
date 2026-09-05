@@ -77,10 +77,12 @@ public sealed class HostCompositionTests
             ValidateScopes = true
         });
 
-        // Worker + Infrastructure warmups for triage config and optional memory seeding.
+        // Investigation/action workers + Infrastructure warmups for config and optional memory seeding.
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        Assert.Equal(3, hostedServices.Length);
+        Assert.Equal(4, hostedServices.Length);
         Assert.Contains(hostedServices, service => service is WorkerService);
+        Assert.Contains(hostedServices, service =>
+            service.GetType().FullName == "IncidentCompass.Worker.ActionDispatchWorker");
         Assert.Contains(hostedServices, service =>
             service.GetType().FullName == "IncidentCompass.Infrastructure.Intake.TriageConfigurationWarmupHostedService");
         Assert.Contains(hostedServices, service =>
