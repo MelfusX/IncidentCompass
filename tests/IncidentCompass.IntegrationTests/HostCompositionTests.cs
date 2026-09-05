@@ -2,11 +2,16 @@ using System.Runtime.CompilerServices;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.PostReportActions;
+using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Notifications;
 using IncidentCompass.Infrastructure;
 using IncidentCompass.Domain.Incidents.Actions;
+using IncidentCompass.Infrastructure.Notifications.Telegram;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using IncidentCompass.Worker;
@@ -81,7 +86,9 @@ public sealed class HostCompositionTests
 
         // Investigation/action workers + Infrastructure warmups for config and optional memory seeding.
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        Assert.Equal(5, hostedServices.Length);
+        Assert.Equal(6, hostedServices.Length);
+        Assert.Contains(hostedServices, service =>
+            service.GetType().FullName == "IncidentCompass.Worker.TelegramConfigurationStartupValidator");
         Assert.Contains(hostedServices, service => service is WorkerService);
         Assert.Contains(hostedServices, service =>
             service.GetType().FullName == "IncidentCompass.Worker.ActionDispatchWorker");
@@ -127,6 +134,73 @@ public sealed class HostCompositionTests
             () => provider.GetServices<IHostedService>().ToArray());
 
         Assert.Contains("does not match its backend descriptor", exception.Message);
+    }
+
+    [Fact]
+    public async Task ApiSharedComposition_AcceptsValidTelegramRouteWithoutWorkerCredentials()
+    {
+        using var host = CreateTelegramHost(
+            includeWorker: false, new Dictionary<string, string?>());
+
+        await host.StartAsync();
+
+        using var scope = host.Services.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<IAgentToolRegistry>();
+        Assert.True(registry.TryGet(TelegramNotificationToolDescriptor.ToolId, out var descriptor));
+        Assert.Equal(TelegramNotificationToolDescriptor.LogicalTargetId, descriptor.LogicalTargetId);
+        Assert.DoesNotContain(
+            scope.ServiceProvider.GetRequiredService<PostReportActionWorkflowCatalog>().Workflows,
+            workflow => workflow.ToolId == TelegramNotificationToolDescriptor.ToolId);
+        Assert.DoesNotContain(
+            scope.ServiceProvider.GetServices<IExternalActionTool>(),
+            tool => tool.Definition.Name == TelegramNotificationToolDescriptor.ToolId);
+        Assert.Null(host.Services.GetRequiredService<IConfiguration>()["IncidentCompass:Telegram:BotToken"]);
+        Assert.Null(host.Services.GetRequiredService<IConfiguration>()["IncidentCompass:Telegram:ChatId"]);
+    }
+
+    [Fact]
+    public async Task WorkerTelegramBinding_RejectsMissingHostBindingWithoutExposingSecrets()
+    {
+        using var host = CreateTelegramHost(
+            includeWorker: true, new Dictionary<string, string?>());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => StartTelegramValidatorAsync(host.Services));
+
+        AssertTelegramBindingFailureIsSecretFree(exception, Array.Empty<string>());
+    }
+
+    [Fact]
+    public async Task WorkerTelegramBinding_RejectsMismatchedRouteWithoutExposingSecrets()
+    {
+        const string token = "123456:abcdefghijklmnopqrstuvwxyz";
+        const string chatId = "-100987654321";
+        using var host = CreateTelegramHost(includeWorker: true, new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Telegram:Enabled"] = "true",
+            ["IncidentCompass:Telegram:RouteId"] = "other_route",
+            ["IncidentCompass:Telegram:ChatId"] = chatId,
+            ["IncidentCompass:Telegram:BotToken"] = token
+        });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => StartTelegramValidatorAsync(host.Services));
+
+        AssertTelegramBindingFailureIsSecretFree(exception, [token, chatId, "api.telegram.org"]);
+    }
+
+    [Fact]
+    public async Task WorkerTelegramBinding_AcceptsExactEnabledRouteBinding()
+    {
+        using var host = CreateTelegramHost(includeWorker: true, new Dictionary<string, string?>
+        {
+            ["IncidentCompass:Telegram:Enabled"] = "true",
+            ["IncidentCompass:Telegram:RouteId"] = "telegram_ops",
+            ["IncidentCompass:Telegram:ChatId"] = "-100987654321",
+            ["IncidentCompass:Telegram:BotToken"] = "123456:abcdefghijklmnopqrstuvwxyz"
+        });
+
+        await StartTelegramValidatorAsync(host.Services);
     }
 
     [Fact]
@@ -333,6 +407,85 @@ public sealed class HostCompositionTests
                 services.AddInfrastructure(context.Configuration);
             })
             .Build();
+    }
+
+    private static IHost CreateTelegramHost(
+        bool includeWorker,
+        IReadOnlyDictionary<string, string?> telegramValues)
+    {
+        var values = new Dictionary<string, string?>(telegramValues)
+        {
+            ["IncidentCompass:ModelGateway:Provider"] = "Mock",
+            ["IncidentCompass:ModelGateway:DefaultModel"] = "mock-chat",
+            ["IncidentCompass:Embeddings:Provider"] = "Mock",
+            ["IncidentCompass:Embeddings:DefaultModel"] = "mock-embedding"
+        };
+        return new HostBuilder()
+            .ConfigureAppConfiguration(configuration => configuration.AddInMemoryCollection(values))
+            .ConfigureServices((context, services) =>
+            {
+                services.AddLogging();
+                services.AddTestApplication(context.Configuration);
+                services.AddInfrastructure(context.Configuration);
+                services.RemoveAll<ITriageConfigurationRepository>();
+                services.AddSingleton<ITriageConfigurationRepository>(
+                    new StaticNotificationConfiguration(CreateTelegramConfiguration()));
+                if (includeWorker)
+                {
+                    services.AddWorker(context.Configuration);
+                }
+            })
+            .Build();
+    }
+
+    private static TriageConfiguration CreateTelegramConfiguration() => new(
+        "telegram-host-composition",
+        new Dictionary<string, TriageProviderSettings>(StringComparer.Ordinal),
+        new Dictionary<string, TriageRouteSettings>(StringComparer.Ordinal),
+        new OrchestratorSettings("orchestrator", "chat", ["delegate", "publish_report"],
+            new OrchestratorBudgetSettings(1, 1000, 30)),
+        new Dictionary<string, TriageRoleSettings>(StringComparer.Ordinal),
+        new Dictionary<string, TriageToolSettings>(StringComparer.Ordinal)
+        {
+            [TelegramNotificationToolDescriptor.ToolId] = new(
+                "external_action", null, null, null, "notification",
+                TelegramNotificationToolDescriptor.LogicalTargetId)
+        },
+        [],
+        new IngestionSettings("tenant", ["tester"]),
+        new FaultGroupingSettings(15, 30, 1, new MassIssueSettings(5, "strong")),
+        RedactionSettings.Default)
+    {
+        Actions = new TriageActionSettings(
+            [TelegramNotificationToolDescriptor.ToolId], "live", false, 60)
+        {
+            NotificationRoutes =
+            [
+                new NotificationRoute(
+                    "telegram_ops", TelegramNotificationToolDescriptor.ToolId,
+                    null, null, ["error"])
+            ]
+        }
+    };
+
+    private static Task StartTelegramValidatorAsync(IServiceProvider services)
+    {
+        var validator = services.GetServices<IHostedService>().Single(service =>
+            service.GetType().FullName == "IncidentCompass.Worker.TelegramConfigurationStartupValidator");
+        return validator.StartAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static void AssertTelegramBindingFailureIsSecretFree(
+        InvalidOperationException exception,
+        IReadOnlyCollection<string> sentinels)
+    {
+        Assert.Equal(
+            "Telegram host binding does not match the enabled public notification route.",
+            exception.Message);
+        foreach (var sentinel in sentinels)
+        {
+            Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
+        }
     }
 
     private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")

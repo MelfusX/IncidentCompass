@@ -1,5 +1,6 @@
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Governance.ActionApprovals;
+using IncidentCompass.Application.Notifications;
 using IncidentCompass.Domain.Incidents.Actions;
 
 namespace IncidentCompass.IntegrationTests;
@@ -41,5 +42,10 @@ internal static class ActionDispatchTestConfiguration
                 mode.ToStorageValue(),
                 requireApproval,
                 60)
+            {
+                NotificationRoutes = allowed
+                    ? [new NotificationRoute("test-route", toolId, null, null, ["error", "critical", "fatal"])]
+                    : []
+            }
         };
 }

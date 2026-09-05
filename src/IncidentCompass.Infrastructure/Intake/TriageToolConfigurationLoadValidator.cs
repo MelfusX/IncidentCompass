@@ -1,6 +1,7 @@
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Notifications;
 using IncidentCompass.Domain.Incidents.Actions;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
 
@@ -149,6 +150,12 @@ internal sealed class TriageToolConfigurationLoadValidator(IAgentToolRegistry to
             {
                 throw Invalid("Tools." + toolName + ".Mode", tool.Mode, "the global mode or a more restrictive mode");
             }
+        }
+
+        if (!NotificationRouteSelector.TryValidateConfiguration(
+                tools, actions, out var field, out var value, out var expectation))
+        {
+            throw Invalid(field, value, expectation);
         }
     }
 

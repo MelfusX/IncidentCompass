@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using IncidentCompass.Worker;
+using IncidentCompass.Infrastructure.Notifications.Telegram;
 using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.IntegrationTests;
@@ -49,6 +50,21 @@ public sealed class WorkerOptionsTests
         Assert.True(result.Failed);
         Assert.Contains(result.Failures, failure => failure.Contains("PollIntervalSeconds", StringComparison.Ordinal));
         Assert.Contains(result.Failures, failure => failure.Contains("LeaseSeconds", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ShippedTelegramBindingIsDisabledAndContainsNoCredential()
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var settings = JsonNode.Parse(File.ReadAllText(Path.Combine(
+            repositoryRoot, "src", "IncidentCompass.Worker", "appsettings.json")))!;
+        var telegram = settings["IncidentCompass"]!["Telegram"]!;
+
+        Assert.False(telegram["Enabled"]!.GetValue<bool>());
+        Assert.Equal(string.Empty, telegram["RouteId"]!.GetValue<string>());
+        Assert.Equal(string.Empty, telegram["ChatId"]!.GetValue<string>());
+        Assert.Equal(string.Empty, telegram["BotToken"]!.GetValue<string>());
+        Assert.True(new TelegramOptionsValidator().Validate(null, new TelegramOptions()).Succeeded);
     }
 
     private static string FindRepositoryRoot()

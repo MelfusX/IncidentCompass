@@ -620,7 +620,13 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
                 ["AllowedTools"] = new JsonArray("action_test"),
                 ["DefaultMode"] = "live",
                 ["RequireApprovalForAll"] = false,
-                ["ApprovalTtlMinutes"] = 60
+                ["ApprovalTtlMinutes"] = 60,
+                ["NotificationRoutes"] = new JsonArray(new JsonObject
+                {
+                    ["RouteId"] = "test-route",
+                    ["ToolId"] = "action_test",
+                    ["Severities"] = new JsonArray("error", "critical", "fatal")
+                })
             },
             ["Ingestion"] = new JsonObject
             {

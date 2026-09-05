@@ -88,8 +88,11 @@ complete the multi-turn trajectory or reach a correct conclusion.
   registered action identity and snapshotted action grants, and creates requested or auto-approved
   rows without invoking an adapter. A bounded Worker dispatcher expires and supersedes stale rows,
   claims approved rows with a durable fence, verifies current policy and adapter binding, then sends
-  the exact frozen bytes at most once. Synthetic tests are the only evaluation workflow, action caller
-  and adapter; no production external action or provider call ships in this slice.
+  the exact frozen bytes at most once. The Worker composition includes one disabled-by-default
+  Telegram notification workflow and adapter. Application composition exposes only its non-secret
+  tool descriptor; Worker composition owns the workflow, route binding, credentials and HTTP
+  adapter. Ordered backend routes select its fixed Worker-owned chat; the model, report and API
+  cannot supply a recipient or message body.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -150,6 +153,16 @@ public triage configuration or its snapshots. Requests always target `https://ap
 redirects disabled. Removing the `tickets` role or its `ticket_search` grant removes the tool from
 the model surface. Ticket create/update is not part of this read-only integration.
 
+Telegram notification is also disabled by default. Enabling it requires one exact
+`telegram_notify` entry in `Actions.AllowedTools`, one ordered `Actions.NotificationRoutes` entry
+for that tool, and Worker-only host values for `IncidentCompass__Telegram__Enabled`,
+`IncidentCompass__Telegram__RouteId`, `IncidentCompass__Telegram__ChatId` and the secret
+`IncidentCompass__Telegram__BotToken`. The public route can match normalized service and environment
+plus a closed severity subset, but it contains no chat id, token, endpoint or message template. At
+most 32 routes are allowed and the first match wins. Requests use the fixed Telegram API authority
+with redirects and `parse_mode` disabled. Dry-run and pending-approval evaluation make no HTTP call;
+only a later live approved dispatch can invoke the adapter.
+
 API-key authentication is disabled by default for the local walkthrough. A non-local API host must
 enable `IncidentCompass__ApiKeyAuth__Enabled`, set startup-static `PermitLimit` and `WindowSeconds`,
 and inject one or more credential entries containing only a stable key id, tenant id and SHA-256
@@ -170,11 +183,11 @@ Start with [Architecture](docs/architecture.md), [Security model](docs/security-
 IncidentCompass is reference-quality software for local review, not a production incident platform.
 The current scope provides a minimal host-managed API-key boundary, not enterprise identity, RBAC,
 managed key distribution or a secret store. It also does not provide a stable extension framework,
-a UI, production external-action caller or provider adapter, an MCP surface, a usage dashboard or a
-general document-ingestion system. The action approval API records and reviews frozen proposals;
-the durable evaluation queue has no registered production workflow;
-the separate Worker dispatcher can execute only a registered backend adapter, and none is registered
-by the production composition in this slice.
+a UI, general-purpose external-action framework, an MCP surface, a usage dashboard or a general
+document-ingestion system. The action approval API records and reviews frozen proposals. Production
+Worker composition registers only the Telegram notification workflow and adapter; Application/API
+composition registers its non-secret descriptor for configuration validation without credentials.
+Ticket writes and arbitrary model-selected external actions remain out of scope.
 Demo auth and Compose defaults remain local-only; non-local operators must inject high-entropy key
 digests through protected host configuration and apply the usual transport and deployment controls.
 

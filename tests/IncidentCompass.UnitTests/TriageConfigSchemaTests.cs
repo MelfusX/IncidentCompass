@@ -71,6 +71,21 @@ public sealed class TriageConfigSchemaTests
         Assert.DoesNotContain("ticket token", schema, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void PublicNotificationConfigurationHasNoTelegramCredentialOrRecipientSurface()
+    {
+        var configuration = LoadConfiguration();
+        var actions = configuration["Actions"]!.ToJsonString();
+        var schema = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.schema.json"));
+
+        Assert.DoesNotContain("BotToken", actions, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ChatId", actions, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("api.telegram.org", actions, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("BotToken", schema, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ChatId", schema, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("api.telegram.org", schema, StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static EvaluationResults EvaluateFixture(JsonNode configuration) => Evaluate(configuration);
 
     private static EvaluationResults Evaluate(JsonNode configuration)

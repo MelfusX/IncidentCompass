@@ -165,9 +165,10 @@ the existing proposal transaction's idempotency boundary.
 
 The queue stops at proposal creation. It has no adapter port, approval decision, dispatch state or
 new ledger vocabulary; `action_approvals` remains the only approval and external-dispatch outbox.
-This adds durable scheduling and recovery without creating a competing policy system. Production
-composition intentionally registers no evaluation workflow in this slice, so only synthetic Docker
-tests exercise the handoff.
+This adds durable scheduling and recovery without creating a competing policy system. Shared
+composition registers only the non-secret Telegram descriptor for configuration validation, while
+Worker composition registers its workflow and adapter. Deterministic Docker tests exercise both its
+handoff and the synthetic recovery cases without calling the real provider.
 
 ## At-Most-Once Action Dispatch Prefers Visible Uncertainty
 
@@ -182,5 +183,8 @@ the request but the response or terminal database commit is lost, IncidentCompas
 external outcome. Recovery records `dispatch_outcome_unknown` after the database deadline and fences
 late completion instead of risking a duplicate side effect. A later adapter may use the action id as
 its own idempotency key, but IncidentCompass does not rely on provider idempotency for correctness.
-Synthetic tools prove the workflow without granting production side-effect authority; production
-callers and real notification/ticket adapters remain separate work.
+Telegram is the first production side-effect adapter. Its fixed-recipient design intentionally trades
+flexibility for a smaller authority surface: public routes select only one Worker-owned binding and
+the backend generates the message. A fault-locked 30-minute cooldown after confirmed live success or
+outcome-unknown reduces duplicate alerts, but it can suppress a legitimate rapid follow-up. Ticket
+writes and general-purpose model-selected external actions remain separate work.

@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using System.Text;
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Domain.Incidents;
+using IncidentCompass.Domain.Incidents.Statuses;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 
@@ -9,6 +10,45 @@ namespace IncidentCompass.Infrastructure.Governance.ActionApprovals;
 
 internal static class PostgresActionProposalWriter
 {
+    public static async Task SupersedeAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ActionApprovalRecord action,
+        CancellationToken cancellationToken)
+    {
+        var payload = Encoding.UTF8.GetBytes("{\"code\":\"origin_report_superseded\"}");
+        const string summary = "Origin report was superseded before notification dispatch.";
+        await using var command = new NpgsqlCommand("""
+            UPDATE incidentcompass.action_approvals
+            SET state = 'failed', result_payload = @payload, result_summary = @summary,
+                failure_code = 'origin_report_superseded', completed_at_utc = clock_timestamp()
+            WHERE id = @id AND state IN ('requested', 'approved') AND dispatch_started_at IS NULL
+            RETURNING completed_at_utc;
+            """, connection, transaction);
+        command.AddParameter("payload", payload);
+        command.AddParameter("summary", summary);
+        command.AddParameter("id", action.Id);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        if (value is null)
+        {
+            return;
+        }
+
+        var completed = value is DateTimeOffset offset
+            ? offset
+            : new DateTimeOffset(DateTime.SpecifyKind((DateTime)value, DateTimeKind.Utc));
+
+        var artifactId = await PostgresActionResultWriter.InsertAsync(
+            connection, transaction, action, payload, summary,
+            "origin_report_superseded", completed, cancellationToken);
+        var actionOrigin = await PostgresActionOriginContext.ReadAsync(
+            connection, transaction, action, cancellationToken);
+        await PostgresActionLedgerWriter.InsertAsync(
+            connection, transaction, actionOrigin, TriageLedgerEventType.ActionCompleted,
+            action.ToolId, "system:supersession", "origin_report_superseded", null,
+            TriageLedgerToolStatus.Failed, "artifact:" + artifactId, completed, cancellationToken);
+    }
+
     public static async Task InsertActionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
