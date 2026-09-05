@@ -1,6 +1,7 @@
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Postgres;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -38,8 +39,8 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         Assert.Equal(
             await ReadSchemaSignatureAsync(fresh.ConnectionString),
             await ReadSchemaSignatureAsync(upgraded.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], await ReadAppliedVersionsAsync(fresh.ConnectionString));
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], await ReadAppliedVersionsAsync(fresh.ConnectionString));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], await ReadAppliedVersionsAsync(upgraded.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(fresh.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(upgraded.ConnectionString));
         Assert.Equal(
@@ -48,6 +49,14 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                 upgraded.ConnectionString,
                 "SELECT job_id FROM incidentcompass.triage_reports WHERE id = '55555555-5555-5555-5555-555555555555';"));
         await AssertReportRowsAreImmutableAsync(upgraded.ConnectionString);
+        Assert.Equal(1, await CountSqlAsync(upgraded.ConnectionString, """
+            SELECT count(*) FROM incidentcompass.ai_model_pricing
+            WHERE id = '99999999-9999-9999-9999-999999999999';
+            """));
+        Assert.Equal(1, await CountSqlAsync(upgraded.ConnectionString, """
+            SELECT count(*) FROM incidentcompass.triage_ledger
+            WHERE event_type = 'ModelCall' AND rationale LIKE '%released-safe-route%';
+            """));
 
         foreach (var tableName in new[]
                  {
@@ -71,7 +80,7 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         var secondRun = await ReadMigrationRecordsAsync(database.ConnectionString);
 
         Assert.Equal(firstRun, secondRun);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], secondRun.Select(record => record.Version));
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], secondRun.Select(record => record.Version));
         Assert.All(secondRun, record => Assert.Equal("Applied", record.Status));
     }
 
@@ -92,14 +101,16 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             await ReadAppliedVersionsAsync(database.ConnectionString));
         Assert.Equal("Failed", (await ReadMigrationRecordAsync(database.ConnectionString, 15))!.Status);
         var actionId = await SeedPreProjectionActionAsync(database.ConnectionString, "upgrade-from-v14");
+        var costHistory = await SeedCostRollupHistoryAsync(database.ConnectionString, "v14");
 
         await RunMigrationsAsync(database.ConnectionString);
 
         Assert.Equal(
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
             await ReadAppliedVersionsAsync(database.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(database.ConnectionString));
         await AssertPreProjectionActionPreservedAsync(database.ConnectionString, actionId);
+        await AssertCostRollupHistoryPreservedAsync(database.ConnectionString, costHistory);
     }
 
     [DockerAvailableFact]
@@ -119,14 +130,54 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             await ReadAppliedVersionsAsync(database.ConnectionString));
         Assert.Equal("Failed", (await ReadMigrationRecordAsync(database.ConnectionString, 16))!.Status);
         var actionId = await SeedPreProjectionActionAsync(database.ConnectionString, "upgrade-from-v15");
+        var costHistory = await SeedCostRollupHistoryAsync(database.ConnectionString, "v15");
 
         await RunMigrationsAsync(database.ConnectionString);
 
         Assert.Equal(
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
             await ReadAppliedVersionsAsync(database.ConnectionString));
         Assert.True(await HasRequiredV02IndexesAndColumnsAsync(database.ConnectionString));
         await AssertPreProjectionActionPreservedAsync(database.ConnectionString, actionId);
+        await AssertCostRollupHistoryPreservedAsync(database.ConnectionString, costHistory);
+    }
+
+    [DockerAvailableFact]
+    public async Task FailedVersion17LeavesVersion16DurableAndThenUpgradesCleanly()
+    {
+        await using var database = await MigrationDatabase.CreateAsync(fixture);
+        using (var failing = CreateServiceProvider(
+                   database.ConnectionString, new FailingMigrationInjector(17)))
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => failing
+                .GetRequiredService<PostgresMigrationRunner>()
+                .MigrateAsync(TestContext.Current.CancellationToken));
+        }
+
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            await ReadAppliedVersionsAsync(database.ConnectionString));
+        Assert.Equal("Failed", (await ReadMigrationRecordAsync(database.ConnectionString, 17))!.Status);
+        var costHistory = await SeedCostRollupHistoryAsync(database.ConnectionString, "v16");
+
+        await RunMigrationsAsync(database.ConnectionString);
+
+        Assert.Equal(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+            await ReadAppliedVersionsAsync(database.ConnectionString));
+        Assert.True(await HasRequiredV02IndexesAndColumnsAsync(database.ConnectionString));
+        await AssertCostRollupHistoryPreservedAsync(database.ConnectionString, costHistory);
+    }
+
+    [Fact]
+    public async Task FrozenPricingAndLedgerMigrationsMatchRecordedHashes()
+    {
+        Assert.Equal(
+            "381865DC333433BF3D4BFE9535681A9F1BF21E24015688EBDA300F9AB03D2D73",
+            await Sha256Async("004-observability-cost.sql"));
+        Assert.Equal(
+            "6C1DB9BC11A12A610966881AF2DA75591ECD201C79707B75217B1C419C1ADB01",
+            await Sha256Async("008-triage-ledger.sql"));
     }
 
     [DockerAvailableFact]
@@ -292,11 +343,20 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                 '{}'::jsonb, 'released-artifact', clock_timestamp());
 
             INSERT INTO incidentcompass.triage_ledger (
-                fault_id, job_id, attempt, event_type, config_hash, created_at_utc)
+                fault_id, job_id, attempt, event_type, rationale, config_hash, created_at_utc)
             VALUES (
                 '22222222-2222-2222-2222-222222222222',
-                '33333333-3333-3333-3333-333333333333', 1, 'WorkerCompleted',
+                '33333333-3333-3333-3333-333333333333', 1, 'ModelCall',
+                '{"routeId":"released-safe-route","provider":"released-provider","model":"released-model","usageSource":"provider","inputTokens":10,"outputTokens":20,"totalTokens":30}',
                 'released-config', clock_timestamp());
+
+            INSERT INTO incidentcompass.ai_model_pricing (
+                id, provider, model, currency, input_token_price_per_million,
+                output_token_price_per_million, effective_from_utc, effective_to_utc)
+            VALUES (
+                '99999999-9999-9999-9999-999999999999',
+                'released-provider', 'released-model', 'USD', 1, 2,
+                '2026-01-01T00:00:00Z', NULL);
 
             INSERT INTO incidentcompass.triage_reports (
                 id, fault_id, status, summary, classification, confidence, config_hash, created_at_utc)
@@ -505,6 +565,14 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
                 AND
                 EXISTS (
                     SELECT 1
+                    FROM pg_indexes
+                    WHERE schemaname = 'incidentcompass'
+                      AND indexname = 'ix_triage_ledger_model_call_fault_created_at'
+                      AND indexdef LIKE '%(fault_id, created_at_utc)%'
+                      AND indexdef LIKE '%event_type%ModelCall%')
+                AND
+                EXISTS (
+                    SELECT 1
                     FROM information_schema.tables
                     WHERE table_schema = 'incidentcompass'
                       AND table_name = 'post_report_action_intents')
@@ -542,6 +610,68 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
 
         var postgresException = Assert.IsType<PostgresException>(exception);
         Assert.Contains("immutable", postgresException.MessageText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task<CostRollupHistory> SeedCostRollupHistoryAsync(
+        string connectionString,
+        string suffix)
+    {
+        var origin = await ActionApprovalTestSupport.SeedOriginAsync(
+            connectionString,
+            "cost-upgrade-" + suffix);
+        var priceId = Guid.NewGuid();
+        var routeId = "upgrade-safe-route-" + suffix;
+        await ActionApprovalTestSupport.ExecuteAsync(connectionString, """
+            INSERT INTO incidentcompass.ai_model_pricing (
+                id, provider, model, currency, input_token_price_per_million,
+                output_token_price_per_million, effective_from_utc, effective_to_utc)
+            VALUES (@price, @provider, @model, 'USD', 1, 2,
+                '2026-01-01T00:00:00Z', NULL);
+            INSERT INTO incidentcompass.triage_ledger (
+                fault_id, job_id, attempt, event_type, rationale, config_hash, created_at_utc)
+            VALUES (@fault, @job, 1, 'ModelCall', @rationale, @config,
+                '2026-08-01T00:30:00Z');
+            """,
+            ("price", priceId), ("provider", "upgrade-provider-" + suffix),
+            ("model", "upgrade-model-" + suffix), ("fault", origin.FaultId),
+            ("job", origin.JobId), ("config", origin.ConfigHash),
+            ("rationale", "{\"routeId\":\"" + routeId +
+                "\",\"provider\":\"upgrade-provider-" + suffix +
+                "\",\"model\":\"upgrade-model-" + suffix +
+                "\",\"usageSource\":\"provider\",\"inputTokens\":10,\"outputTokens\":20,\"totalTokens\":30}"));
+        return new CostRollupHistory(priceId, origin.JobId, routeId);
+    }
+
+    private static async Task AssertCostRollupHistoryPreservedAsync(
+        string connectionString,
+        CostRollupHistory history)
+    {
+        Assert.Equal(1, await CountSqlAsync(connectionString, """
+            SELECT count(*) FROM incidentcompass.ai_model_pricing WHERE id = @price;
+            """, ("price", history.PriceId)));
+        Assert.Equal(1, await CountSqlAsync(connectionString, """
+            SELECT count(*) FROM incidentcompass.triage_ledger
+            WHERE job_id = @job AND event_type = 'ModelCall' AND rationale LIKE '%' || @route || '%';
+            """, ("job", history.JobId), ("route", history.RouteId)));
+    }
+
+    private static async Task<string> Sha256Async(string scriptName)
+    {
+        var directory = new DirectoryInfo(Environment.CurrentDirectory);
+        while (directory is not null)
+        {
+            var path = Path.Combine(directory.FullName, "infra", "postgres", "init", scriptName);
+            if (File.Exists(path))
+            {
+                return Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(
+                    path,
+                    TestContext.Current.CancellationToken)));
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException($"Migration script '{scriptName}' was not found.");
     }
 
     private static async Task<Guid> ReadGuidAsync(string connectionString, string sql)
@@ -616,6 +746,21 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
             connectionString,
             $"SELECT count(*) FROM incidentcompass.{tableName};"));
 
+    private static async Task<int> CountSqlAsync(
+        string connectionString,
+        string sql,
+        params (string Name, object Value)[] parameters)
+    {
+        await using var connection = await OpenAsync(connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+        foreach (var parameter in parameters)
+        {
+            command.Parameters.AddWithValue(parameter.Name, parameter.Value);
+        }
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
     private static async Task<IReadOnlyList<string>> ReadStringsAsync(string connectionString, string sql)
     {
         await using var connection = await OpenAsync(connectionString);
@@ -659,6 +804,11 @@ public sealed class PostgresMigrationTests(PostgresRepositoryFixture fixture)
         DateTimeOffset? AppliedAtUtc,
         DateTimeOffset? FailedAtUtc,
         string? ErrorMessage);
+
+    private sealed record CostRollupHistory(
+        Guid PriceId,
+        Guid JobId,
+        string RouteId);
 
     private sealed class FailingMigrationInjector(int failedVersion) : IPostgresMigrationFailureInjector
     {

@@ -36,7 +36,7 @@ flowchart LR
 - `IncidentCompass.Domain`: simple domain records, enums and workflow state types shared by Application use cases.
 - `IncidentCompass.Infrastructure`: PostgreSQL persistence adapters, intake repositories/config loading,
   post-report evaluation and action approval/provenance repositories, model clients, embedding clients,
-  memory adapters, a dormant pricing adapter and other infrastructure adapters.
+  memory adapters, the model-cost rollup persistence adapter and other infrastructure adapters.
 - `IncidentCompass.Worker`: DB-backed background host with separate bounded triage-job, post-report
   evaluation and approved-action pumps. Triage jobs and evaluations use renewable ownership-fenced
   leases and per-process concurrency limits; approved actions use immutable dispatch fences, deadlines
@@ -157,6 +157,15 @@ Phase 5 makes `publish_report` a backend-grounded closeout instead of a model-au
 
 `infra/postgres/init/018-report-lifecycle.sql` makes published report rows immutable. Publication serializes on the fault row, inserts a new row with the producing job and an explicit `supersedes_report_id`, and never rewrites prior report content or evidence. `019-retriage-jobs.sql` adds an exactly-once recurrence trigger per source job and constrains its predecessor report to the same fault. When a recurrence escalation finds a prior report anywhere in its recurrence chain, intake creates a pending re-triage job for that reported fault in the same transaction, copies citable recurrence facts, and adds the prior report as an explicitly untrusted `PriorReport` artifact. A re-triage publication must cite `RecurrenceState`; it may independently classify the incident differently. The report detail response exposes predecessor, successor and latest-chain state. `GET /api/v1/faults/{faultId}/triage-report` returns the newest chain head while `GET /api/v1/triage-reports/{id}` continues to retrieve any historical report. `GET /api/v1/triage-reports` returns compact report summaries only, ordered by `(createdAtUtc DESC, reportId DESC)` with a bounded opaque keyset cursor. It supports fault, service, environment, status and classification filters and exposes predecessor, successor and latest-chain fields without evidence payloads. All fault, ledger and report reads are tenant-scoped; out-of-scope objects return `404`.
 
+`GET /api/v1/observability/cost-rollups` is a separate authenticated read use case. Application owns
+the UTC-only, inclusive-start/exclusive-end, maximum-31-day window contract and obtains the tenant
+only from `IUserContext`. Infrastructure reads `ModelCall` rows through their fault ownership, parses
+bounded metadata fail-closed, matches provider/model identifiers case-sensitively against exactly one
+effective pricing interval and groups safe totals by UTC hour. The response does not expose tenant,
+fault, job, provider, model or logical route identifiers. Missing, malformed or ambiguous pricing is
+reported as an unpriced call, never as zero spend. No alert or price mutation path is coupled to this
+query.
+
 ## API authentication boundary
 
 API-key parsing, digest matching, credential reload, authorization metadata and rate limiting live
@@ -175,7 +184,7 @@ settings are host configuration, not triage configuration, Domain state or persi
 
 - Domain must not depend on Application, Infrastructure, Api, Worker, provider SDKs or persistence libraries.
 - Application owns use-case contracts, ports, orchestration, validation policies and pipeline behavior.
-- Infrastructure implements application ports and persistence adapters. Live model observability is recorded through triage-ledger `ModelCall` and `BudgetEvent` rows; pricing rollup remains deferred.
+- Infrastructure implements application ports and persistence adapters. Live model observability is recorded through triage-ledger `ModelCall` and `BudgetEvent` rows. The read-only cost-rollup adapter joins tenant-owned faults to bounded `ModelCall` windows and resolves operator-maintained effective pricing without changing those write paths.
 - API and Worker hosts should call application use cases instead of duplicating orchestration.
 - Provider SDKs must not appear in controllers or use-case handlers.
 - Keep the system a layered monolith for this project's scope.

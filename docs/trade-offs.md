@@ -150,9 +150,19 @@ audit repository were removed instead of retaining a parallel policy interpretat
 `infra/postgres/init/006-tool-audit.sql` migration stays byte-identical and its legacy table remains
 unused so fresh and upgraded databases preserve migration integrity.
 
-## Dormant Pricing Components Kept for the Roadmap
+## Read-Only Cost Rollup Uses Operator-Maintained Pricing
 
-IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingRecord`, `IPricingRepository`, `PostgresObservabilityRepository` and the `incidentcompass.ai_model_pricing` half of `infra/postgres/init/004-observability-cost.sql`. Live model usage is recorded as `ModelCall` and `BudgetEvent` ledger rows; cost rollup is deferred until a reporting workflow consumes those rows.
+The model-cost surface aggregates the existing durable `ModelCall` ledger metadata by tenant and UTC
+hour. It deliberately does not estimate cost in the write path or retain the earlier per-call
+estimator/repository as a second accounting interpretation. This keeps ModelCall and BudgetEvent
+writes unchanged and makes malformed history visible as unpriced instead of failing a write or
+silently producing zero cost.
+
+The cost is operational simplicity: pricing rows are effective-dated operator-maintained database
+configuration. The API cannot add or reload prices, convert currencies, emit alerts or enforce quotas.
+A call is priced only with exactly one case-sensitive interval match; missing, overlapping or tied
+history remains unpriced. These limits are preferable to granting a new mutation or notification
+authority before the read model is proven.
 
 ## Durable Evaluation Queue Is Not A Second Action Outbox
 
