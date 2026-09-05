@@ -138,14 +138,17 @@ releasing its slot. A job left in `Processing` becomes claimable after its curre
 This protects the durable ownership boundary, but it cannot forcibly interrupt a provider or tool that
 ignores its cancellation token. The shipped model and tool paths propagate cancellation; custom adapters
 must do the same to avoid work that can no longer publish a result.
-## One Live Worker Tool Policy Path
+## One Live Tool Policy Path
 
-`WorkerToolRuleEngine` is the single tool-policy mechanism. It applies role grants and configured
-rules before the registered backend tool can execute, while triage-ledger events provide the durable
-audit trail. The earlier standalone executor and audit repository were removed instead of retaining a
-parallel policy interpretation. The released `infra/postgres/init/006-tool-audit.sql` migration stays
-byte-identical and its legacy table remains unused so fresh and upgraded databases preserve migration
-integrity.
+`ToolRuleEngine` is the single tool-policy mechanism. Immediate Worker reads feed it role grants;
+backend-owned post-report proposals feed it the exact snapshotted `Actions.AllowedTools` grant.
+External proposal facts use a transaction-bound ledger reader only after fault-first current-origin
+and job locking; this preserves one evaluator while serializing preconditions and accepted-use caps.
+Capability registration prevents configuration from turning a read into an external action, and
+external actions never enter the investigation model surface. The earlier standalone executor and
+audit repository were removed instead of retaining a parallel policy interpretation. The released
+`infra/postgres/init/006-tool-audit.sql` migration stays byte-identical and its legacy table remains
+unused so fresh and upgraded databases preserve migration integrity.
 
 ## Dormant Pricing Components Kept for the Roadmap
 
@@ -153,9 +156,9 @@ IC-BL-014 keeps cost-pricing primitives dormant: `AiCostEstimator`, `PricingReco
 
 ## Durable Approval Boundary Before External Adapters
 
-The post-report action slice lands the immutable approval tuple, provenance, operator API and atomic
-dispatch-state primitives before it lands a Worker proposal caller or any external adapter. This
-makes approval review and failure semantics testable without granting side-effect authority. The
-trade-off is that an approved row is not executed in this slice. There is intentionally no provider
-registry, retry endpoint or automatic pump until the later dispatcher work can preserve fencing,
-current-report checks and at-most-once invocation behavior end to end.
+The post-report action slice lands the immutable approval tuple, provenance, operator API, shared
+policy-backed proposal use case and atomic dispatch-state primitives before any production caller or
+external adapter. Synthetic tests prove denial, approval, replay and concurrency behavior without
+granting side-effect authority. The trade-off is that an approved row is not executed in this slice.
+There is intentionally no retry endpoint or automatic pump until the later dispatcher work can
+preserve fencing, current-report checks and at-most-once invocation behavior end to end.

@@ -64,7 +64,7 @@ internal sealed class LegacyMemoryRetrievalStrategy(
 }
 
 internal sealed class ProductionMemoryRetrievalStrategy(
-    IAgentTool memorySearchTool,
+    IImmediateAgentTool memorySearchTool,
     TriageConfiguration configuration) : IMemoryRetrievalBenchmarkStrategy
 {
     public async Task<IReadOnlyList<MemoryRetrievalQueryResult>> ExecuteAsync(

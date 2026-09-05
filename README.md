@@ -80,8 +80,10 @@ complete the multi-turn trajectory or reach a correct conclusion.
   fixed-window limits. Auth-disabled demo mode remains local-only.
 - Durable, tenant-scoped post-report action proposals with immutable approval-contract hashes,
   closed provenance, lifecycle audit events and API-key-only list, get, approve and reject APIs.
-  The current slice provides the review boundary and dispatch primitives only; it does not wire a
-  Worker proposal caller, run an action pump or call an external provider.
+  A backend-owned proposal use case reuses the same rule engine as immediate reads, enforces exact
+  registered action identity and snapshotted action grants, and creates requested or auto-approved
+  rows without invoking an adapter. Synthetic tests are the only caller in this slice; there is no
+  production proposal caller, action pump or external provider call.
 - Backend-grounded triage reports plus fault, report and ledger read APIs.
 - Docker Compose packaging with a stock OTel Collector route and an HTTP-only Tester that does not reference application assemblies.
 - Server-owned incident-data tenant scope for intake and fault/report/ledger reads; demo tenant headers are never trusted.
@@ -92,8 +94,8 @@ complete the multi-turn trajectory or reach a correct conclusion.
   redacts, groups and persists an incoming signal.
 - [Governed investigation processor](src/IncidentCompass.Application/Investigation/Jobs/GovernedTriageInvestigationProcessor.cs) -
   runs the bounded orchestrator/worker loop.
-- [Worker tool rule engine](src/IncidentCompass.Application/Investigation/Jobs/WorkerToolRuleEngine.cs) -
-  applies configured grants and policy rules before tool execution.
+- [Shared tool rule engine](src/IncidentCompass.Application/Governance/Tools/ToolRuleEngine.cs) -
+  applies configured grants and policy rules to immediate reads and post-report proposals.
 - [Report evidence grounder](src/IncidentCompass.Infrastructure/Investigation/PostgresReportEvidenceGrounder.cs) -
   resolves model-proposed references against citable artifacts from the active attempt.
 

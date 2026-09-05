@@ -35,6 +35,12 @@ closed decisions/statuses and `action:<id>` or `artifact:<id>` references. They 
 payload bodies, provenance bodies, adapter routes, credentials, prompts or transcripts into the
 ledger or application logs.
 
+Denied post-report proposals use `PolicyDecision(Denied)` with a closed bounded reason and a safe
+`report:<id>` reference only after same-tenant current origin resolution. They do not create action,
+artifact or provenance rows. Rejections before that origin boundary write no ledger row, avoiding a
+foreign-report oracle. Accepted proposal rate caps count `ActionProposed`, not only allowed policy
+decisions, so requested and auto-approved proposals consume the same cap.
+
 ## Failure Behavior
 
 Model calls are part of the Worker investigation loop. Required durable side effects, including ledger budget/model-call events and final report commit events, are treated as part of the workflow state. The Worker does not expose foreground success to an API caller after a missing required durable write.

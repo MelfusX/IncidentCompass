@@ -11,7 +11,7 @@ using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Memory;
 
-internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemoryRepository memoryRepository, TimeProvider timeProvider) : IAgentTool
+internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemoryRepository memoryRepository, TimeProvider timeProvider) : IImmediateAgentTool
 {
     private const int DefaultTopK = 5;
     private const double DefaultMinScore = 0.25;

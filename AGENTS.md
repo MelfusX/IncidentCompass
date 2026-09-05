@@ -36,7 +36,8 @@ Before making non-trivial changes, read the relevant public docs:
   worker-tool execution and grounded report publication contracts.
 - `Memory/` holds incident-memory contracts and the governed `memory_search` tool.
 - `Governance/` holds live triage-ledger contracts, worker-tool contracts and validation primitives.
-  `WorkerToolRuleEngine` is the single tool-policy decision path used by the Worker.
+  `ToolRuleEngine` is the single tool-policy decision path shared by immediate Worker reads and
+  backend-owned post-report action proposals.
 - `Infrastructure` implements PostgreSQL persistence, configuration loading, model/embedding clients,
   incident memory and other Application ports.
 - Live model observability uses structured application logs plus durable `ModelCall` and `BudgetEvent`

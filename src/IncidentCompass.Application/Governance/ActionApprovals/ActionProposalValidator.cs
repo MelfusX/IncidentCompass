@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Exceptions;
 using IncidentCompass.Application.Core.Serialization;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Domain.Incidents.Actions;
 
 namespace IncidentCompass.Application.Governance.ActionApprovals;
@@ -13,12 +14,11 @@ public static class ActionProposalValidator
 
     public static string ValidateAndComputePayloadHash(PreparedActionProposal proposal)
     {
-        if (string.IsNullOrWhiteSpace(proposal.TenantId) ||
-            string.IsNullOrWhiteSpace(proposal.ToolId) || proposal.ToolId.Length > 128 ||
-            string.IsNullOrWhiteSpace(proposal.ProposalKey) || proposal.ProposalKey.Length > 256)
-        {
-            throw new ActionProposalValidationException("Action proposal identity is invalid.");
-        }
+        ValidateCommon(
+            proposal.TenantId, proposal.ToolId, proposal.ProposalKey,
+            proposal.AdapterBindingFingerprint, proposal.LogicalTargetId,
+            proposal.CanonicalPayload, proposal.ReviewSummary,
+            proposal.ApprovalTtlMinutes, proposal.EvidenceArtifactIds);
 
         if (proposal.Mode == ActionExecutionMode.Disabled ||
             !Enum.IsDefined(proposal.Category) || !Enum.IsDefined(proposal.Mode))
@@ -26,28 +26,67 @@ public static class ActionProposalValidator
             throw new ActionProposalValidationException("Action proposal category or mode is invalid.");
         }
 
-        if (proposal.LogicalTargetId.Length is < 1 or > ActionApprovalLimits.MaximumLogicalTargetCharacters ||
-            !IsLowerHexSha256(proposal.AdapterBindingFingerprint))
+        if (StrictUtf8.GetByteCount(proposal.PolicyDecisionReason) is < 1 or > ActionApprovalLimits.MaximumSummaryBytes)
+        {
+            throw new ActionProposalValidationException("Action proposal policy summary exceeds its bound.");
+        }
+
+        return ActionApprovalContractV1.ComputePayloadSha256(proposal.CanonicalPayload);
+    }
+
+    public static string ValidateAndComputePayloadHash(GovernedActionProposal proposal)
+    {
+        if (proposal.RegisteredTool.Capability != AgentToolCapability.ExternalAction ||
+            proposal.RegisteredTool.Category is null || proposal.RegisteredTool.LogicalTargetId is null)
+        {
+            throw new ActionProposalValidationException("Governed action registration is invalid.");
+        }
+
+        ValidateCommon(
+            proposal.TenantId, proposal.ToolId, proposal.ProposalKey,
+            proposal.AdapterBindingFingerprint, proposal.RegisteredTool.LogicalTargetId,
+            proposal.CanonicalPayload, proposal.ReviewSummary,
+            proposal.ApprovalTtlMinutes, proposal.EvidenceArtifactIds);
+        return ActionApprovalContractV1.ComputePayloadSha256(proposal.CanonicalPayload);
+    }
+
+    private static void ValidateCommon(
+        string tenantId,
+        string toolId,
+        string proposalKey,
+        string bindingFingerprint,
+        string logicalTargetId,
+        byte[] canonicalPayload,
+        string reviewSummary,
+        int approvalTtlMinutes,
+        IReadOnlyList<Guid> evidenceArtifactIds)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId) || !AgentToolIdentity.IsValid(toolId) ||
+            string.IsNullOrWhiteSpace(proposalKey) || proposalKey.Length > 256)
+        {
+            throw new ActionProposalValidationException("Action proposal identity is invalid.");
+        }
+
+        if (logicalTargetId.Length is < 1 or > ActionApprovalLimits.MaximumLogicalTargetCharacters ||
+            !IsLowerHexSha256(bindingFingerprint))
         {
             throw new ActionProposalValidationException("Action proposal target binding is invalid.");
         }
 
-        if (proposal.ApprovalTtlMinutes is < ActionApprovalLimits.MinimumTtlMinutes or > ActionApprovalLimits.MaximumTtlMinutes ||
-            proposal.EvidenceArtifactIds.Count is < ActionApprovalLimits.MinimumEvidenceCount or > ActionApprovalLimits.MaximumEvidenceCount ||
-            proposal.EvidenceArtifactIds.Distinct().Count() != proposal.EvidenceArtifactIds.Count)
+        if (approvalTtlMinutes is < ActionApprovalLimits.MinimumTtlMinutes or > ActionApprovalLimits.MaximumTtlMinutes ||
+            evidenceArtifactIds.Count is < ActionApprovalLimits.MinimumEvidenceCount or > ActionApprovalLimits.MaximumEvidenceCount ||
+            evidenceArtifactIds.Distinct().Count() != evidenceArtifactIds.Count)
         {
             throw new ActionProposalValidationException("Action proposal lifetime or evidence count is invalid.");
         }
 
-        if (proposal.CanonicalPayload.Length is < 1 or > ActionApprovalLimits.MaximumPayloadBytes ||
-            StrictUtf8.GetByteCount(proposal.ReviewSummary) is < 1 or > ActionApprovalLimits.MaximumSummaryBytes ||
-            StrictUtf8.GetByteCount(proposal.PolicyDecisionReason) is < 1 or > ActionApprovalLimits.MaximumSummaryBytes)
+        if (canonicalPayload.Length is < 1 or > ActionApprovalLimits.MaximumPayloadBytes ||
+            StrictUtf8.GetByteCount(reviewSummary) is < 1 or > ActionApprovalLimits.MaximumSummaryBytes)
         {
             throw new ActionProposalValidationException("Action proposal payload or summary exceeds its bound.");
         }
 
-        ValidateCanonicalJson(proposal.CanonicalPayload);
-        return ActionApprovalContractV1.ComputePayloadSha256(proposal.CanonicalPayload);
+        ValidateCanonicalJson(canonicalPayload);
     }
 
     public static bool IsLowerHexSha256(string value) =>

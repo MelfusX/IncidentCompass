@@ -103,7 +103,8 @@ dotnet run --project src/IncidentCompass.Api -- config validate
 ~~~
 
 The command resolves instruction and output-schema references, expands environment placeholders and
-checks routes, roles, tools, rules, budgets, grouping and redaction settings. It validates without
+checks routes, roles, immediate versus external tool capabilities, action grants and mode ceilings,
+rules, budgets, grouping and redaction settings. It validates without
 starting the server or writing a configuration snapshot to PostgreSQL.
 
 If `Redaction.UserIdentifierAttributes` is configured, set the pseudonymization salt only through a

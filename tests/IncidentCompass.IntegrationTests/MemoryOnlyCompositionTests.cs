@@ -52,6 +52,7 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
         services.AddSingleton<ITriageReportListRepository, InMemoryTriageReportListRepository>();
         services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
+        services.AddSingleton<IActionProposalRepository, InMemoryActionProposalRepository>();
         services.AddSingleton<IActionApprovalReviewRepository, InMemoryActionApprovalReviewRepository>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
@@ -298,6 +299,28 @@ public sealed class MemoryOnlyCompositionTests
             ActionDecisionRequest request,
             CancellationToken cancellationToken) =>
             Task.FromResult(new ActionDecisionResult(ActionDecisionOutcome.NotFound, null, null));
+    }
+    private sealed class InMemoryActionProposalRepository : IActionProposalRepository
+    {
+        public Task<ActionProposalOrigin?> FindSafeOriginAsync(
+            string tenantId,
+            Guid originReportId,
+            CancellationToken cancellationToken) => Task.FromResult<ActionProposalOrigin?>(null);
+
+        public Task<bool> RecordDenialAsync(
+            string tenantId,
+            Guid originReportId,
+            string? auditedToolId,
+            string reasonCode,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<ActionProposalResult> CreateAsync(
+            PreparedActionProposal proposal,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<ActionProposalResult> CreateGovernedAsync(
+            GovernedActionProposal proposal,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
     private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
     {

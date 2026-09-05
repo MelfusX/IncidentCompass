@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Normalization;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Infrastructure.Intake;
 
 namespace IncidentCompass.UnitTests;
@@ -364,7 +365,12 @@ public sealed class TriageConfigurationMaterializerTests
             new UserReportSignalNormalizer()
         ]);
 
-        return new TriageConfigurationMaterializer(new TriageConfigurationLoadValidator(registry));
+        var tools = new AgentToolRegistry([
+            new AgentToolDescriptor("memory_search", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead)
+        ]);
+        return new TriageConfigurationMaterializer(new TriageConfigurationLoadValidator(registry, tools));
     }
 
     private static JsonObject ResolvedReferences() => new()

@@ -37,7 +37,7 @@ public sealed class SourceToolSurfaceTests
         var tool = new SourceLookupTool(new UnavailableLookup(), TimeProvider.System);
         return new WorkerToolCallExecutor(
             [tool],
-            new WorkerToolRuleEngine(new ThrowingLedgerReader()),
+            new ToolRuleEngine(new ThrowingLedgerReader()),
             new TriageLedgerAppender(new ThrowingLedgerWriter()),
             new ThrowingCommitter());
     }

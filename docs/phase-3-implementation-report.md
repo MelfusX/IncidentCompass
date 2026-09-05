@@ -44,7 +44,8 @@ Unit 2 - governed worker tool path and first-class `ToolResult` status:
 - `src/IncidentCompass.Application/Investigation/Jobs/WorkerRoleRunner.cs` (hunk-stage shared file)
 - `src/IncidentCompass.Application/Investigation/Jobs/WorkerToolCallExecutor.cs`
 - `src/IncidentCompass.Application/Investigation/Jobs/WorkerToolPolicyResult.cs`
-- `src/IncidentCompass.Application/Investigation/Jobs/WorkerToolRuleEngine.cs`
+- `src/IncidentCompass.Application/Governance/Tools/ToolRuleEngine.cs` (the Phase 3 Worker engine was
+  later extracted here for shared immediate-read and post-report use)
 - `src/IncidentCompass.Domain/Incidents/Statuses/TriageLedgerToolStatus.cs`
 - `src/IncidentCompass.Domain/Incidents/TriageLedgerEntry.cs` (hunk-stage shared file)
 - `src/IncidentCompass.Infrastructure/Governance/PostgresTriageLedgerReader.cs` (hunk-stage shared file)
@@ -138,7 +139,7 @@ Token accounting uses provider `Usage.TotalTokens` when present. If usage is abs
 
 ## Tool Path
 
-A worker role receives only registered `IAgentTool` definitions that are both present in the config `Tools` section and granted by that role. A proposed unknown, unregistered or ungranted tool writes `ToolProposed`, writes a denied `PolicyDecision`, records a failed `ToolResult` with human-readable rationale, and fails closed. `requires_approval` writes `PolicyDecision(ApprovalRequired)`, returns a limitation-shaped tool result to the worker and never waits or resumes.
+A worker role receives only registered immediate-tool definitions that are both present in the config `Tools` section and granted by that role. A proposed unknown, unregistered or ungranted tool writes `ToolProposed`, writes a denied `PolicyDecision`, records a failed `ToolResult` with human-readable rationale, and fails closed. The later action-gate extraction reserves `requires_approval` for exact external-action tool ids; external actions never enter this Worker surface.
 
 Successful worker tool execution writes a `ToolResult` artifact and the matching `ToolResult` ledger event in one PostgreSQL transaction through `PostgresTriageToolResultCommitter`. The ledger event records `tool_status = Succeeded`; failed/non-executed tool calls record `tool_status = Failed`. The artifact plus `ToolResult` event are the only intentional exception to the ledger's own-commit path. A test-only fault-injection seam proves a simulated crash after artifact insert and before ledger insert rolls both back.
 

@@ -28,7 +28,8 @@ internal sealed class TriageConfigurationMaterializer(TriageConfigurationLoadVal
             RequireValue(document.FaultGrouping, "FaultGrouping"),
             document.Redaction ?? RedactionSettings.Default)
         {
-            CurrentReleases = NormalizeCurrentReleases(document.CurrentReleases)
+            CurrentReleases = NormalizeCurrentReleases(document.CurrentReleases),
+            Actions = document.Actions ?? TriageActionSettings.Default
         };
         validator.Validate(configuration);
         return configuration;

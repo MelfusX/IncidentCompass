@@ -15,7 +15,7 @@ internal sealed class PostgresActionProvenanceGrounder(string? configuredTicketR
     public async Task<GroundedActionProposalContext> GroundAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        PreparedActionProposal proposal,
+        ActionProposalGroundingInput proposal,
         CancellationToken cancellationToken)
     {
         var origin = await FindOriginAsync(connection, transaction, proposal, cancellationToken)
@@ -47,7 +47,7 @@ internal sealed class PostgresActionProvenanceGrounder(string? configuredTicketR
     private static async Task<GroundedActionProposalContext?> FindOriginAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        PreparedActionProposal proposal,
+        ActionProposalGroundingInput proposal,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
@@ -69,7 +69,7 @@ internal sealed class PostgresActionProvenanceGrounder(string? configuredTicketR
     private static async Task<TriageJob> LockAndValidateOriginAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        PreparedActionProposal proposal,
+        ActionProposalGroundingInput proposal,
         GroundedActionProposalContext origin,
         CancellationToken cancellationToken)
     {
@@ -109,7 +109,7 @@ internal sealed class PostgresActionProvenanceGrounder(string? configuredTicketR
     private static async Task ValidatePersistedEvidenceSetAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        PreparedActionProposal proposal,
+        ActionProposalGroundingInput proposal,
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
@@ -129,7 +129,7 @@ internal sealed class PostgresActionProvenanceGrounder(string? configuredTicketR
     private static async Task<IReadOnlyList<ActionApprovalProvenance>> ReadAndClassifyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        PreparedActionProposal proposal,
+        ActionProposalGroundingInput proposal,
         TriageJob job,
         CancellationToken cancellationToken)
     {

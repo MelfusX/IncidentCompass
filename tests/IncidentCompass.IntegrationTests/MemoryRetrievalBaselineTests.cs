@@ -216,7 +216,7 @@ internal sealed class BenchmarkHarness(
             TestContext.Current.CancellationToken);
         var configuration = await scope.ServiceProvider.GetRequiredService<ITriageConfigurationRepository>()
             .GetCurrentAsync(TestContext.Current.CancellationToken);
-        var memoryTool = scope.ServiceProvider.GetServices<IAgentTool>()
+        var memoryTool = scope.ServiceProvider.GetServices<IImmediateAgentTool>()
             .Single(static tool => tool.Definition.Name == "memory_search");
         return new BenchmarkHarness(
             corpus,

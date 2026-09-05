@@ -1,4 +1,5 @@
 using IncidentCompass.Application.Governance.Ledger;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Tickets;
@@ -28,7 +29,7 @@ public sealed class TicketToolSurfaceTests
 
     private static WorkerToolCallExecutor CreateExecutor() => new(
         [new TicketSearchTool(new UnavailableTicketSearchDouble(), TimeProvider.System)],
-        new WorkerToolRuleEngine(new ThrowingLedgerReader()),
+        new ToolRuleEngine(new ThrowingLedgerReader()),
         new TriageLedgerAppender(new ThrowingLedgerWriter()),
         new ThrowingCommitter());
 

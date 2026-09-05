@@ -70,8 +70,9 @@ IncidentCompass.Application/
 folders. `Governance/` contains the common worker-tool contract, validation primitives, triage
 ledger ports and post-report action approval contracts/use cases. PostgreSQL action approval,
 provenance and dispatch-transition implementations stay under `Infrastructure/Governance/ActionApprovals/`.
-The single live tool rule engine and execution orchestration live under
-`Investigation/Jobs/`. `Memory/` contains memory_search contracts, seed records and retrieval orchestration.
+The single live tool rule engine and the immediate/action capability contracts live under
+`Governance/Tools/`; investigation-only execution orchestration stays under `Investigation/Jobs/`.
+`Memory/` contains memory_search contracts, seed records and retrieval orchestration.
 `SourceContext/` contains the provider-neutral read port, bounded signal frame extraction and tool;
 filesystem roots, canonicalization and file reads stay in Infrastructure. Report-level context
 outcome contracts and backend limitation policy live under `Investigation/Reports/Context/`.

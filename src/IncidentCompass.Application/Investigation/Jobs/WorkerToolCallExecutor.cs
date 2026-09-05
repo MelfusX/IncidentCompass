@@ -13,13 +13,13 @@ using IncidentCompass.Domain.Incidents.Statuses;
 namespace IncidentCompass.Application.Investigation.Jobs;
 
 internal sealed class WorkerToolCallExecutor(
-    IEnumerable<IAgentTool> tools,
-    WorkerToolRuleEngine ruleEngine,
+    IEnumerable<IImmediateAgentTool> tools,
+    ToolRuleEngine ruleEngine,
     TriageLedgerAppender ledgerAppender,
     ITriageToolResultCommitter toolResultCommitter,
     IRuntimeTelemetry? telemetry = null)
 {
-    private readonly IReadOnlyList<IAgentTool> tools = tools.ToArray();
+    private readonly IReadOnlyList<IImmediateAgentTool> tools = tools.ToArray();
 
     public IReadOnlyList<AiToolDefinition> CreateToolSurface(TriageConfiguration configuration, TriageRoleSettings role)
     {
@@ -67,7 +67,7 @@ internal sealed class WorkerToolCallExecutor(
             return SerializeToolFailure(ToolExecutionStatus.ApprovalRequired.ToString(), "approval_required", decision.Reason, limitation: decision.Reason);
         }
 
-        if (!decision.MayExecute)
+        if (!decision.MayProceed)
         {
             telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
             throw new InvalidOperationException("Worker tool call denied: " + decision.Reason);
@@ -106,26 +106,26 @@ internal sealed class WorkerToolCallExecutor(
         return SerializeToolFailure(execution.Status.ToString(), execution.ErrorCode, errorReason, limitation: errorReason);
     }
 
-    private async Task<WorkerToolPolicyResult> DecideAsync(
+    private async Task<ToolRulePolicyResult> DecideAsync(
         TriageJob job,
         TriageConfiguration configuration,
         string roleName,
         AiToolCall toolCall,
-        IAgentTool? tool,
+        IImmediateAgentTool? tool,
         ToolValidationResult? validation,
         CancellationToken cancellationToken)
     {
         if (tool is null)
         {
-            return WorkerToolPolicyResult.Denied("tool_not_registered");
+            return ToolRulePolicyResult.Denied("tool_not_registered");
         }
 
         if (validation is null || !validation.IsValid)
         {
-            return WorkerToolPolicyResult.Denied(validation?.ErrorMessage ?? "tool_arguments_invalid");
+            return ToolRulePolicyResult.Denied(validation?.ErrorMessage ?? "tool_arguments_invalid");
         }
 
-        return await ruleEngine.DecideAsync(job, configuration, roleName, toolCall.Name, cancellationToken);
+        return await ruleEngine.DecideImmediateAsync(job, configuration, roleName, toolCall.Name, cancellationToken);
     }
 
     private async Task CommitSucceededAsync(

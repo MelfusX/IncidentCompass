@@ -4,6 +4,7 @@ using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Ledger;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.List;
@@ -49,8 +50,7 @@ public static class Setup
         services.AddMemoryInfrastructure(configuration);
         services.AddSourceContextInfrastructure(configuration);
         services.AddTicketInfrastructure(configuration);
-        // Infrastructure supplies the background identity used by Worker hosts.
-        // API foreground auth must bind IUserContext explicitly.
+        // Infrastructure supplies the Worker identity; API auth binds IUserContext explicitly.
         services.TryAddScoped<IBackgroundUserContext, SystemUserContext>();
 
         return services;
@@ -72,7 +72,6 @@ public static class Setup
     {
         services.TryAddScoped<TriageLedgerAppender>();
         services.TryAddScoped<InvestigationModelCaller>();
-        services.TryAddScoped<WorkerToolRuleEngine>();
         services.TryAddScoped<WorkerToolCallExecutor>();
         services.TryAddScoped<WorkerRoleRunner>();
         services.TryAddScoped<AnalysisDelegateExecutor>();

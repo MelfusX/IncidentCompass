@@ -11,7 +11,7 @@ namespace IncidentCompass.Application.SourceContext;
 
 internal sealed class SourceLookupTool(
     ISourceContextLookup sourceContextLookup,
-    TimeProvider timeProvider) : IAgentTool
+    TimeProvider timeProvider) : IImmediateAgentTool
 {
     public AiToolDefinition Definition { get; } = new(
         "source_lookup",
