@@ -16,7 +16,7 @@ internal static class DemoResultPrinter
                 result.Classification ?? "missing",
                 result.LedgerUrl ?? "missing",
                 result.ReportUrl ?? "missing",
-                result.Passed ? "ok" : result.Detail));
+                result.Detail));
         }
     }
 
