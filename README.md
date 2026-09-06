@@ -11,8 +11,9 @@ receiving authority over credentials, persistence or external side effects? The 
 work and propose tool calls. The backend owns tool grants, budgets, evidence checks, the audit ledger
 and the final report commit.
 
-Version `v0.2.0` adds governed OTLP intake, memory synchronization, immutable report history,
-server-owned incident tenancy and operational hardening.
+Version `v0.3.0` adds governed read-only source and GitHub context, an optional API-key tenant
+boundary, frozen approval and at-most-once Telegram/GitHub actions, compact external audit
+projections and authenticated model-cost rollups.
 
 ## One Investigation
 
@@ -249,7 +250,8 @@ digests through protected host configuration and apply the usual transport and d
 - [Cost tracking](docs/cost-tracking.md)
 - [Code organization](docs/code-organization.md)
 - [Versioning and release flow](docs/versioning.md)
-- [Release candidate notes for v0.2.0](docs/release-notes-v0.2.0.md)
+- [Release candidate notes for v0.3.0](docs/release-notes-v0.3.0.md)
+- [Published v0.2.0 notes](docs/release-notes-v0.2.0.md)
 - [Published v0.1.1 notes](docs/release-notes-v0.1.1.md)
 
 ## Relationship To dotnet-genai-starter

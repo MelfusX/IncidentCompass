@@ -4,6 +4,63 @@
 
 - No unreleased changes.
 
+## 0.3.0 - 2026-09-06
+
+- Added deterministic bounded memory reranking that preserves tenant, embedding-route and active-item
+  isolation while improving current-service retrieval.
+- Added governed read-only source lookup over explicitly configured local checkouts and GitHub Issues
+  search through provider-neutral Application ports with fixed host-owned authorities.
+- Added optional API-key authentication with server-side key-to-tenant binding, deny-by-default API
+  coverage, bounded credential reload and per-key fixed-window rate limiting.
+- Consolidated immediate reads and post-report action proposals on one ledger-backed rule engine.
+- Added durable frozen action proposals, tenant-scoped approval review, bounded post-report evaluation
+  and at-most-once Worker dispatch with visible outcome uncertainty.
+- Added disabled-by-default Telegram notification plus GitHub Issue create and bounded evidence-comment
+  adapters. Notification routing is backend-owned; GitHub writes require approval.
+- Added compact immutable external-resource projections for confirmed Telegram and GitHub success,
+  exposed through tenant-scoped approval list/get filtering without raw provider responses.
+- Added authenticated UTC-hour model-cost rollups from durable `ModelCall` rows with effective-dated
+  operator-maintained pricing, exact per-currency totals and explicit unpriced accounting.
+- Added the reviewed injection fixture as a fifth deterministic Tester scenario with a bounded exact
+  fault-ledger action gate, plus verified default/overridden Compose ports and fresh/retained mock runs.
+- Updated pinned dependencies and release workflow action revisions.
+- Added `.editorconfig` with enforced code style in the build, enabled `GenerateDocumentationFile` so
+  unused-using violations (IDE0005) are caught at build time, and pinned `samples/**/*.json` to LF
+  line endings because those fixtures are hash-pinned by tests.
+- Centralized package versions in `Directory.Packages.props`, turned on `TreatWarningsAsErrors` and
+  `AnalysisLevel=latest-recommended`, pinned the SDK floor in `global.json` and removed
+  `coverlet.collector`. Breaking change: the pipeline delegate `RequestHandlerDelegate<T>` was renamed
+  to `PipelineContinuation<T>`, and `IPipelineBehavior.HandleAsync`'s `next` parameter was renamed
+  `continuation`; a custom pipeline behavior must update to match.
+- Removed eight development worklog files from `docs/`, kept the real-model smoke measurements as a
+  table in `docs/trade-offs.md`, and moved ingestion payload limits from the README into
+  `docs/quickstart.md`.
+- Changed the tool rule engine to deny an unknown rule type, a precondition rule naming no
+  prerequisite, and a rate cap with no positive maximum, instead of skipping them and falling through
+  to allowed.
+- Added structured log events with stable ids for attempt failure, retry versus dead-letter, model
+  call outcome, budget charge and exhaustion, and tool and action policy decisions; the `ModelCall`
+  ledger payload gained a named type with an unchanged serialized shape.
+- Changed budget and governance exhaustion to dead-letter the attempt immediately with their own error
+  codes instead of consuming the retry budget; provider outage still retries.
+- Behavior change: 400, 403, 404 and 409 API responses now carry a stable `errorCode` in the
+  ProblemDetails extensions and an authored `detail`, instead of echoing the raised exception's
+  message. The documented OpenAPI schema is unchanged because extension data is dynamic. The Worker's
+  `last_error_message` now stores a classified code plus exception type rather than raw provider text.
+- Added the `IncidentCompass:IngestionLimits:MaxSignalsPerExport` option (default 500, range
+  1-10000); an OTLP export carrying more records than the limit is rejected whole with 413 before
+  anything is stored.
+- Changed redaction to compile patterns once per configuration snapshot, redact the whole field with
+  a distinct marker on a regex timeout instead of leaving it partially escaped, and match the secret
+  property-name denylist on name segments so `x-api-key`, `Set-Cookie`, `jwt` and `*_password_*` forms
+  are caught.
+- Made fault injection a test-only seam, extended the code-organization gate to cover test projects,
+  collapsed pass-through pipeline wrappers, reworked the investigation orchestrator loop around
+  explicit turn outcomes, removed dead Worker lease-renewal signals and unobserved delays, and
+  deduplicated provider selection and configuration leaks in composition.
+- Added a shared repository-root test helper with deterministic lease timing, and rewrote the
+  security posture, defaults and observability documentation to match current behavior.
+
 ## 0.2.0 - 2026-07-14
 
 - Added a versioned triage-config JSON Schema and `config validate` command that reuses startup validation without starting a host or persisting a snapshot.

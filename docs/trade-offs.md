@@ -85,7 +85,11 @@ fails safe to redaction and therefore loses distinct-user counting.
 
 ## Simple Access Control vs Enterprise RBAC
 
-The current implementation relies on a minimal demo `IUserContext` rather than enterprise RBAC. Real auth providers and finer-grained authorization are deferred; the architecture should not block later RBAC or Entra ID integration.
+The current implementation can enable a minimal host-managed API-key boundary. Each accepted key maps
+to one tenant and a fixed-window rate-limit partition; any valid key is the minimal action operator for
+that tenant. The local walkthrough keeps this boundary disabled and uses demo identity only for local
+review. This is not enterprise identity, RBAC, managed key distribution or a secret store. Real auth
+providers and finer-grained authorization remain deferred.
 
 ## Domain Records with Application-Owned Behavior
 
@@ -121,9 +125,13 @@ The MediatR decision remains separate. This project still uses its internal disp
 
 Identifiers like `TenantId`, `UserId`, `CorrelationId` are passed as `string` and `Guid` throughout the codebase rather than as strongly-typed value objects (e.g. `readonly record struct TenantId`). Value objects offer compile-time safety against argument-mix-ups and centralized validation, but introduce friction with `System.Text.Json`, `Npgsql` parameter binding, and `IOptions<T>` binding at this project's current scope. The current implementation accepts the small risk of string mix-ups in exchange for transport simplicity. A future scope that grows multi-context handler signatures (tenant + user + correlation + ...) may revisit this.
 
-## Local Incident Tenant Partition Is Not Authentication
+## Local Tenant Partition And API-Key Mapping
 
-v0.2.0 keeps one server-configured incident-data tenant through `IIncidentTenantContext`. It prevents accidental cross-tenant reads and makes the future auth boundary explicit, but it does not authenticate callers or make demo headers trustworthy. Production multi-tenant use requires IC-BL-024 to authenticate an API key and map it server-side to exactly one tenant before replacing the config-backed context.
+The auth-disabled local path keeps one server-configured incident-data tenant through
+`IIncidentTenantContext`. When API-key authentication is enabled, API composition replaces that
+request scope with the tenant mapped from the accepted host-managed key. Request bodies, OTLP
+attributes and demo headers cannot select the tenant, and demo identity never grants action approval
+authority. This is a narrow reference boundary, not a claim of production multi-tenant isolation.
 
 ## Sequential Ledger-Backed Governance
 
@@ -188,11 +196,11 @@ and suppression policy can still be wrong for the operator's real incident bound
 correlation remains a later capability rather than an implicit effect of grouping.
 ## Re-triage Reuses Untrusted History
 
-Recurrence escalation is deterministic database state, but the prior report copied into a new investigation is model output and incident-derived context, not authority. The prompt labels it as an untrusted hypothesis; the worker must independently ground its result and cite the new `RecurrenceState` artifact before publishing a successor. This prevents historical text from becoming sticky fact, but it does not make model reasoning a security boundary. There is no manual re-triage endpoint or mass-issue-flip trigger in v0.2.0; the latter is an explicit scope cut.
+Recurrence escalation is deterministic database state, but the prior report copied into a new investigation is model output and incident-derived context, not authority. The prompt labels it as an untrusted hypothesis; the worker must independently ground its result and cite the new `RecurrenceState` artifact before publishing a successor. This prevents historical text from becoming sticky fact, but it does not make model reasoning a security boundary. The current release has no manual re-triage endpoint or mass-issue-flip trigger; the latter remains an explicit scope cut.
 
 ## Provider Backpressure Is Process-Local
 
-Provider-outage backpressure is deliberately held in each Worker process. It prevents a local outage from rapidly consuming retries and clears after a successful model call, but multiple Worker hosts do not share breaker state. A future distributed deployment needs coordinated provider health if a global circuit is required; v0.2.0 remains a local/reference deployment and does not claim that property.
+Provider-outage backpressure is deliberately held in each Worker process. It prevents a local outage from rapidly consuming retries and clears after a successful model call, but multiple Worker hosts do not share breaker state. A future distributed deployment needs coordinated provider health if a global circuit is required; the current release remains a local/reference deployment and does not claim that property.
 ## Grounded Evidence vs Correct Conclusions
 
 Phase 5 report grounding proves that each persisted evidence row came from a citable artifact visible to the job and that any stored quote was an exact substring of the redacted artifact payload. It does not prove the model's classification is correct. This is an intentional MVP boundary: durable evidence makes review possible, while evaluation of reasoning quality remains outside the backend transaction.
