@@ -80,9 +80,9 @@ internal sealed partial class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
         await Task.WhenAny(delayTask, completionTask);
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Claimed triage job processing failed after claim.")]
+    [LoggerMessage(EventId = 1401, Level = LogLevel.Warning, Message = "Claimed triage job processing failed after claim.")]
     private static partial void LogJobFailedAfterClaim(ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Claimed triage job processing failed while draining the worker.")]
+    [LoggerMessage(EventId = 1402, Level = LogLevel.Warning, Message = "Claimed triage job processing failed while draining the worker.")]
     private static partial void LogJobFailedWhileDraining(ILogger logger, Exception exception);
 }

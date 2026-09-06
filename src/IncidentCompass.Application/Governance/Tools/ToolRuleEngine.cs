@@ -4,12 +4,41 @@ using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Actions;
 using IncidentCompass.Domain.Incidents.Statuses;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncidentCompass.Application.Governance.Tools;
 
-internal sealed class ToolRuleEngine(ITriageLedgerReader ledgerReader)
+internal sealed partial class ToolRuleEngine(
+    ITriageLedgerReader ledgerReader,
+    ILogger<ToolRuleEngine>? logger = null)
 {
-    public Task<ToolRulePolicyResult> DecideImmediateAsync(
+    private readonly ILogger logger = logger ?? NullLogger<ToolRuleEngine>.Instance;
+
+    public async Task<ToolRulePolicyResult> DecideImmediateAsync(
+        TriageJob job,
+        TriageConfiguration configuration,
+        string roleName,
+        string toolName,
+        CancellationToken cancellationToken)
+    {
+        var result = await DecideImmediateCoreAsync(job, configuration, roleName, toolName, cancellationToken);
+        LogImmediateDecision(job, roleName, toolName, result);
+        return result;
+    }
+
+    public async Task<ToolRulePolicyResult> DecideExternalAsync(
+        TriageConfiguration configuration,
+        AgentToolDescriptor registeredTool,
+        IToolRuleFactReader factReader,
+        CancellationToken cancellationToken)
+    {
+        var result = await DecideExternalCoreAsync(configuration, registeredTool, factReader, cancellationToken);
+        LogExternalDecision(registeredTool.ToolId, result);
+        return result;
+    }
+
+    private Task<ToolRulePolicyResult> DecideImmediateCoreAsync(
         TriageJob job,
         TriageConfiguration configuration,
         string roleName,
@@ -35,7 +64,7 @@ internal sealed class ToolRuleEngine(ITriageLedgerReader ledgerReader)
             cancellationToken);
     }
 
-    public async Task<ToolRulePolicyResult> DecideExternalAsync(
+    private async Task<ToolRulePolicyResult> DecideExternalCoreAsync(
         TriageConfiguration configuration,
         AgentToolDescriptor registeredTool,
         IToolRuleFactReader factReader,
@@ -163,4 +192,105 @@ internal sealed class ToolRuleEngine(ITriageLedgerReader ledgerReader)
         string toolName) => rules.Where(rule =>
             string.Equals(rule.Tool, "*", StringComparison.Ordinal) ||
             string.Equals(rule.Tool, toolName, StringComparison.Ordinal));
+
+    private void LogImmediateDecision(
+        TriageJob job,
+        string roleName,
+        string toolName,
+        ToolRulePolicyResult result)
+    {
+        switch (result.Decision)
+        {
+            case TriageLedgerDecision.Denied:
+                LogImmediateToolDenied(logger, job.Id, job.Attempt, roleName, toolName, result.Reason);
+                break;
+            case TriageLedgerDecision.ApprovalRequired:
+                LogImmediateToolApprovalRequired(logger, job.Id, job.Attempt, roleName, toolName, result.Reason);
+                break;
+            default:
+                LogImmediateToolAllowed(logger, job.Id, job.Attempt, roleName, toolName, result.Reason);
+                break;
+        }
+    }
+
+    private void LogExternalDecision(string toolId, ToolRulePolicyResult result)
+    {
+        switch (result.Decision)
+        {
+            case TriageLedgerDecision.Denied:
+                LogPostReportActionDenied(logger, toolId, result.Reason);
+                break;
+            case TriageLedgerDecision.ApprovalRequired:
+                LogPostReportActionApprovalRequired(logger, toolId, result.EffectiveMode, result.Reason);
+                break;
+            default:
+                LogPostReportActionAllowed(logger, toolId, result.EffectiveMode, result.Reason);
+                break;
+        }
+    }
+
+    [LoggerMessage(
+        EventId = 3501,
+        Level = LogLevel.Debug,
+        Message = "Tool policy allowed {ToolName} for role {Role} on triage job {JobId} attempt {Attempt}: {PolicyReason}.")]
+    private static partial void LogImmediateToolAllowed(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName,
+        string policyReason);
+
+    [LoggerMessage(
+        EventId = 3502,
+        Level = LogLevel.Warning,
+        Message = "Tool policy denied {ToolName} for role {Role} on triage job {JobId} attempt {Attempt}: {PolicyReason}.")]
+    private static partial void LogImmediateToolDenied(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName,
+        string policyReason);
+
+    [LoggerMessage(
+        EventId = 3503,
+        Level = LogLevel.Information,
+        Message = "Tool policy requires approval for {ToolName} for role {Role} on triage job {JobId} attempt {Attempt}: {PolicyReason}.")]
+    private static partial void LogImmediateToolApprovalRequired(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName,
+        string policyReason);
+
+    [LoggerMessage(
+        EventId = 3511,
+        Level = LogLevel.Information,
+        Message = "Post-report action policy allowed {ToolId} in mode {EffectiveMode}: {PolicyReason}.")]
+    private static partial void LogPostReportActionAllowed(
+        ILogger logger,
+        string toolId,
+        ActionExecutionMode? effectiveMode,
+        string policyReason);
+
+    [LoggerMessage(
+        EventId = 3512,
+        Level = LogLevel.Warning,
+        Message = "Post-report action policy denied {ToolId}: {PolicyReason}.")]
+    private static partial void LogPostReportActionDenied(
+        ILogger logger,
+        string toolId,
+        string policyReason);
+
+    [LoggerMessage(
+        EventId = 3513,
+        Level = LogLevel.Information,
+        Message = "Post-report action policy requires approval for {ToolId} in mode {EffectiveMode}: {PolicyReason}.")]
+    private static partial void LogPostReportActionApprovalRequired(
+        ILogger logger,
+        string toolId,
+        ActionExecutionMode? effectiveMode,
+        string policyReason);
 }

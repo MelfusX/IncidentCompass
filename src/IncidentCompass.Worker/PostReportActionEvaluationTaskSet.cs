@@ -79,9 +79,9 @@ internal sealed partial class PostReportActionEvaluationTaskSet(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-report action evaluation failed after claim.")]
+    [LoggerMessage(EventId = 1601, Level = LogLevel.Warning, Message = "Post-report action evaluation failed after claim.")]
     private static partial void LogEvaluationFailedAfterClaim(ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-report action evaluation failed while draining.")]
+    [LoggerMessage(EventId = 1602, Level = LogLevel.Warning, Message = "Post-report action evaluation failed while draining.")]
     private static partial void LogEvaluationFailedWhileDraining(ILogger logger, Exception exception);
 }

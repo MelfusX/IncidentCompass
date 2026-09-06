@@ -3,18 +3,23 @@ using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Core.Text;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
-internal sealed class TriageJobRunner(
+internal sealed partial class TriageJobRunner(
     ITriageJobRuntimeRepository runtimeRepository,
     ITriageConfigurationRepository configurationRepository,
     IClaimedTriageJobProcessor processor,
     TimeProvider timeProvider,
     IProviderOutageTracker? providerOutageTracker = null,
-    IRuntimeTelemetry? telemetry = null) : ITriageJobRunner
+    IRuntimeTelemetry? telemetry = null,
+    ILogger<TriageJobRunner>? logger = null) : ITriageJobRunner
 {
     private const int MaxStoredErrorMessageLength = 1000;
+
+    private readonly ILogger logger = logger ?? NullLogger<TriageJobRunner>.Instance;
 
     public Task<TriageJob?> ClaimNextAsync(
         string workerId,
@@ -65,12 +70,45 @@ internal sealed class TriageJobRunner(
                 telemetry?.RecordJobAttempt(RuntimeTelemetryOutcome.Failed);
             }
 
-            await runtimeRepository.RecordAttemptFailureAsync(
-                job,
-                workerId,
-                CreateFailure(job, settings, exception, configurationLoaded, providerOutage),
-                CancellationToken.None);
+            var failure = CreateFailure(job, settings, exception, configurationLoaded, providerOutage);
+
+            // The original failure is logged before any durable write is attempted, so a secondary
+            // persistence fault can never erase the trace of what actually failed.
+            LogAttemptFailed(logger, job.Id, job.Attempt, failure.ErrorCode, exception.GetType().Name);
+            LogAttemptDisposition(job, failure);
+
+            try
+            {
+                await runtimeRepository.RecordAttemptFailureAsync(
+                    job,
+                    workerId,
+                    failure,
+                    CancellationToken.None);
+            }
+            catch (Exception persistenceException)
+            {
+                LogAttemptFailurePersistenceFailed(
+                    logger, job.Id, job.Attempt, persistenceException.GetType().Name);
+                throw;
+            }
         }
+    }
+
+    private void LogAttemptDisposition(TriageJob job, TriageJobAttemptFailure failure)
+    {
+        if (failure.RetryBudgetDisposition == TriageJobRetryBudgetDisposition.DoNotConsumeAttempt)
+        {
+            LogAttemptDelayedForProviderOutage(logger, job.Id, job.Attempt, failure.NextAttemptAtUtc);
+            return;
+        }
+
+        if (failure.Status == TriageJobStatus.DeadLettered)
+        {
+            LogAttemptDeadLettered(logger, job.Id, job.Attempt, failure.ErrorCode);
+            return;
+        }
+
+        LogAttemptRetryScheduled(logger, job.Id, job.Attempt, failure.ErrorCode, failure.NextAttemptAtUtc);
     }
 
     private TriageJobAttemptFailure CreateFailure(
@@ -115,4 +153,56 @@ internal sealed class TriageJobRunner(
 
         return TextTruncator.Truncate(message, MaxStoredErrorMessageLength);
     }
+
+    [LoggerMessage(
+        EventId = 3101,
+        Level = LogLevel.Warning,
+        Message = "Triage job {JobId} attempt {Attempt} failed with error code {ErrorCode} raised by {ExceptionType}.")]
+    private static partial void LogAttemptFailed(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string errorCode,
+        string exceptionType);
+
+    [LoggerMessage(
+        EventId = 3102,
+        Level = LogLevel.Information,
+        Message = "Triage job {JobId} attempt {Attempt} with error code {ErrorCode} is retry-pending until {NextAttemptAtUtc}.")]
+    private static partial void LogAttemptRetryScheduled(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string errorCode,
+        DateTimeOffset? nextAttemptAtUtc);
+
+    [LoggerMessage(
+        EventId = 3103,
+        Level = LogLevel.Error,
+        Message = "Triage job {JobId} attempt {Attempt} exhausted its retry budget and was dead-lettered with error code {ErrorCode}.")]
+    private static partial void LogAttemptDeadLettered(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string errorCode);
+
+    [LoggerMessage(
+        EventId = 3104,
+        Level = LogLevel.Warning,
+        Message = "Triage job {JobId} attempt {Attempt} was delayed until {NextAttemptAtUtc} because the model provider is unavailable; the attempt budget was not consumed.")]
+    private static partial void LogAttemptDelayedForProviderOutage(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        DateTimeOffset? nextAttemptAtUtc);
+
+    [LoggerMessage(
+        EventId = 3105,
+        Level = LogLevel.Error,
+        Message = "Triage job {JobId} attempt {Attempt} could not record its attempt failure; the runtime repository raised {ExceptionType}.")]
+    private static partial void LogAttemptFailurePersistenceFailed(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string exceptionType);
 }

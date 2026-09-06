@@ -84,7 +84,7 @@ public sealed partial class PostReportActionEvaluationLeaseRenewer(
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Post-report workflow failed after its evaluation lease was lost.")]
+    [LoggerMessage(EventId = 1701, Level = LogLevel.Warning, Message = "Post-report workflow failed after its evaluation lease was lost.")]
     private static partial void LogWorkflowFailedAfterLeaseLost(ILogger logger, Exception exception);
 
     private static async Task ObserveCancellationAsync(Task task)

@@ -103,7 +103,7 @@ internal sealed class TriageLedgerAppender(ITriageLedgerWriter ledgerWriter)
     public Task AppendModelCallAsync(
         TriageJob job,
         string? role,
-        object metadata,
+        ModelCallLedgerMetadata metadata,
         CancellationToken cancellationToken)
     {
         return AppendCoreAsync(

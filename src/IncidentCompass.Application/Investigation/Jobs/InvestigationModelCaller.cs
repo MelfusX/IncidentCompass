@@ -3,17 +3,22 @@ using IncidentCompass.Application.Core.Observability;
 using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
-internal sealed class InvestigationModelCaller(
+internal sealed partial class InvestigationModelCaller(
     IAiModelClient modelClient,
     ITriageLedgerReader ledgerReader,
     TriageLedgerAppender ledgerAppender,
     TimeProvider timeProvider,
     IProviderOutageTracker? providerOutageTracker = null,
-    IRuntimeTelemetry? telemetry = null)
+    IRuntimeTelemetry? telemetry = null,
+    ILogger<InvestigationModelCaller>? logger = null)
 {
+    private readonly ILogger logger = logger ?? NullLogger<InvestigationModelCaller>.Instance;
+
     public async Task<AiModelResponse> CompleteAsync(
         TriageJobCallContext context,
         TriageRouteSettings route,
@@ -45,7 +50,10 @@ internal sealed class InvestigationModelCaller(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Cancelled, (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds);
+            var elapsedMs = (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds;
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Cancelled, elapsedMs);
+            LogModelCallWallClockCancelled(
+                logger, context.Job.Id, context.Role, context.RouteId, context.CallKind, (long)elapsedMs);
             await ledgerAppender.AppendBudgetEventAsync(
                 context.Job,
                 "wall_clock_limit_reached: model call exceeded remaining attempt wall-clock budget.",
@@ -56,12 +64,24 @@ internal sealed class InvestigationModelCaller(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Cancelled, (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds);
+            var elapsedMs = (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds;
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Cancelled, elapsedMs);
+            LogModelCallHostCancelled(
+                logger, context.Job.Id, context.Role, context.RouteId, context.CallKind, (long)elapsedMs);
             throw;
         }
-        catch
+        catch (Exception exception)
         {
-            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Failed, (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds);
+            var elapsedMs = (timeProvider.GetUtcNow() - startedAtUtc).TotalMilliseconds;
+            telemetry?.RecordModelCall(RuntimeTelemetryOutcome.Failed, elapsedMs);
+            LogModelCallFailed(
+                logger,
+                context.Job.Id,
+                context.Role,
+                context.RouteId,
+                context.CallKind,
+                exception.GetType().Name,
+                (long)elapsedMs);
             throw;
         }
     }
@@ -82,6 +102,7 @@ internal sealed class InvestigationModelCaller(
                 tokensDelta: null,
                 workersDelta: null,
                 cancellationToken: cancellationToken);
+            LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "max_tokens_reached_before_call");
             throw new InvalidOperationException("The triage attempt token budget was reached before the next model call.");
         }
 
@@ -94,6 +115,7 @@ internal sealed class InvestigationModelCaller(
                 tokensDelta: null,
                 workersDelta: null,
                 cancellationToken: cancellationToken);
+            LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "wall_clock_limit_reached_before_call");
             throw new InvalidOperationException("The triage attempt wall-clock budget was reached before the next model call.");
         }
 
@@ -106,6 +128,7 @@ internal sealed class InvestigationModelCaller(
                 tokensDelta: null,
                 workersDelta: null,
                 cancellationToken: cancellationToken);
+            LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "context_window_exceeded");
             throw new InvalidOperationException("The triage prompt exceeds the configured context window.");
         }
 
@@ -146,23 +169,33 @@ internal sealed class InvestigationModelCaller(
         var outputTokens = PositiveOrEstimate(response.Usage?.OutputTokens, estimatedOutputTokens);
         var totalTokens = PositiveOrEstimate(response.Usage?.TotalTokens, inputTokens + outputTokens);
 
-        await ledgerAppender.AppendModelCallAsync(
-            context.Job,
+        var metadata = new ModelCallLedgerMetadata(
+            context.CallKind,
+            context.RouteId,
+            response.Model,
+            response.Provider,
+            usageSource,
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            (long)duration.TotalMilliseconds,
+            response.ProposedToolCalls?.Count ?? 0);
+
+        await ledgerAppender.AppendModelCallAsync(context.Job, context.Role, metadata, cancellationToken);
+        LogModelCallCompleted(
+            logger,
+            context.Job.Id,
             context.Role,
-            new
-            {
-                kind = context.CallKind,
-                routeId = context.RouteId,
-                model = response.Model,
-                provider = response.Provider,
-                usageSource,
-                inputTokens,
-                outputTokens,
-                totalTokens,
-                durationMs = (long)duration.TotalMilliseconds,
-                proposedToolCallCount = response.ProposedToolCalls?.Count ?? 0
-            },
-            cancellationToken);
+            metadata.RouteId,
+            metadata.Kind,
+            metadata.Provider,
+            metadata.Model,
+            metadata.UsageSource,
+            metadata.InputTokens,
+            metadata.OutputTokens,
+            metadata.TotalTokens,
+            metadata.DurationMs,
+            metadata.ProposedToolCallCount);
 
         await ledgerAppender.AppendBudgetEventAsync(
             context.Job,
@@ -170,6 +203,7 @@ internal sealed class InvestigationModelCaller(
             totalTokens,
             workersDelta: null,
             cancellationToken: cancellationToken);
+        LogBudgetTokensCharged(logger, context.Job.Id, context.Job.Attempt, totalTokens);
 
         if (usageBefore.TokensSpent + totalTokens > context.Configuration.Orchestrator.Budget.MaxTokens)
         {
@@ -179,6 +213,7 @@ internal sealed class InvestigationModelCaller(
                 tokensDelta: null,
                 workersDelta: null,
                 cancellationToken: cancellationToken);
+            LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "max_tokens_overshot_after_call");
         }
     }
 
@@ -186,4 +221,80 @@ internal sealed class InvestigationModelCaller(
     {
         return reportedTokens is > 0 ? reportedTokens.Value : estimatedTokens;
     }
+
+    [LoggerMessage(
+        EventId = 3201,
+        Level = LogLevel.Information,
+        Message = "Model call for triage job {JobId} role {Role} route {RouteId} kind {CallKind} completed on {Provider}/{Model} with {UsageSource} usage {InputTokens}/{OutputTokens}/{TotalTokens} tokens in {DurationMs}ms proposing {ProposedToolCallCount} tool calls.")]
+    private static partial void LogModelCallCompleted(
+        ILogger logger,
+        Guid jobId,
+        string? role,
+        string routeId,
+        string callKind,
+        string provider,
+        string model,
+        string usageSource,
+        int inputTokens,
+        int outputTokens,
+        int totalTokens,
+        long durationMs,
+        int proposedToolCallCount);
+
+    [LoggerMessage(
+        EventId = 3202,
+        Level = LogLevel.Warning,
+        Message = "Model call for triage job {JobId} role {Role} route {RouteId} kind {CallKind} failed with {ExceptionType} after {DurationMs}ms.")]
+    private static partial void LogModelCallFailed(
+        ILogger logger,
+        Guid jobId,
+        string? role,
+        string routeId,
+        string callKind,
+        string exceptionType,
+        long durationMs);
+
+    [LoggerMessage(
+        EventId = 3203,
+        Level = LogLevel.Warning,
+        Message = "Model call for triage job {JobId} role {Role} route {RouteId} kind {CallKind} was cancelled after {DurationMs}ms because the attempt wall-clock budget ran out.")]
+    private static partial void LogModelCallWallClockCancelled(
+        ILogger logger,
+        Guid jobId,
+        string? role,
+        string routeId,
+        string callKind,
+        long durationMs);
+
+    [LoggerMessage(
+        EventId = 3204,
+        Level = LogLevel.Information,
+        Message = "Model call for triage job {JobId} role {Role} route {RouteId} kind {CallKind} was cancelled after {DurationMs}ms by host shutdown.")]
+    private static partial void LogModelCallHostCancelled(
+        ILogger logger,
+        Guid jobId,
+        string? role,
+        string routeId,
+        string callKind,
+        long durationMs);
+
+    [LoggerMessage(
+        EventId = 3211,
+        Level = LogLevel.Debug,
+        Message = "Triage job {JobId} attempt {Attempt} charged {TokensDelta} model tokens to the attempt budget.")]
+    private static partial void LogBudgetTokensCharged(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        int tokensDelta);
+
+    [LoggerMessage(
+        EventId = 3212,
+        Level = LogLevel.Warning,
+        Message = "Triage job {JobId} attempt {Attempt} hit budget limit {BudgetReason}.")]
+    private static partial void LogBudgetLimitReached(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string budgetReason);
 }

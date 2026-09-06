@@ -78,9 +78,9 @@ internal sealed partial class WorkerActionTaskSet(ILogger<WorkerActionPump> logg
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Approved action dispatch failed after claim.")]
+    [LoggerMessage(EventId = 1501, Level = LogLevel.Warning, Message = "Approved action dispatch failed after claim.")]
     private static partial void LogDispatchFailedAfterClaim(ILogger logger, Exception exception);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Approved action dispatch failed while draining.")]
+    [LoggerMessage(EventId = 1502, Level = LogLevel.Warning, Message = "Approved action dispatch failed while draining.")]
     private static partial void LogDispatchFailedWhileDraining(ILogger logger, Exception exception);
 }
