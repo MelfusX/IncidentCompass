@@ -101,13 +101,14 @@ public sealed partial class WorkerJobPump(
     private async Task CancelProcessingAfterLeaseLossAsync(
         TriageJob job,
         Task processingTask,
-        Task<bool> renewalTask,
+        Task renewalTask,
         CancellationTokenSource processingCancellation,
         CancellationToken cancellationToken)
     {
         try
         {
-            _ = await renewalTask;
+            // The renewal loop only returns when this worker no longer owns the lease.
+            await renewalTask;
             LogLeaseOwnershipLost(logger, job.Id, job.Attempt);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

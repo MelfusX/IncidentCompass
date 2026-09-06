@@ -48,9 +48,8 @@ internal sealed partial class PostReportActionEvaluationTaskSet(
             return;
         }
 
-        var delayTask = Task.Delay(delay, cancellationToken);
-        var completionTask = Task.WhenAny(evaluations.Select(static evaluation => evaluation.Task));
-        await Task.WhenAny(delayTask, completionTask);
+        await WorkerWakeDelay.WaitAsync(
+            delay, evaluations.Select(static evaluation => evaluation.Task), cancellationToken);
     }
 
     private async Task ObserveAsync(

@@ -7,7 +7,13 @@ public sealed partial class PostReportActionEvaluationLeaseRenewer(
 {
     private static readonly TimeSpan MinimumRenewalInterval = TimeSpan.FromMilliseconds(100);
 
-    public async Task<bool> RenewUntilStoppedAsync(
+    /// <summary>
+    /// Renews the evaluation lease until ownership is lost, renewal fails or the caller cancels.
+    /// The returned task completing successfully is itself the lease-loss signal: the loop only
+    /// exits when the repository reports that this worker no longer owns the fenced claim. It
+    /// faults when renewal throws and cancels with <paramref name="cancellationToken"/>.
+    /// </summary>
+    public async Task RenewUntilStoppedAsync(
         IPostReportActionIntentRepository repository,
         PostReportActionIntentClaim claim,
         string workerId,
@@ -26,7 +32,7 @@ public sealed partial class PostReportActionEvaluationLeaseRenewer(
             if (!await repository.RenewLeaseAsync(
                     claim.Intent.Id, workerId, claim.Fence, leaseDuration, cancellationToken))
             {
-                return false;
+                return;
             }
         }
     }
@@ -48,8 +54,11 @@ public sealed partial class PostReportActionEvaluationLeaseRenewer(
         {
             try
             {
-                var retained = await renewalTask;
-                return retained ? await workflowTask : null;
+                // The renewal loop only completes when the fenced lease is no longer held, so the
+                // evaluation is abandoned without a result and another worker picks the intent up.
+                await renewalTask;
+                LogEvaluationLeaseLost(logger, claim.Intent.Id);
+                return null;
             }
             finally
             {
@@ -86,6 +95,9 @@ public sealed partial class PostReportActionEvaluationLeaseRenewer(
 
     [LoggerMessage(EventId = 1701, Level = LogLevel.Warning, Message = "Post-report workflow failed after its evaluation lease was lost.")]
     private static partial void LogWorkflowFailedAfterLeaseLost(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 1702, Level = LogLevel.Warning, Message = "Post-report action intent {IntentId} lost its evaluation lease; abandoning the attempt without writing a result.")]
+    private static partial void LogEvaluationLeaseLost(ILogger logger, Guid intentId);
 
     private static async Task ObserveCancellationAsync(Task task)
     {

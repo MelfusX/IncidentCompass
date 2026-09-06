@@ -75,9 +75,8 @@ internal sealed partial class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
             return;
         }
 
-        var delayTask = Task.Delay(delay, cancellationToken);
-        var completionTask = Task.WhenAny(jobs.Select(static job => job.ProcessingTask));
-        await Task.WhenAny(delayTask, completionTask);
+        await WorkerWakeDelay.WaitAsync(
+            delay, jobs.Select(static job => job.ProcessingTask), cancellationToken);
     }
 
     [LoggerMessage(EventId = 1401, Level = LogLevel.Warning, Message = "Claimed triage job processing failed after claim.")]
