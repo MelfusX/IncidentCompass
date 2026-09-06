@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
+using IncidentCompass.Application.Investigation.Jobs;
 using static IncidentCompass.Infrastructure.ModelGateway.Mock.MockIncidentCompassReportScript;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.Mock;
@@ -15,7 +16,7 @@ internal static class MockIncidentCompassScripts
             .ToArray();
         if (toolResults.Length == 0)
         {
-            return MockAiModelResponseFactory.CreateResponse(request, "Delegate analysis first.", [MockAiModelResponseFactory.ToolCall("incidentcompass-delegate-analysis-1", "delegate", """
+            return MockAiModelResponseFactory.CreateResponse(request, "Delegate analysis first.", [MockAiModelResponseFactory.ToolCall("incidentcompass-delegate-analysis-1", OrchestratorToolNames.Delegate, """
                 {"role":"analysis","task":"Extract key facts and say whether memory context is needed."}
                 """)]);
         }
@@ -27,7 +28,7 @@ internal static class MockIncidentCompassScripts
 
         if (toolResults.Any(static value => value.Contains("\"needsDeeperContext\":true", StringComparison.OrdinalIgnoreCase)))
         {
-            return MockAiModelResponseFactory.CreateResponse(request, "Delegate memory lookup.", [MockAiModelResponseFactory.ToolCall("incidentcompass-delegate-memory-1", "delegate", """
+            return MockAiModelResponseFactory.CreateResponse(request, "Delegate memory lookup.", [MockAiModelResponseFactory.ToolCall("incidentcompass-delegate-memory-1", OrchestratorToolNames.Delegate, """
                 {"role":"memory","task":"Search memory for matching runbooks or known incidents using the trigger service, error type and message."}
                 """)]);
         }
@@ -35,7 +36,7 @@ internal static class MockIncidentCompassScripts
         var isNoise = toolResults.Any(static value => value.Contains("\"candidateClassification\":\"Noise\"", StringComparison.OrdinalIgnoreCase));
         return MockAiModelResponseFactory.CreateResponse(request, "Publish after analysis.", [MockAiModelResponseFactory.ToolCall(
             "incidentcompass-publish-report-1",
-            "publish_report",
+            OrchestratorToolNames.PublishReport,
             PublishArguments(
                 "Completed",
                 isNoise ? "Mock analysis closed the signal as noise." : "Mock analysis completed for the incident.",
@@ -54,7 +55,7 @@ internal static class MockIncidentCompassScripts
             : [Evidence(FindPromptArtifactId(request, "TriggerSignal")), Evidence(FindPromptArtifactId(request, "NeighborSet"))];
         return MockAiModelResponseFactory.CreateResponse(request, "Publish after memory delegation.", [MockAiModelResponseFactory.ToolCall(
             "incidentcompass-publish-report-1",
-            "publish_report",
+            OrchestratorToolNames.PublishReport,
             matched
                 ? PublishArguments(
                     "Completed",
@@ -91,7 +92,7 @@ internal static class MockIncidentCompassScripts
     public static bool IsIncidentCompassOrchestratorRequest(AiModelRequest request)
     {
         var toolNames = request.Tools?.Select(static tool => tool.Name).ToHashSet(StringComparer.Ordinal) ?? [];
-        return toolNames.SetEquals(["delegate", "publish_report"]);
+        return toolNames.SetEquals(OrchestratorToolNames.All);
     }
 
     public static bool IsAnalysisWorkerRequest(AiModelRequest request)

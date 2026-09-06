@@ -36,7 +36,7 @@ internal static class OrchestratorToolDefinitions
         };
 
         return new AiToolDefinition(
-            "delegate",
+            OrchestratorToolNames.Delegate,
             "Delegate one bounded task to a configured worker role and wait for its result.",
             "v1",
             CanonicalJsonSerializer.ToElement(schema));
@@ -82,7 +82,7 @@ internal static class OrchestratorToolDefinitions
         };
 
         return new AiToolDefinition(
-            "publish_report",
+            OrchestratorToolNames.PublishReport,
             "Publish the final grounded triage report and end this investigation.",
             "v1",
             CanonicalJsonSerializer.ToElement(schema));
