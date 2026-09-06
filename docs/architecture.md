@@ -62,6 +62,14 @@ configuration controls error-only, service and severity trigger filters; an empt
 Ignored telemetry returns a valid empty OTLP response and does not create a signal or triage job. A delivery
 key derived from `externalId`, or from trace plus span when no external ID exists, is unique per tenant and
 source, so exporter retries return the accepted signal rather than adding a neighbor or job.
+
+One export is bounded twice: `IngestionLimits:MaxPayloadBytes` caps its size in bytes and
+`IngestionLimits:MaxSignalsPerExport` caps how many records it carries. The record bound exists because
+protobuf is compact enough that a payload inside the byte cap can still hold a very large number of spans
+or log records, each of which can open a fault and a triage job. It is applied to the records the parsed
+export carries, before mapping and before any command is dispatched, so an over-limit export is rejected
+whole with `413 Payload Too Large` and creates no signal, fault or job; partial ingestion would leave a
+caller unable to tell what was stored. Both bounds are independent of request rate limiting.
 The PostgreSQL schema added in `infra/postgres/init/007-intake.sql` stores `signals`, `faults`, `triage_jobs`, `triage_config_snapshots` and `triage_artifacts`. `triage_artifacts` carries job-level intake facts (`TriggerSignal`, `NeighborSet`, optional `RecurrenceState` and optional `PriorReport`) plus attempt-level `WorkerOutput`, `RetrievedItem` and `ToolResult` artifacts. Phase 2 adds `infra/postgres/init/008-triage-ledger.sql` for append-only DB-ordered triage events. Phase 5 evolves `infra/postgres/init/009-triage-reports-minimal.sql` into grounded `triage_reports` plus `triage_evidence` persistence. Migration `023-action-approvals-outbox.sql` adds immutable post-report approval tuples, closed provenance, `ProposedAction` and `ActionResult` artifacts and constrained action lifecycle events. Migration `024-post-report-action-intents.sql` adds the durable evaluation queue that can create those proposals without becoming another action outbox. Migration `025-external-action-audit-projection.sql` adds an indexed immutable compact projection for confirmed Telegram and GitHub terminal results without changing the released 023/024 migrations. The Worker claim loop leases pending/retryable jobs, rehydrates each job's triage configuration from `triage_config_snapshots` by `config_hash`, runs a governed orchestrator with only `delegate(role, task)` and `publish_report(report_json)`, validates `delegate.role` against the config-derived role set, executes workers sequentially, enforces per-attempt budget and bounded reprompt policy, evaluates worker-tool rules over the ledger, and closes the job/fault only when backend-grounded report publication commits.
 
 

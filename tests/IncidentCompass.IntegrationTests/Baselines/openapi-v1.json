@@ -22,6 +22,9 @@
           "401": {
             "description": "Unauthorized"
           },
+          "413": {
+            "description": "Payload Too Large"
+          },
           "429": {
             "description": "Too Many Requests"
           }
@@ -44,6 +47,9 @@
           },
           "401": {
             "description": "Unauthorized"
+          },
+          "413": {
+            "description": "Payload Too Large"
           },
           "429": {
             "description": "Too Many Requests"

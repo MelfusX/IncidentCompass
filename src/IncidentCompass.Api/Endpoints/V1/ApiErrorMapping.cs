@@ -20,6 +20,11 @@ internal static class ApiErrorMapping
     public const string RequestForbiddenCode = "request_forbidden";
     public const string InternalDomainViolationCode = "internal_domain_violation";
 
+    // The OTLP endpoints answer in protobuf, not ProblemDetails, so this code cannot travel in a
+    // response body without breaking the OTLP contract. It is kept here with the other stable codes
+    // and recorded in the rejection log (event 4003) instead of being returned to the exporter.
+    public const string OtlpExportSignalLimitExceededCode = "otlp_export_signal_limit_exceeded";
+
     private const string ResourceNotFoundDetail = "The requested resource does not exist.";
     private const string ResourceConflictDetail = "The request conflicts with the current state of the resource.";
     private const string RequestForbiddenDetail = "The request is not permitted.";

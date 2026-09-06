@@ -6,4 +6,5 @@ public sealed class IngestionLimitsOptions
 
     public int MaxPayloadBytes { get; init; } = 65536;
     public int MaxAttributesBytes { get; init; } = 16384;
+    public int MaxSignalsPerExport { get; init; } = 500;
 }

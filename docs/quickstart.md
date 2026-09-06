@@ -138,6 +138,15 @@ per-request buffering; the 1 KiB lower bound prevents a misconfiguration that re
 OTLP exports. `MaxAttributesBytes` must be positive and no greater than `MaxPayloadBytes`. The
 default limits are 64 KiB and 16 KiB.
 
+`IncidentCompass__IngestionLimits__MaxSignalsPerExport` bounds how many records one OTLP export may
+carry, independently of its size in bytes: protobuf is compact, so a payload well inside the byte cap
+can still hold a very large number of spans or log records, and each record can open a fault and a
+triage job. It must be between 1 and 10000 and defaults to 500. The limit is applied to the records
+the export carries, before any of them is ingested, so an export above the limit is rejected whole
+with `413 Payload Too Large` and stores nothing rather than being ingested in part. This bound is
+independent of request rate limiting, which bounds callers per time window rather than work per
+request.
+
 ## Build And Test
 
 ~~~powershell
