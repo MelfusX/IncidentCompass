@@ -26,6 +26,71 @@ The public repository treats `main` as release-ready history. A public pull requ
 
 Do not auto-increment release versions in CI. The version is part of the reviewed release PR so maintainers can choose patch, minor or major intentionally.
 
+## Dependency Lock Files
+
+Every project commits a `packages.lock.json`. `ci`, `security` and `publish-release` all restore with
+`dotnet restore IncidentCompass.slnx --locked-mode`, so a dependency that resolves differently from
+the committed graph fails the build instead of changing silently.
+
+Regenerate the lock files for the whole solution after any dependency change:
+
+~~~powershell
+dotnet restore IncidentCompass.slnx --force-evaluate
+~~~
+
+Run it for the solution, not for one project. Package versions are managed centrally in
+`Directory.Packages.props`, so a single bump changes the effective graph of every project that
+reaches the package through a `PackageReference` or a `ProjectReference`. Commit every
+`packages.lock.json` the command changes.
+
+### Dependabot Lock File Sync
+
+Dependabot regenerates only the lock file of the project it edited. Its pull requests therefore
+arrive with the downstream projects stale, and `ci` fails on them with two `NU1004` errors: a
+`CentralTransitive` requested-version mismatch, and "the project references incidentcompass.api
+whose dependencies has changed".
+
+`.github/workflows/dependabot-lockfiles.yml` repairs that without a maintainer. On a Dependabot pull
+request it runs the `--force-evaluate` restore above, verifies the result restores in locked mode,
+and pushes only the changed `packages.lock.json` files back onto the Dependabot branch. It commits
+nothing when the lock files are already correct, so it never creates an empty commit, and its commit
+message carries `[dependabot skip]` so Dependabot keeps rebasing the branch instead of stopping
+because the branch was modified.
+
+`--locked-mode` is never relaxed. The `ci` re-run on the synced branch, `main` after the merge and
+the release gate all still verify the committed lock files.
+
+Security constraints on the workflow, which is the only one in this repository with write access:
+
+- It is a `pull_request` workflow, not `pull_request_target`, so it never runs base-branch logic
+  against a writable base-repository context.
+- The job runs only when `github.actor`, the pull request author and the head branch are all
+  Dependabot's and the head branch lives in this repository.
+- Job permissions are `contents: write` and nothing else; the workflow default is `permissions: {}`.
+- Checkout uses `persist-credentials: false`, so no token sits in the workspace while
+  `dotnet restore` executes MSBuild logic supplied by NuGet packages.
+- The commit and push run with `core.hooksPath=/dev/null` and `--no-verify`, so a package that
+  planted a git hook cannot run during the push.
+- Only `packages.lock.json` paths are staged, and no secret other than the push token is exposed.
+
+#### One-time setup: `DEPENDABOT_LOCKFILE_TOKEN`
+
+GitHub does not create ordinary workflow runs for events caused by `GITHUB_TOKEN`. A `pull_request`
+re-run caused by such a push is created in an "approval required" state, so a push made with the
+default token fixes the lock files but leaves the pull request waiting for one
+"Approve workflows to run" click.
+
+To remove that click, add a **Dependabot** secret (Settings, Secrets and variables, Dependabot; not
+Actions, because Actions secrets are not exposed to Dependabot-triggered runs) named
+`DEPENDABOT_LOCKFILE_TOKEN`. Store a fine-grained personal access token scoped to this repository
+only, with `Contents: Read and write` and no other permission. The workflow then pushes with that
+token, the push is an ordinary push, and `ci` re-runs and reports green on its own.
+
+The token is a long-lived credential. Keep it single-repository and single-permission and track its
+expiry; a GitHub App installation token minted with `actions/create-github-app-token` is the
+alternative when a non-expiring credential is preferred. Without the secret the workflow still works
+and warns in the job summary, it just costs that one approval click per pull request.
+
 ## API
 
 - Use `/api/v1/...` from the start.

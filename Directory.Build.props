@@ -3,8 +3,13 @@
   <PropertyGroup>
     <!-- Deterministic, reproducible restores: every project commits a packages.lock.json.
          CI restores in locked mode so any dependency drift fails the build instead of
-         silently resolving a different version. Regenerate by running `dotnet restore`
-         after changing a PackageReference, then commit the updated lock files. -->
+         silently resolving a different version. After changing a PackageReference or a
+         PackageVersion in Directory.Packages.props, regenerate the whole graph by running
+         `dotnet restore IncidentCompass.slnx` with the force-evaluate option, then commit every
+         lock file it changes: package versions are managed centrally, so one bump also changes
+         the lock file of every project that reaches the package through a ProjectReference.
+         The exact command, and how Dependabot pull requests repair themselves, are documented
+         in docs/versioning.md under "Dependency Lock Files". -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- Enforce the .editorconfig code-style rules (unused usings, formatting, file-scoped

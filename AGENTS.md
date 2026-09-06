@@ -118,6 +118,11 @@ powershell -ExecutionPolicy Bypass -File scripts\package-vulnerability-gate.ps1
 powershell -ExecutionPolicy Bypass -File scripts\code-organization-gate.ps1
 ```
 
+After changing a package version in `Directory.Packages.props`, regenerate every lock file with
+`dotnet restore IncidentCompass.slnx --force-evaluate` and commit the files it changes. Central
+package management makes one bump change the lock file of every project that reaches the package,
+and CI restores with `--locked-mode`; see `docs/versioning.md`, "Dependency Lock Files".
+
 For persistence-sensitive changes:
 
 ```powershell

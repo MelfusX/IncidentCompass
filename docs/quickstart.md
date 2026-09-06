@@ -155,6 +155,12 @@ dotnet build IncidentCompass.slnx
 dotnet test --solution IncidentCompass.slnx
 ~~~
 
+Every project commits a `packages.lock.json` and CI restores with `--locked-mode`. After changing a
+package version in `Directory.Packages.props`, regenerate the whole graph with
+`dotnet restore IncidentCompass.slnx --force-evaluate` and commit every lock file it changes. See
+[Dependency lock files](versioning.md#dependency-lock-files) for why one bump touches several lock
+files and how Dependabot pull requests repair themselves.
+
 PostgreSQL repository tests use Testcontainers. Outside CI they skip when Docker is unavailable; in
 CI, or when `INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS=true` is set, Docker-backed tests are required and
 will fail instead of silently skipping.
