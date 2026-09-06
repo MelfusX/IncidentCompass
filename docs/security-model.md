@@ -14,14 +14,17 @@ The starter kit uses:
 
 Real auth providers such as Entra ID or ASP.NET Identity are future adapters, not requirements for the local sample path.
 
-The API registers the demo header-based `IUserContext` only for `Development` by default. Development requests may omit headers and use the configured local `demo-user` defaults for the quickstart. Production API startup fails unless the API composition root registers a real foreground `IUserContext` adapter before the app starts. The Infrastructure project registers `IBackgroundUserContext` for Worker/system jobs, not a foreground API `IUserContext`, so the background identity cannot satisfy the API auth requirement by DI ordering. Non-production demo environments can explicitly opt in to demo headers; in that opt-in mode, the configured default user, tenant, roles and groups are ignored, the request must include an explicit `X-Demo-User-Id` to be treated as authenticated, and anonymous requests receive no default claims. Worker hosts explicitly map the background context for job processing and do not use HTTP demo headers.
+The API registers the demo header-based `IUserContext` only for `Development` by default (`appsettings.Development.json` sets `IncidentCompass:DemoAuth:Enabled` to `true`; the base `appsettings.json` leaves it `false`). Development requests may omit headers and use the configured local `demo-user` defaults for the quickstart. Startup fails unless the API composition root registers a real foreground `IUserContext` adapter before the app starts: `ApiUserContextSetup.AddApiUserContext` always registers `ApiUserContextStartupFilter` (`src/IncidentCompass.Api/Security/ApiUserContextStartupFilter.cs`), and that filter throws unless a non-background `IUserContext` was resolved. In practice this only bites in Production and other environments where neither API-key auth nor demo auth ends up enabled, because Development and explicit demo opt-in register `DemoHeaderUserContext` first. The Infrastructure project registers `IBackgroundUserContext` for Worker/system jobs, not a foreground API `IUserContext`, so the background identity cannot satisfy the API auth requirement by DI ordering. Non-production demo environments can explicitly opt in to demo headers; in that opt-in mode, the configured default user, tenant, roles and groups are ignored, the request must include an explicit `X-Demo-User-Id` to be treated as authenticated, and anonymous requests receive no default claims. Worker hosts explicitly map the background context for job processing and do not use HTTP demo headers.
 
 Demo headers such as `X-Demo-User-Id`, `X-Demo-Tenant-Id` and `X-Demo-Roles` are caller-controlled sample inputs. They are useful for local walkthroughs, but they are not authentication and must not be trusted in deployed environments.
 
 ## API-key boundary
 
 The API host supports a minimal shared-key boundary through host-only
-`IncidentCompass:ApiKeyAuth` settings. When `Enabled` is true, a fallback authorization policy
+`IncidentCompass:ApiKeyAuth` settings. It ships disabled: `src/IncidentCompass.Api/appsettings.json`
+sets `IncidentCompass:ApiKeyAuth:Enabled` to `false`, with an empty `Credentials` list, and no
+environment-specific appsettings file turns it on. A deployment that wants the shared-key boundary
+must explicitly set `Enabled` to `true` and supply credentials through host configuration. When `Enabled` is true, a fallback authorization policy
 protects all current and future endpoints unless they are explicitly anonymous. The complete
 anonymous allowlist is `/health`, `/api/v1/health`, `/api/v1/health/memory-sync` and the
 Development-only OpenAPI document. Manual intake, incident-data reads, `users/me` and native OTLP
@@ -72,6 +75,21 @@ outside the scope is indistinguishable from a missing object and returns `404`; 
 lists only return scoped rows. API-key authentication changes only the API composition adapter,
 not the intake or read use cases. Worker/system jobs continue to use their background identity and
 the server-loaded job/configuration tenant context.
+
+## Local Compose Credentials
+
+`docker-compose.yml` sets local-only PostgreSQL demo defaults through `${VAR:-default}` fallbacks:
+`POSTGRES_USER` (line 25) and `POSTGRES_PASSWORD` (line 26) default to `incidentcompass` and
+`incidentcompass_dev_password`; the healthcheck (line 33) and both the `api` and `worker` service
+connection strings (lines 46 and 71) reuse the same fallbacks. These values exist only so the
+one-command demo runs without an operator supplying anything; overriding them from an ignored `.env`
+file or shell variables replaces them without editing the compose file (see `docs/local-demo.md` and
+`docs/quickstart.md`).
+
+This repository has no production compose file: only `docker-compose.yml` (the demo stack) and
+`compose.mock.yml` (a deterministic-provider overlay for the demo stack) exist. A real deployment
+must supply its own configuration and secrets management; it must not deploy `docker-compose.yml` or
+its default credentials as-is.
 
 ## Logging
 

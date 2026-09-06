@@ -46,6 +46,7 @@ An id is stable once published. A retired event keeps its id reserved rather tha
 | 1601 | Warning | Post-report action evaluation failed after claim. |
 | 1602 | Warning | Post-report action evaluation failed while draining. |
 | 1701 | Warning | Post-report workflow failed after its evaluation lease was lost. |
+| 1702 | Warning | A post-report action intent lost its evaluation lease; the attempt is abandoned without writing a result. |
 
 ### Infrastructure adapters (2000-2999)
 

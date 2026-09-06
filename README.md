@@ -75,11 +75,18 @@ handlers while proving that the fixture cannot select a recipient, repository is
 - Layered-monolith .NET 10 application with Clean Architecture boundaries and a lightweight internal
   dispatcher/pipeline.
 - Signal intake with source normalization, configurable redaction, fingerprinting, grouping, triage
-  job creation and grounded intake artifacts.
+  job creation and grounded intake artifacts. Native OTLP/HTTP protobuf trace and log ingestion is
+  bounded independently by request payload bytes and by `IngestionLimits:MaxSignalsPerExport`
+  (default 500 records); an over-limit export is rejected whole before any signal is stored.
 - OpenAI-compatible model and embedding adapters for the normal runtime path, with explicit mock
   adapters for tests and deterministic checks.
 - Configured orchestrator and worker roles, typed output schemas, role-scoped tools and ledger-backed
-  policy decisions.
+  policy decisions. A triage attempt that exhausts a token, wall-clock, worker or turn budget, or that
+  is denied by backend governance, is dead-lettered immediately with its own bounded error code rather
+  than retried, because a replay would read the same configuration and policy and fail the same way.
+- API error responses carry a stable `errorCode` and an authored, client-safe `detail` instead of an
+  exception's own message; the mapping from exception type to HTTP status and default code/detail is
+  centralized in one place (`ApiErrorMapping`).
 - PostgreSQL/pgvector incident memory with governed `memory_search`, file-backed seed identity and snapshotted per-service current-release markers for documentation fit.
 - Governed `source_lookup` over explicitly configured local checkouts, with backend-selected release
   and stack frames, bounded text excerpts and grounded `RetrievedItem` citations carrying a closed
