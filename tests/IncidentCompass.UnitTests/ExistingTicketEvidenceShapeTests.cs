@@ -60,7 +60,7 @@ public sealed class ExistingTicketEvidenceShapeTests
         ["title"] = "Checkout timeout",
         ["status"] = "open",
         ["assignee"] = "octocat",
-        ["createdAtUtc"] = "2026-08-28T00:00:00.0000000+00:00",
+        ["createdAtUtc"] = "2026-01-15T00:00:00.0000000+00:00",
         ["url"] = "https://github.com/owner/repo/issues/42",
         ["score"] = 0.85
     };

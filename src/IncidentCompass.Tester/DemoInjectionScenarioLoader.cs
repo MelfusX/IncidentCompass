@@ -5,7 +5,7 @@ namespace IncidentCompass.Tester;
 
 internal static class DemoInjectionScenarioLoader
 {
-    internal const string ExpectedSha256 = "B273E71231B7ADD57F3D6C42C7D8FB97D022004D5DED7E0C8DAE7B3FC5921EC3";
+    internal const string ExpectedSha256 = "AF2C179FF50AB66B31EB44FBC68581B2CE74A2A94AF53E3564A322F2368130B0";
     private static readonly string FixturePath = Path.Combine(
         AppContext.BaseDirectory,
         "Samples",

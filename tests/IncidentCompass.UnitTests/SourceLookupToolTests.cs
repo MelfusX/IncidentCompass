@@ -62,7 +62,7 @@ public sealed class SourceLookupToolTests
 
     private static AgentToolExecutionContext CreateContext(bool includeRelease)
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
+        var now = DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture);
         var job = new TriageJob(
             Guid.NewGuid(), Guid.NewGuid(), TriageJobStatus.Processing, 1, "worker", now.AddMinutes(1),
             null, null, null, "hash", now, now);

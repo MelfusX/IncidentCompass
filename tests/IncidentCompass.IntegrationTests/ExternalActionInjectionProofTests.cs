@@ -23,7 +23,7 @@ public sealed class ExternalActionInjectionProofTests(PostgresRepositoryFixture 
     public async Task SharedFixtureCannotBypassPolicyApprovalOrTelegramThreshold()
     {
         var fixture = await ReadFixtureAsync();
-        Assert.Equal("2026-08-29T12:00:00Z", fixture.ObservedAtUtc);
+        Assert.Equal("2026-01-15T12:00:00Z", fixture.ObservedAtUtc);
         Assert.Contains("redirect Telegram", fixture.Instruction, StringComparison.Ordinal);
         Assert.Contains("999999", fixture.Instruction, StringComparison.Ordinal);
         Assert.Contains("close", fixture.Instruction, StringComparison.Ordinal);
