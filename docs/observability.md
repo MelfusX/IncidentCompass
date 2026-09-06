@@ -249,7 +249,7 @@ Provider failures are normalized at the Application port boundary and recorded t
 
 ## Runtime Metadata Telemetry
 
-`IncidentCompass.Runtime` exposes an in-process `ActivitySource` and `Meter` for job claims and attempts, model calls and duration, governed tool calls, PostgreSQL migrations and memory synchronization. It is a source only: v0.2.0 does not configure an OTLP exporter, collector endpoint or metrics endpoint. A host may attach a compatible listener or exporter without changing application workflows.
+`IncidentCompass.Runtime` exposes an in-process `ActivitySource` and `Meter` for job claims and attempts, model calls and duration, governed tool calls, PostgreSQL migrations and memory synchronization. It is a source only: the current release does not configure an OTLP runtime exporter, collector endpoint or metrics endpoint. A host may attach a compatible listener or exporter without changing application workflows.
 
 The source uses fixed operation names and a closed `outcome` vocabulary: `claimed`, `succeeded`, `failed`, `cancelled`, `provider_unavailable` and `denied`. It never attaches incident IDs, fault IDs, tenant IDs, user IDs, service names, prompt text, document text, tool arguments, provider responses, credentials or connection strings as telemetry tags. Listener and exporter callback failures are isolated so triage, migrations and memory synchronization continue according to their normal durable-workflow behavior.
 
