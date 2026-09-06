@@ -44,8 +44,8 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 
 The script builds PostgreSQL, API, Worker and Tester containers, runs the local scenarios and prints
 URLs for the fault ledger and triage report. Use `scripts/demo.ps1 -Mock` only when you need the
-fully deterministic mock path. The configurable ingestion payload limit must be between 1 KiB and 1 MiB. The upper bound caps per-request buffering; the 1 KiB lower bound prevents a misconfiguration that rejects ordinary small OTLP exports. `MaxAttributesBytes` must be positive and no greater than `MaxPayloadBytes`. The default limits are 64 KiB and 16 KiB. See [Quickstart](docs/quickstart.md) and
-[Local demo walkthrough](docs/local-demo.md) for provider settings, port overrides and manual steps.
+fully deterministic mock path. See [Quickstart](docs/quickstart.md) and [Local demo walkthrough](docs/local-demo.md)
+for provider settings, port overrides and manual steps.
 
 Compose host-port overrides do not change the fixed internal API, PostgreSQL or OTLP addresses.
 The mock overlay replaces only model and embedding providers. GitHub and Telegram adapters retain

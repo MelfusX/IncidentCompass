@@ -6,6 +6,24 @@ This document records intentional choices and their costs.
 
 Real model calls are expensive and nondeterministic. Automated tests use mock clients by default.
 
+## Real-Model Smoke History
+
+These runs were opt-in, non-gated local measurements against an OpenAI-compatible endpoint. They
+measure whether the governed loop reaches its terminal step, not answer quality. The deterministic
+release gate remains the mock-backed demo plus the automated tests.
+
+| Stage | Model | Scenario | Reach rate |
+|---|---|---|---|
+| Phase 2 | qwen2.5-14b-instruct | publish_report | 0/3 |
+| Phase 2 | qwen/qwen3.6-27b | publish_report | 0/1 |
+| Phase 3 | qwen2.5-14b-instruct | publish_report | 3/3 |
+| Phase 3 | qwen/qwen3.6-27b | publish_report | 1/1 |
+| Phase 4 | qwen2.5-14b-instruct | delegate to memory to memory_search to publish_report | 5/5 |
+| Phase 5 | qwen2.5-14b-instruct | the Phase 4 trajectory plus grounded evidence | 3/5 |
+
+The Phase 3 `3/3` result was measured with `Orchestrator.Budget.MaxReprompts: 2`; the Phase 2
+baseline predates bounded reprompts.
+
 ## Full Prompt Logging vs Privacy
 
 Full prompt logs help debugging but may leak sensitive data. Default logging is metadata-only.
