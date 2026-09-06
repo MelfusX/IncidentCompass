@@ -35,6 +35,14 @@ pattern list cannot prove that all secret and PII formats are covered. New reali
 add regression fixtures for their known sensitive fields, and operators should keep full prompt/body
 logging disabled.
 
+The property-name denylist is the same kind of compromise. Segment matching catches real spellings
+such as `x-api-key` and `user_password_hash` without redacting `session_id` or `key_count`, but it
+accepts both directions of error: a name such as `token_count` is redacted although it holds no
+secret, and a plural such as `cookies` or an unlisted vendor word is missed. The exact rule is stated
+in `docs/security-model.md` so an operator can predict it and add configured attribute keys for the
+names it does not know. A configured pattern that exceeds its 200 ms match timeout also destroys the
+whole field rather than risk emitting a value redaction did not finish cleaning.
+
 ## Pseudonymization Salt Rotation
 
 User identifiers can be replaced with stable HMAC-SHA256 pseudonyms so later blast-radius logic can

@@ -2,29 +2,18 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
+using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.Application.Intake.Redaction;
 
 internal static partial class SecretRedactor
 {
-    private static readonly TimeSpan ConfiguredPatternTimeout = TimeSpan.FromMilliseconds(200);
-    private static readonly HashSet<string> SecretPropertyNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "password",
-        "secret",
-        "token",
-        "apikey",
-        "api_key",
-        "accesskey",
-        "access_key",
-        "clientsecret",
-        "client_secret",
-        "connectionstring",
-        "connection_string",
-        "privatekey",
-        "private_key",
-        "authorization",
-    };
+    /// <summary>
+    /// Written in place of a whole field when a configured pattern exceeded its match timeout. It is
+    /// deliberately distinct from <c>[REDACTED]</c> so an operator can tell a value redacted by rule
+    /// from a value that defeated the redactor.
+    /// </summary>
+    public const string PatternTimeoutMarker = "[REDACTED:PATTERN_TIMEOUT]";
 
     public static NormalizedSignal Redact(NormalizedSignal signal) =>
         Redact(signal, RedactionSettings.Default);
@@ -35,33 +24,48 @@ internal static partial class SecretRedactor
     public static NormalizedSignal Redact(
         NormalizedSignal signal,
         RedactionSettings settings,
-        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier) =>
-        signal with
+        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier,
+        ILogger? logger = null)
+    {
+        var context = RedactionContext.Create(settings, canonicalPseudonymVerifier, logger, "signal");
+        return signal with
         {
-            ExternalId = RedactText(signal.ExternalId, settings),
-            TraceId = RedactText(signal.TraceId, settings),
-            SpanId = RedactText(signal.SpanId, settings),
-            ParentSpanId = RedactText(signal.ParentSpanId, settings),
-            ServiceName = RedactRequiredText(signal.ServiceName, settings),
-            Environment = RedactRequiredText(signal.Environment, settings),
-            OperationName = RedactText(signal.OperationName, settings),
-            Severity = RedactText(signal.Severity, settings),
-            ErrorType = RedactText(signal.ErrorType, settings),
-            ErrorMessage = RedactText(signal.ErrorMessage, settings),
-            Description = SignalTextTruncator.TruncateDescription(RedactText(signal.Description, settings)),
-            Summary = SignalTextTruncator.TruncateSummary(RedactRequiredText(signal.Summary, settings)),
-            HttpMethod = RedactText(signal.HttpMethod, settings),
-            HttpRoute = RedactText(signal.HttpRoute, settings),
-            Attributes = RedactJsonNode(signal.Attributes, settings, canonicalPseudonymVerifier),
-            Body = RedactJsonNode(signal.Body, settings, canonicalPseudonymVerifier),
+            ExternalId = RedactText(signal.ExternalId, context, "externalId"),
+            TraceId = RedactText(signal.TraceId, context, "traceId"),
+            SpanId = RedactText(signal.SpanId, context, "spanId"),
+            ParentSpanId = RedactText(signal.ParentSpanId, context, "parentSpanId"),
+            ServiceName = RedactRequiredText(signal.ServiceName, context, "serviceName"),
+            Environment = RedactRequiredText(signal.Environment, context, "environment"),
+            OperationName = RedactText(signal.OperationName, context, "operationName"),
+            Severity = RedactText(signal.Severity, context, "severity"),
+            ErrorType = RedactText(signal.ErrorType, context, "errorType"),
+            ErrorMessage = RedactText(signal.ErrorMessage, context, "errorMessage"),
+            Description = SignalTextTruncator.TruncateDescription(
+                RedactText(signal.Description, context, "description")),
+            Summary = SignalTextTruncator.TruncateSummary(
+                RedactRequiredText(signal.Summary, context, "summary")),
+            HttpMethod = RedactText(signal.HttpMethod, context, "httpMethod"),
+            HttpRoute = RedactText(signal.HttpRoute, context, "httpRoute"),
+            Attributes = RedactNode(signal.Attributes, context.WithPathRoot("attributes"), string.Empty),
+            Body = RedactNode(signal.Body, context.WithPathRoot("body"), string.Empty),
         };
-
-    private static string RedactRequiredText(string text, RedactionSettings settings) =>
-        RedactText(text, settings) ?? string.Empty;
+    }
 
     public static string? RedactText(string? text) => RedactText(text, RedactionSettings.Default);
 
-    public static string? RedactText(string? text, RedactionSettings settings)
+    public static string? RedactText(string? text, RedactionSettings settings) =>
+        RedactText(text, RedactionContext.Create(settings, null, null, "text"), string.Empty);
+
+    public static JsonNode RedactJsonNode(JsonNode node) =>
+        RedactJsonNode(node, RedactionSettings.Default);
+
+    public static JsonNode RedactJsonNode(JsonNode node, RedactionSettings settings) =>
+        RedactNode(node, RedactionContext.Create(settings, null, null, "json"), string.Empty);
+
+    private static string RedactRequiredText(string text, RedactionContext context, string path) =>
+        RedactText(text, context, path) ?? string.Empty;
+
+    private static string? RedactText(string? text, RedactionContext context, string path)
     {
         if (text is null)
         {
@@ -72,56 +76,57 @@ internal static partial class SecretRedactor
         redacted = AwsAccessKeyPattern().Replace(redacted, "[REDACTED]");
         redacted = SecretPrefixedTokenPattern().Replace(redacted, "[REDACTED]");
         redacted = ConnectionStringPasswordPattern().Replace(redacted, "$1=[REDACTED]");
-        foreach (var pattern in settings.Patterns)
+        foreach (var pattern in context.Patterns.Patterns)
         {
-            var options = pattern.IgnoreCase ? RegexOptions.IgnoreCase : RegexOptions.None;
-            redacted = new Regex(pattern.Pattern, options, ConfiguredPatternTimeout)
-                .Replace(redacted, pattern.Replacement);
+            try
+            {
+                redacted = pattern.Matcher.Replace(redacted, pattern.Replacement);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                // Fail closed: the partially processed value is discarded rather than returned,
+                // because the patterns that had not run yet may be the ones covering this value.
+                ReportPatternTimeout(context, pattern, path);
+                return PatternTimeoutMarker;
+            }
         }
 
         return redacted;
     }
 
-    public static JsonNode RedactJsonNode(JsonNode node) =>
-        RedactJsonNode(node, RedactionSettings.Default);
-
-    public static JsonNode RedactJsonNode(JsonNode node, RedactionSettings settings) =>
-        RedactJsonNode(node, settings, canonicalPseudonymVerifier: null);
-
-    private static JsonNode RedactJsonNode(
-        JsonNode node,
-        RedactionSettings settings,
-        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier) =>
-        RedactNode(node, settings, string.Empty, canonicalPseudonymVerifier);
-
-    private static JsonNode RedactNode(
-        JsonNode node,
-        RedactionSettings settings,
-        string path,
-        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier)
+    private static void ReportPatternTimeout(
+        RedactionContext context,
+        CompiledRedactionPattern pattern,
+        string path)
     {
-        return node switch
+        if (context.Logger is { } logger && pattern.TryClaimTimeoutReport())
         {
-            JsonObject jsonObject => RedactObject(jsonObject, settings, path, canonicalPseudonymVerifier),
-            JsonArray jsonArray => RedactArray(jsonArray, settings, path, canonicalPseudonymVerifier),
-            JsonValue jsonValue => RedactValue(jsonValue, settings),
-            _ => node.DeepClone(),
-        };
+            RedactionTimeoutLog.PatternTimedOut(
+                logger,
+                pattern.Name,
+                context.DescribeField(path),
+                PatternTimeoutMarker);
+        }
     }
 
-    private static JsonObject RedactObject(
-        JsonObject jsonObject,
-        RedactionSettings settings,
-        string path,
-        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier)
+    private static JsonNode RedactNode(JsonNode node, RedactionContext context, string path) =>
+        node switch
+        {
+            JsonObject jsonObject => RedactObject(jsonObject, context, path),
+            JsonArray jsonArray => RedactArray(jsonArray, context, path),
+            JsonValue jsonValue => RedactValue(jsonValue, context, path),
+            _ => node.DeepClone(),
+        };
+
+    private static JsonObject RedactObject(JsonObject jsonObject, RedactionContext context, string path)
     {
         var result = new JsonObject();
         foreach (var property in jsonObject)
         {
             var propertyPath = string.IsNullOrEmpty(path) ? property.Key : path + "." + property.Key;
-            if (IsSensitiveProperty(property.Key, propertyPath, settings))
+            if (IsSensitiveProperty(property.Key, propertyPath, context.Settings))
             {
-                result[property.Key] = canonicalPseudonymVerifier?.Invoke(property.Value, propertyPath) == true
+                result[property.Key] = context.CanonicalPseudonymVerifier?.Invoke(property.Value, propertyPath) == true
                     ? property.Value!.DeepClone()
                     : "[REDACTED]";
                 continue;
@@ -129,28 +134,24 @@ internal static partial class SecretRedactor
 
             result[property.Key] = property.Value is null
                 ? null
-                : RedactNode(property.Value, settings, propertyPath, canonicalPseudonymVerifier);
+                : RedactNode(property.Value, context, propertyPath);
         }
 
         return result;
     }
 
-    private static JsonArray RedactArray(
-        JsonArray jsonArray,
-        RedactionSettings settings,
-        string path,
-        Func<JsonNode?, string, bool>? canonicalPseudonymVerifier)
+    private static JsonArray RedactArray(JsonArray jsonArray, RedactionContext context, string path)
     {
         var result = new JsonArray();
         foreach (var element in jsonArray)
         {
-            result.Add(element is null ? null : RedactNode(element, settings, path, canonicalPseudonymVerifier));
+            result.Add(element is null ? null : RedactNode(element, context, path));
         }
 
         return result;
     }
 
-    private static JsonNode RedactValue(JsonValue jsonValue, RedactionSettings settings)
+    private static JsonNode RedactValue(JsonValue jsonValue, RedactionContext context, string path)
     {
         if (jsonValue.GetValueKind() != System.Text.Json.JsonValueKind.String)
         {
@@ -158,14 +159,15 @@ internal static partial class SecretRedactor
         }
 
         var text = jsonValue.GetValue<string>();
-        return JsonValue.Create(RedactText(text, settings)!)!;
+        return JsonValue.Create(RedactText(text, context, path)!)!;
     }
 
     private static bool IsSensitiveProperty(string key, string path, RedactionSettings settings) =>
-        SecretPropertyNames.Contains(key) ||
+        SecretPropertyNameMatcher.IsSensitive(key) ||
         settings.AttributeKeys.Any(candidate =>
             string.Equals(candidate, key, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(candidate, path, StringComparison.OrdinalIgnoreCase));
+
     [GeneratedRegex(@"Bearer\s+[A-Za-z0-9\-_\.=]{10,}", RegexOptions.IgnoreCase)]
     private static partial Regex BearerTokenPattern();
 

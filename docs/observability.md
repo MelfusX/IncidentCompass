@@ -86,6 +86,7 @@ An id is stable once published. A retired event keeps its id reserved rather tha
 | 3511 | Information | Post-report action policy allowed a proposal in its effective mode. |
 | 3512 | Warning | Post-report action policy denied a proposal. |
 | 3513 | Information | Post-report action policy requires approval for a proposal. |
+| 3601 | Error | A configured redaction pattern exceeded its match timeout; the field was replaced with the timeout marker. Carries the pattern name and field path only, never the field value. |
 
 ### API host (4000-4999)
 
