@@ -12,6 +12,111 @@ Production-minded model-backed systems need visibility into model calls, latency
 - budget ledger entries;
 - error logs.
 
+## Application Log Event Ids
+
+Every source-generated `[LoggerMessage]` event in the solution declares an explicit `EventId`, so a
+log event can be filtered, alerted on and documented without depending on generator-derived
+numbering. Ids are allocated in disjoint ranges per area, and a hundred-block per type inside a
+range:
+
+| Range | Area |
+| --- | --- |
+| 1000-1999 | `IncidentCompass.Worker` host |
+| 2000-2999 | `IncidentCompass.Infrastructure` adapters |
+| 3000-3999 | `IncidentCompass.Application` use cases and governance |
+| 4000-4999 | `IncidentCompass.Api` host |
+
+An id is stable once published. A retired event keeps its id reserved rather than recycling it.
+
+### Worker host (1000-1999)
+
+| Id | Level | Meaning |
+| --- | --- | --- |
+| 1001 | Information | Worker started with its concurrency limit and startup health status. |
+| 1002 | Warning | Worker startup health check failed; polling continues. |
+| 1003 | Warning | Worker polling failed; polling continues after backoff. |
+| 1101 | Warning | Triage job lease ownership was lost; in-flight work is cancelled. |
+| 1102 | Warning | Triage job lease renewal failed; in-flight work is cancelled. |
+| 1201 | Warning | Approved action polling failed; polling continues after backoff. |
+| 1301 | Warning | Post-report action evaluation polling failed; polling continues after backoff. |
+| 1401 | Warning | Claimed triage job processing failed after claim. |
+| 1402 | Warning | Claimed triage job processing failed while draining the worker. |
+| 1501 | Warning | Approved action dispatch failed after claim. |
+| 1502 | Warning | Approved action dispatch failed while draining. |
+| 1601 | Warning | Post-report action evaluation failed after claim. |
+| 1602 | Warning | Post-report action evaluation failed while draining. |
+| 1701 | Warning | Post-report workflow failed after its evaluation lease was lost. |
+
+### Infrastructure adapters (2000-2999)
+
+| Id | Level | Meaning |
+| --- | --- | --- |
+| 2101 | Warning | Triage configuration snapshot was not persisted because PostgreSQL is not configured. |
+| 2201 | Error | Fault was not terminalized while publishing a triage report. |
+| 2301 | Warning | Memory seed runtime synchronization failed with a bounded failure type. |
+| 2302 | Warning | Memory seed failure status persistence was skipped. |
+| 2401 | Warning | Telegram notification provider returned a bounded failure code. |
+| 2501 | Warning | GitHub issue provider returned a bounded failure code. |
+
+### Application (3000-3999)
+
+| Id | Level | Meaning |
+| --- | --- | --- |
+| 3001 | Debug | Application request dispatched with its elapsed time. |
+| 3002 | Warning | Application request dispatch failed. |
+| 3101 | Warning | Triage job attempt failed, with its bounded error code and exception type. |
+| 3102 | Information | Attempt failure resolved to retry-pending with its next attempt time. |
+| 3103 | Error | Attempt exhausted its retry budget and was dead-lettered. |
+| 3104 | Warning | Attempt was delayed because the model provider is unavailable; the attempt budget was not consumed. |
+| 3105 | Error | Attempt failure could not be recorded durably by the runtime repository. |
+| 3201 | Information | Model call completed, with route, call kind, provider, model, usage source, token counts, duration and proposed tool-call count. |
+| 3202 | Warning | Model call failed with a bounded exception type. |
+| 3203 | Warning | Model call was cancelled because the attempt wall-clock budget ran out. |
+| 3204 | Information | Model call was cancelled by host shutdown. |
+| 3211 | Debug | Model tokens were charged to the attempt budget. |
+| 3212 | Warning | Attempt budget limit was reached, with its bounded reason token. |
+| 3301 | Warning | Worker tool call was denied, with its bounded denial token. |
+| 3302 | Information | Worker tool call was not executed because it requires approval. |
+| 3303 | Debug | Worker tool call executed successfully. |
+| 3304 | Warning | Worker tool call ended in a non-success status with a bounded error code. |
+| 3401 | Information | Orchestrator was reprompted, with its bounded reprompt reason and the reprompt budget. |
+| 3501 | Debug | Immediate tool policy allowed a worker tool. |
+| 3502 | Warning | Immediate tool policy denied a worker tool. |
+| 3503 | Information | Immediate tool policy requires approval for a worker tool. |
+| 3511 | Information | Post-report action policy allowed a proposal in its effective mode. |
+| 3512 | Warning | Post-report action policy denied a proposal. |
+| 3513 | Information | Post-report action policy requires approval for a proposal. |
+
+### API host (4000-4999)
+
+| Id | Level | Meaning |
+| --- | --- | --- |
+| 4001 | Error | A domain exception reached the API error boundary. |
+
+### Level policy
+
+A denial, a dead-letter, a lost lease and an exhausted budget are at least `Warning`, because an
+operator has to see them. A routine allow, a successful tool call and a token charge are `Debug`,
+so an ordinary investigation does not fill the log with policy noise. Outcomes an operator wants in
+a normal production log without enabling debug output - a completed model call with its token and
+duration figures, a scheduled retry, an approval requirement, a reprompt - are `Information`. Only a
+state that ends or corrupts a unit of work is `Error`: a dead-lettered attempt, a failed durable
+failure write, a non-terminalized fault and an unhandled domain exception at the API boundary.
+
+### What these events never carry
+
+Log events carry bounded, non-sensitive facts only: job, fault and correlation ids, role and route
+names, tool names, decision outcomes, reason tokens, token counts, durations, attempt numbers,
+bounded error codes and exception type names. They never carry message content, rendered prompts or
+responses, artifact payloads, tool arguments or results, memory document text, embedding vectors,
+credentials or raw provider error strings. Provider and validator exception messages are therefore
+reduced to their type name or to a closed classification token before they reach a log; the bounded,
+truncated failure message stays in the durable job row and triage ledger instead.
+
+The triage job attempt failure event (3101) and its disposition event (3102/3103/3104) are written
+before the durable attempt-failure write is attempted, so a failing durable write (3105) can never
+erase the trace of what originally failed.
+
 ## ModelCall Ledger Events
 
 The live model telemetry mechanism is the append-only triage ledger. Each investigation model call writes a compact `ModelCall` event to `incidentcompass.triage_ledger`.
@@ -27,7 +132,11 @@ The live model telemetry mechanism is the append-only triage ledger. Each invest
 - duration in milliseconds;
 - proposed tool-call count.
 
+That payload is the named `ModelCallLedgerMetadata` record. Its JSON property names, casing and order are pinned by attribute because existing ledger rows and the cost-rollup reader parse them; the type exists so the persisted shape has a name and a compile-time contract, not to change it.
+
 The ledger does not store rendered prompts, full provider responses, document text, provider credentials, API keys or embedding vectors. Token budget accounting is recorded separately as first-class `BudgetEvent` rows with `tokens_delta` and `workers_delta` columns.
+
+Each `ModelCall` and `BudgetEvent` row is mirrored by a bounded application log event (3201-3204 and 3211-3212 above), so live model observability is readable from logs and auditable from the ledger.
 
 ## Hourly Cost Rollups
 

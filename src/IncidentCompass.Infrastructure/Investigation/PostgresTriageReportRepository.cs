@@ -196,6 +196,7 @@ internal sealed partial class PostgresTriageReportRepository(
     }
 
     [LoggerMessage(
+        EventId = 2201,
         Level = LogLevel.Error,
         Message = "Fault {FaultId} was not terminalized while publishing triage report for job {JobId}.")]
     private static partial void LogFaultNotTerminalized(ILogger logger, Guid faultId, Guid jobId);

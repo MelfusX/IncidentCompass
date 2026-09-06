@@ -43,6 +43,6 @@ internal sealed partial class ApiExceptionHandler(
         };
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "A domain exception reached the API error boundary.")]
+    [LoggerMessage(EventId = 4001, Level = LogLevel.Error, Message = "A domain exception reached the API error boundary.")]
     private static partial void LogDomainExceptionReachedBoundary(ILogger logger, Exception exception);
 }

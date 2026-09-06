@@ -65,6 +65,6 @@ internal sealed partial class MemorySeedSyncStatusPersistence(
         }
     }
 
-    [LoggerMessage(LogLevel.Warning, "Memory seed failure status persistence was skipped: {Reason}.")]
+    [LoggerMessage(2302, LogLevel.Warning, "Memory seed failure status persistence was skipped: {Reason}.")]
     private static partial void LogFailureStatusSaveSkipped(ILogger logger, string reason);
 }

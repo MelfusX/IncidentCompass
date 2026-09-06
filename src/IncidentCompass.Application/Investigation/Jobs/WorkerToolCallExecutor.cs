@@ -9,17 +9,22 @@ using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace IncidentCompass.Application.Investigation.Jobs;
 
-internal sealed class WorkerToolCallExecutor(
+internal sealed partial class WorkerToolCallExecutor(
     IEnumerable<IImmediateAgentTool> tools,
     ToolRuleEngine ruleEngine,
     TriageLedgerAppender ledgerAppender,
     ITriageToolResultCommitter toolResultCommitter,
-    IRuntimeTelemetry? telemetry = null)
+    IRuntimeTelemetry? telemetry = null,
+    ILogger<WorkerToolCallExecutor>? logger = null)
 {
     private readonly IReadOnlyList<IImmediateAgentTool> tools = tools.ToArray();
+
+    private readonly ILogger logger = logger ?? NullLogger<WorkerToolCallExecutor>.Instance;
 
     public IReadOnlyList<AiToolDefinition> CreateToolSurface(TriageConfiguration configuration, TriageRoleSettings role)
     {
@@ -64,6 +69,7 @@ internal sealed class WorkerToolCallExecutor(
         if (decision.Decision == TriageLedgerDecision.ApprovalRequired)
         {
             telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
+            LogWorkerToolApprovalRequired(logger, job.Id, job.Attempt, roleName, toolCall.Name);
             return SerializeToolFailure(ToolExecutionStatus.ApprovalRequired.ToString(), "approval_required", decision.Reason, limitation: decision.Reason);
         }
 
@@ -97,12 +103,21 @@ internal sealed class WorkerToolCallExecutor(
         {
             await CommitSucceededAsync(job, roleName, toolCall.Name, execution.Output, execution.Artifacts, cancellationToken);
             telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Succeeded);
+            LogWorkerToolExecuted(logger, job.Id, job.Attempt, roleName, toolCall.Name);
             return execution.Output.GetRawText();
         }
 
         var errorReason = execution.ErrorMessage ?? "Tool execution failed.";
         await AppendExecutedToolFailureAsync(job, roleName, toolCall.Name, execution.Status.ToString(), errorReason, cancellationToken);
         telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Failed);
+        LogWorkerToolExecutionFailed(
+            logger,
+            job.Id,
+            job.Attempt,
+            roleName,
+            toolCall.Name,
+            execution.Status,
+            execution.ErrorCode ?? "unspecified");
         return SerializeToolFailure(execution.Status.ToString(), execution.ErrorCode, errorReason, limitation: errorReason);
     }
 
@@ -117,11 +132,15 @@ internal sealed class WorkerToolCallExecutor(
     {
         if (tool is null)
         {
+            LogWorkerToolDenied(logger, job.Id, job.Attempt, roleName, toolCall.Name, "tool_not_registered");
             return ToolRulePolicyResult.Denied("tool_not_registered");
         }
 
         if (validation is null || !validation.IsValid)
         {
+            // The validator message can echo model-supplied arguments, so only the bounded
+            // classification token reaches the log; the full reason stays in the durable ledger.
+            LogWorkerToolDenied(logger, job.Id, job.Attempt, roleName, toolCall.Name, "tool_arguments_invalid");
             return ToolRulePolicyResult.Denied(validation?.ErrorMessage ?? "tool_arguments_invalid");
         }
 
@@ -182,4 +201,51 @@ internal sealed class WorkerToolCallExecutor(
             limitation
         });
     }
+
+    [LoggerMessage(
+        EventId = 3301,
+        Level = LogLevel.Warning,
+        Message = "Worker tool call {ToolName} for role {Role} on triage job {JobId} attempt {Attempt} was denied: {DenialReason}.")]
+    private static partial void LogWorkerToolDenied(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName,
+        string denialReason);
+
+    [LoggerMessage(
+        EventId = 3302,
+        Level = LogLevel.Information,
+        Message = "Worker tool call {ToolName} for role {Role} on triage job {JobId} attempt {Attempt} was not executed because it requires approval.")]
+    private static partial void LogWorkerToolApprovalRequired(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName);
+
+    [LoggerMessage(
+        EventId = 3303,
+        Level = LogLevel.Debug,
+        Message = "Worker tool call {ToolName} for role {Role} on triage job {JobId} attempt {Attempt} executed successfully.")]
+    private static partial void LogWorkerToolExecuted(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName);
+
+    [LoggerMessage(
+        EventId = 3304,
+        Level = LogLevel.Warning,
+        Message = "Worker tool call {ToolName} for role {Role} on triage job {JobId} attempt {Attempt} ended as {ToolStatus} with error code {ToolErrorCode}.")]
+    private static partial void LogWorkerToolExecutionFailed(
+        ILogger logger,
+        Guid jobId,
+        int attempt,
+        string role,
+        string toolName,
+        ToolExecutionStatus toolStatus,
+        string toolErrorCode);
 }

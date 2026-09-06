@@ -49,6 +49,7 @@ internal sealed partial class TriageConfigurationSnapshotStore(
     }
 
     [LoggerMessage(
+        EventId = 2101,
         Level = LogLevel.Warning,
         Message = "Triage configuration snapshot for hash '{ConfigHash}' was not persisted because PostgreSQL is not configured.")]
     private static partial void LogSnapshotNotPersisted(ILogger logger, Exception exception, string configHash);
