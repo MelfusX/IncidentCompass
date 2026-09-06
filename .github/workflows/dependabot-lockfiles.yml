@@ -1,0 +1,149 @@
+name: dependabot-lockfiles
+
+# Why this workflow exists
+# ------------------------
+# Every project in this repository commits a `packages.lock.json` and CI restores with
+# `--locked-mode`, so dependency drift is a build error instead of a silent version change.
+#
+# Dependabot bumps a version in `Directory.Packages.props` and regenerates the lock file of the one
+# project it looked at. It does not walk `ProjectReference` fan-out, and under central package
+# management a single bump changes the effective graph of every project that reaches the package
+# transitively. The projects Dependabot skipped stay stale and `ci` fails on the pull request with:
+#
+#   error NU1004: Mistmatch between the requestedVersion of a lock file dependency marked as
+#                 CentralTransitive and the version specified in the central package management file.
+#   error NU1004: The project references incidentcompass.api whose dependencies has changed. The
+#                 packages lock file is inconsistent with the project dependencies so restore can't
+#                 be run in locked mode.
+#
+# Regenerating the whole graph with `dotnet restore --force-evaluate` is the documented fix, but a
+# maintainer should not have to run it by hand on every Dependabot pull request. This workflow runs
+# it and pushes the corrected lock files back onto the Dependabot branch, so the pull request
+# becomes green on its own and `main` keeps its `--locked-mode` guarantee after the merge. It is a
+# no-op (no commit, no push) whenever the committed lock files are already correct.
+#
+# Push token
+# ----------
+# Pushing with the default `GITHUB_TOKEN` works, but GitHub suppresses recursive runs: the
+# resulting `pull_request` re-run is created in an "approval required" state, so the pull request
+# would sit pending until someone clicks "Approve workflows to run". To get a genuinely hands-off
+# green pull request, store a fine-grained PAT limited to this repository with only
+# `Contents: Read and write` as the *Dependabot* secret `DEPENDABOT_LOCKFILE_TOKEN`. Actions
+# secrets are not visible to Dependabot-triggered runs, so it must be a Dependabot secret. Without
+# it this workflow still fixes the lock files, it just costs one approval click. See
+# `docs/versioning.md` for the full setup and the security reasoning.
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'global.json'
+      - '**/*.csproj'
+      - '**/packages.lock.json'
+
+permissions: {}
+
+concurrency:
+  group: dependabot-lockfiles-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    # Runs only for Dependabot's own branches in this repository. `github.actor` is the account that
+    # produced the head commit, so the job does not re-enter after its own push, whichever token
+    # performed that push.
+    if: >-
+      github.actor == 'dependabot[bot]'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && startsWith(github.head_ref, 'dependabot/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Only what the push needs, and only used when DEPENDABOT_LOCKFILE_TOKEN is absent.
+    permissions:
+      contents: write
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      DOTNET_NOLOGO: "true"
+
+    steps:
+      - name: Checkout Dependabot branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          # `dotnet restore` imports MSBuild logic that ships inside NuGet packages, so no
+          # credential is left in the working tree while it runs. The push step supplies its own.
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      - name: Regenerate the full lock graph
+        run: dotnet restore IncidentCompass.slnx --force-evaluate
+
+      - name: Detect lock file drift
+        id: drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only lock files are ever staged and pushed (see the pathspec on `git add` below), so
+          # anything else restore may have touched in the workspace is deliberately ignored here.
+          if git diff --quiet -- '*packages.lock.json'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo 'Lock files already match the project graph. Nothing to push.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            {
+              echo 'Regenerated lock files:'
+              echo
+              git diff --name-only -- '*packages.lock.json' | sed 's/^/- /'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Verify the regenerated graph restores in locked mode
+        if: steps.drift.outputs.changed == 'true'
+        run: dotnet restore IncidentCompass.slnx --locked-mode
+
+      - name: Commit and push regenerated lock files
+        if: steps.drift.outputs.changed == 'true'
+        shell: bash
+        env:
+          # Falls back to the job's GITHUB_TOKEN when the Dependabot secret is not configured.
+          GIT_PUSH_TOKEN: ${{ secrets.DEPENDABOT_LOCKFILE_TOKEN || github.token }}
+          HAS_PUSH_PAT: ${{ secrets.DEPENDABOT_LOCKFILE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          git add -- '*packages.lock.json'
+
+          # `[dependabot skip]` keeps Dependabot force-pushing over this commit; without it
+          # Dependabot stops rebasing a branch that someone else has written to.
+          git -c core.hooksPath=/dev/null commit --no-verify \
+            -m 'chore(deps): regenerate packages.lock.json for the whole project graph' \
+            -m 'Dependabot regenerates only the lock file of the project it edited. CI restores with --locked-mode, so every project that reaches the changed package through a ProjectReference or a central transitive pin needs its lock file regenerated too. Produced by `dotnet restore IncidentCompass.slnx --force-evaluate`.' \
+            -m '[dependabot skip]'
+
+          git -c core.hooksPath=/dev/null push \
+            "https://x-access-token:${GIT_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${GITHUB_HEAD_REF}"
+
+          if [ "${HAS_PUSH_PAT}" = 'true' ]; then
+            echo 'Pushed with DEPENDABOT_LOCKFILE_TOKEN; ci re-runs automatically.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Pushed with GITHUB_TOKEN because the Dependabot secret DEPENDABOT_LOCKFILE_TOKEN is not configured. The follow-up ci run needs one 'Approve workflows to run' click. See docs/versioning.md."
+            echo 'Pushed with GITHUB_TOKEN. The follow-up ci run needs one approval click; configure the Dependabot secret DEPENDABOT_LOCKFILE_TOKEN to remove it.' >> "$GITHUB_STEP_SUMMARY"
+          fi
