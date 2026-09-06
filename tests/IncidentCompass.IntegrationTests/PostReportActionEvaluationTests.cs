@@ -165,7 +165,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
         await pump.FillAvailableSlotsAsync("replay-pump", options, TestContext.Current.CancellationToken);
         await WaitForStateAsync(database.ConnectionString, reportId, "retry_pending");
         await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
-        await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+        await WaitForRetryDueAsync(database.ConnectionString, reportId);
         await pump.FillAvailableSlotsAsync("replay-pump", options, TestContext.Current.CancellationToken);
         await WaitForStateAsync(database.ConnectionString, reportId, "completed");
         await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
@@ -208,7 +208,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
             await WaitUntilAsync(() => workflow.Calls == attempt);
             await WaitForStateAsync(database.ConnectionString, reportId, "retry_pending");
             await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
-            await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+            await WaitForRetryDueAsync(database.ConnectionString, reportId);
         }
 
         await pump.FillAvailableSlotsAsync(
@@ -222,7 +222,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
             "SELECT attempt_count FROM incidentcompass.post_report_action_intents WHERE origin_report_id = @id;",
             ("id", reportId)), CultureInfo.InvariantCulture));
 
-        await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+        await WaitForClaimExpiryAsync(database.ConnectionString, reportId);
         await pump.FillAvailableSlotsAsync(
             "final-attempt-recovery", options, TestContext.Current.CancellationToken);
         await WaitForStateAsync(database.ConnectionString, reportId, "completed");
@@ -269,14 +269,14 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
             await WaitUntilAsync(() => workflow.Calls == attempt);
             await WaitForStateAsync(database.ConnectionString, reportId, "retry_pending");
             await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
-            await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+            await WaitForRetryDueAsync(database.ConnectionString, reportId);
         }
 
         await pump.FillAvailableSlotsAsync(
             "bounded-recovery-pump", options, TestContext.Current.CancellationToken);
         await WaitUntilAsync(() => workflow.Responses.Count == 1);
         await pump.DrainAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+        await WaitForClaimExpiryAsync(database.ConnectionString, reportId);
         await pump.FillAvailableSlotsAsync(
             "bounded-recovery-replay", options, TestContext.Current.CancellationToken);
         await WaitUntilAsync(() => workflow.Responses.Count == 2);
@@ -284,7 +284,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
 
         Assert.True(workflow.Responses[1].IsReplay);
         Assert.Equal(workflow.Responses[0].Action!.Id, workflow.Responses[1].Action!.Id);
-        await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+        await WaitForClaimExpiryAsync(database.ConnectionString, reportId);
         await pump.FillAvailableSlotsAsync(
             "bounded-recovery-exhaustion", options, TestContext.Current.CancellationToken);
         await WaitForStateAsync(database.ConnectionString, reportId, "dead_lettered");
@@ -462,7 +462,7 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
         Assert.Equal("processing", await ReadStateAsync(database.ConnectionString, firstReportId));
 
         Volatile.Write(ref blockFirst, false);
-        await Task.Delay(TimeSpan.FromMilliseconds(1200), TestContext.Current.CancellationToken);
+        await WaitForClaimExpiryAsync(database.ConnectionString, firstReportId);
         await pump.FillAvailableSlotsAsync("recovery-pump-2", options, TestContext.Current.CancellationToken);
         await WaitForStateAsync(database.ConnectionString, firstReportId, "completed");
         await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
@@ -694,6 +694,28 @@ public sealed class PostReportActionEvaluationTests(PostgresRepositoryFixture po
         string state) =>
         await WaitUntilAsync(async () =>
             string.Equals(await ReadStateAsync(connectionString, reportId), state, StringComparison.Ordinal));
+
+    // PostgresPostReportActionIntentRepository schedules retries with SQL clock_timestamp(), not
+    // an injectable TimeProvider, so the ~1-second FirstRetryDelaySeconds/SecondRetryDelaySeconds
+    // wait is enforced by the database clock and cannot be skipped. Polling for the row's own
+    // next_attempt_at_utc still beats a flat 1200ms guess: it returns as soon as the retry is
+    // actually due instead of a fixed buffer on top of it.
+    private static async Task WaitForRetryDueAsync(string connectionString, Guid reportId) =>
+        await WaitUntilAsync(async () => (bool)(await ActionApprovalTestSupport.ScalarAsync(
+            connectionString,
+            "SELECT next_attempt_at_utc <= clock_timestamp() FROM incidentcompass.post_report_action_intents WHERE origin_report_id = @id;",
+            ("id", reportId)))!);
+
+    // Same SQL-clock-bound reasoning as WaitForRetryDueAsync, but for the LeaseSeconds claim
+    // window on an intent stuck in 'processing' (a crashed/blocked workflow) rather than a
+    // 'retry_pending' backoff: PostgresPostReportActionIntentRepository compares claim_until_utc
+    // against clock_timestamp() in SQL, so polling still cannot make it due any sooner than real
+    // time allows, but it avoids padding past that with a flat 1200ms guess.
+    private static async Task WaitForClaimExpiryAsync(string connectionString, Guid reportId) =>
+        await WaitUntilAsync(async () => (bool)(await ActionApprovalTestSupport.ScalarAsync(
+            connectionString,
+            "SELECT claim_until_utc <= clock_timestamp() FROM incidentcompass.post_report_action_intents WHERE origin_report_id = @id;",
+            ("id", reportId)))!);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

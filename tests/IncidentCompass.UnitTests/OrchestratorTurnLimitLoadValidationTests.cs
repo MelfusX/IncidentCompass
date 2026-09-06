@@ -4,6 +4,7 @@ using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Intake;
+using IncidentCompass.TestSupport;
 
 namespace IncidentCompass.UnitTests;
 
@@ -59,23 +60,12 @@ public sealed class OrchestratorTurnLimitLoadValidationTests
     public void PublishedSchema_AcceptsTheSameMaxTurnsRangeAsLoadValidation(int maxTurns, bool expectedValid)
     {
         var configuration = (JsonObject)JsonNode.Parse(File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
+            RepositoryRootLocator.Find(),
             "config",
             "incidentcompass.config.json")))!;
         Budget(configuration)["MaxTurns"] = maxTurns;
 
         Assert.Equal(expectedValid, TriageConfigSchemaTests.EvaluateFixture(configuration).IsValid);
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
     }
 
     private static JsonObject Budget(JsonObject node) =>

@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using IncidentCompass.Infrastructure.Notifications.Telegram;
+using IncidentCompass.TestSupport;
 using IncidentCompass.Worker;
-using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.IntegrationTests;
 
@@ -18,7 +18,7 @@ public sealed class WorkerOptionsTests
     [Fact]
     public void DevelopmentLease_ExceedsShippedInvestigationWallClockBudget()
     {
-        var repositoryRoot = FindRepositoryRoot();
+        var repositoryRoot = RepositoryRootLocator.Find();
         var workerSettings = JsonNode.Parse(
             File.ReadAllText(Path.Combine(repositoryRoot, "src", "IncidentCompass.Worker", "appsettings.Development.json")))!;
         var triageSettings = JsonNode.Parse(
@@ -55,7 +55,7 @@ public sealed class WorkerOptionsTests
     [Fact]
     public void ShippedTelegramBindingIsDisabledAndContainsNoCredential()
     {
-        var repositoryRoot = FindRepositoryRoot();
+        var repositoryRoot = RepositoryRootLocator.Find();
         var settings = JsonNode.Parse(File.ReadAllText(Path.Combine(
             repositoryRoot, "src", "IncidentCompass.Worker", "appsettings.json")))!;
         var telegram = settings["IncidentCompass"]!["Telegram"]!;
@@ -67,25 +67,7 @@ public sealed class WorkerOptionsTests
         Assert.True(new TelegramOptionsValidator().Validate(null, new TelegramOptions()).Succeeded);
     }
 
-    private static string FindRepositoryRoot()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
-             directory is not null;
-             directory = directory.Parent)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-        }
-
-        throw new DirectoryNotFoundException("Could not locate the IncidentCompass repository root.");
-    }
-
-    private static IValidateOptions<WorkerOptions> CreateValidator()
-    {
-        var type = typeof(WorkerOptions).Assembly.GetType("IncidentCompass.Worker.WorkerOptionsValidator")
-            ?? throw new InvalidOperationException("WorkerOptionsValidator type was not found.");
-        return (IValidateOptions<WorkerOptions>)Activator.CreateInstance(type, nonPublic: true)!;
-    }
+    // Resolving the concrete type directly instead of via Assembly.GetType("...") means a rename
+    // is a compile error here rather than a runtime "type not found" failure.
+    private static WorkerOptionsValidator CreateValidator() => new();
 }
