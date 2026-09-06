@@ -145,7 +145,7 @@ public sealed class MemorySearchRerankerTests
 
     private static AgentToolExecutionContext Context(TriageConfiguration configuration)
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
+        var now = DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture);
         return new AgentToolExecutionContext(
             new TriageJob(
                 Guid.Parse("90000000-0000-0000-0000-000000000001"),

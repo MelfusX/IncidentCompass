@@ -15,7 +15,7 @@ public sealed class TicketSearchToolTests
             TicketSearchOutcome.Matched,
             "ticket_search_matches",
             [new TicketSearchMatch("github", "owner/repo", "42", "Checkout failure", "open", "octocat",
-                DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture), "https://github.com/owner/repo/issues/42", 0.85)],
+                DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture), "https://github.com/owner/repo/issues/42", 0.85)],
             "github",
             "owner/repo"));
         var tool = new TicketSearchTool(adapter, TimeProvider.System);
@@ -45,7 +45,7 @@ public sealed class TicketSearchToolTests
             TicketSearchOutcome.Matched,
             "ticket_search_matches",
             [new TicketSearchMatch("jira", "INC", "INC-42", "Checkout failure", "Open", null,
-                DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture), "https://jira.example/browse/INC-42", 0.4)],
+                DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture), "https://jira.example/browse/INC-42", 0.4)],
             "jira",
             "INC"));
         var tool = new TicketSearchTool(adapter, TimeProvider.System);
@@ -70,7 +70,7 @@ public sealed class TicketSearchToolTests
 
     private static AgentToolExecutionContext CreateContext()
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
+        var now = DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture);
         var job = new TriageJob(Guid.NewGuid(), Guid.NewGuid(), TriageJobStatus.Processing, 1,
             "worker", now.AddMinutes(1), null, null, null, "hash", now, now);
         return new AgentToolExecutionContext(

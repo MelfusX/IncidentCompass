@@ -22,7 +22,7 @@ public sealed class TicketSearchWorkerPathTests(PostgresRepositoryFixture postgr
     {
         var match = new TicketSearchMatch(
             "github", "owner/repo", "42", "Checkout timeout", "open", "octocat",
-            DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture), "https://github.com/owner/repo/issues/42", 0.85);
+            DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture), "https://github.com/owner/repo/issues/42", 0.85);
         using var scope = await CreateScopeAsync(new StubTicketSearch(new TicketSearchResult(
             TicketSearchOutcome.Matched, "ticket_search_matches", [match])));
         var ingested = await PostSignalAsync(scope.Client, "ticket-match");

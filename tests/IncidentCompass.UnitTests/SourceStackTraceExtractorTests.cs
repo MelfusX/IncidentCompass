@@ -105,7 +105,7 @@ public sealed class SourceStackTraceExtractorTests
         string? description,
         string? errorMessage)
     {
-        var now = DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture);
+        var now = DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture);
         return new Signal(
             Guid.NewGuid(), "tenant", "otel", null, null, null, FingerprintStrength.Strong, true,
             null, false, null, null, null, null, null, "checkout", "test", null, "Error",

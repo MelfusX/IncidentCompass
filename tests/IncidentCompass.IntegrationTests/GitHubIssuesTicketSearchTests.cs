@@ -287,7 +287,7 @@ public sealed class GitHubIssuesTicketSearchTests
         body,
         state = "open",
         assignee = new { login = "octocat" },
-        created_at = "2026-08-28T00:00:00Z",
+        created_at = "2026-01-15T00:00:00Z",
         html_url = $"https://github.com/owner/repo/issues/{number}",
         repository_url = "https://api.github.com/repos/owner/repo",
         labels = new[] { new { name = "sev1" } }

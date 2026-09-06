@@ -60,6 +60,6 @@ public sealed class GitHubIssueRankerTests
     }
 
     private static GitHubIssueCandidate Candidate(int number, string text, IReadOnlyList<string> labels) =>
-        new(number, text, string.Empty, "open", null, DateTimeOffset.Parse("2026-08-28T00:00:00Z", CultureInfo.InvariantCulture),
+        new(number, text, string.Empty, "open", null, DateTimeOffset.Parse("2026-01-15T00:00:00Z", CultureInfo.InvariantCulture),
             $"https://github.com/owner/repo/issues/{number}", labels);
 }

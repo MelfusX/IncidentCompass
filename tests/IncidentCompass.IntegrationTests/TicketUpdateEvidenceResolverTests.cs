@@ -67,7 +67,7 @@ public sealed class TicketUpdateEvidenceResolverTests(PostgresRepositoryFixture 
             title = "Checkout timeout",
             status = "open",
             assignee = (string?)null,
-            createdAtUtc = "2026-08-29T00:00:00.0000000+00:00",
+            createdAtUtc = "2026-01-15T00:00:00.0000000+00:00",
             url = $"https://github.com/{repository}/issues/{issueNumber}",
             score = 0.9
         });

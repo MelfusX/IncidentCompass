@@ -613,7 +613,7 @@ internal sealed record RealLocalLlmSmokeSettings(
             ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_RUNS", 3),
             ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_LEASE_SECONDS", 180),
             ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_TIMEOUT_SECONDS", 120),
-            Path.GetFullPath(Read("INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH", Path.Combine(RepositoryRootLocator.Find(), "docs", "phase-5-real-llm-smoke-result.md"))));
+            Path.GetFullPath(Read("INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH", Path.Combine(RepositoryRootLocator.Find(), "artifacts", "real-llm-smoke-result.md"))));
     }
 
     private static string Read(string name, string fallback)

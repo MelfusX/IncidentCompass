@@ -5,7 +5,7 @@ param(
     [string] $ApiKey = "local-smoke-key",
     [int] $Runs = 3,
     [int] $TimeoutSeconds = 120,
-    [string] $ResultPath = "docs\phase-5-real-llm-smoke-result.md"
+    [string] $ResultPath = "artifacts\real-llm-smoke-result.md"
 )
 
 $ErrorActionPreference = "Stop"
