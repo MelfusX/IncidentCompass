@@ -1,3 +1,4 @@
+using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Domain.Incidents;
@@ -53,7 +54,7 @@ internal sealed class WorkerRoleRunner(
                 AnalysisWorkerOutputSchemaValidator.Validate(response.Content, role.OutputSchema, roleName);
                 return response.Content;
             }
-            catch (Exception exception) when (exception is InvalidOperationException or System.Text.Json.JsonException)
+            catch (Exception exception) when (IsRepromptableWorkerOutput(exception))
             {
                 if (reprompts >= configuration.Orchestrator.Budget.MaxReprompts)
                 {
@@ -70,6 +71,22 @@ internal sealed class WorkerRoleRunner(
             }
         }
 
-        throw new InvalidOperationException("Worker exceeded the bounded tool/reprompt turn limit.");
+        throw new TriageBudgetExhaustedException(
+            TriageBudgetExhaustedException.WorkerTurnLimitReachedCode,
+            "Worker exceeded the bounded tool/reprompt turn limit.");
+    }
+
+    /// <summary>
+    /// Only the worker's own output failing schema validation may be reprompted: the model can correct
+    /// its JSON on the next bounded turn. <see cref="AnalysisWorkerOutputSchemaValidator"/> reports
+    /// those as <see cref="InvalidOperationException"/> (schema shape) or <see cref="JsonException"/>
+    /// (unparsable output or schema). Budget exhaustion and governance denial are deliberate
+    /// fail-closed stops that must leave this loop and dead-letter the attempt, so they are excluded
+    /// by classification rather than by where a throw happens to sit relative to the try block.
+    /// </summary>
+    private static bool IsRepromptableWorkerOutput(Exception exception)
+    {
+        return exception is InvalidOperationException or JsonException &&
+            TriageNonRetryableFailureClassifier.TryGetErrorCode(exception) is null;
     }
 }

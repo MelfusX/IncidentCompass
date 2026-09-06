@@ -127,6 +127,19 @@ internal sealed partial class TriageJobRunner(
                 timeProvider.GetUtcNow().Add(providerOutageTracker?.RetryDelay ?? settings.RetryDelay),
                 TriageJobRetryBudgetDisposition.DoNotConsumeAttempt);
         }
+        // Budget exhaustion and governance denial are permanent for this job: the same configuration
+        // snapshot would deny or exhaust the replay in exactly the same way. Retrying only burns the
+        // attempt limit and more provider tokens, so the attempt is dead-lettered immediately under
+        // its own error code. Configuration load failures keep their existing retryable classification.
+        if (configurationLoaded && TriageNonRetryableFailureClassifier.TryGetErrorCode(exception) is { } nonRetryableErrorCode)
+        {
+            return new TriageJobAttemptFailure(
+                TriageJobStatus.DeadLettered,
+                nonRetryableErrorCode,
+                NormalizeMessage(exception),
+                NextAttemptAtUtc: null);
+        }
+
         var maxAttempts = Math.Max(1, settings.MaxAttempts);
         var errorCode = configurationLoaded ? "triage_job_attempt_failed" : "config_snapshot_unavailable";
         if (job.Attempt >= maxAttempts)
@@ -179,7 +192,7 @@ internal sealed partial class TriageJobRunner(
     [LoggerMessage(
         EventId = 3103,
         Level = LogLevel.Error,
-        Message = "Triage job {JobId} attempt {Attempt} exhausted its retry budget and was dead-lettered with error code {ErrorCode}.")]
+        Message = "Triage job {JobId} attempt {Attempt} was dead-lettered with error code {ErrorCode} and will not be retried.")]
     private static partial void LogAttemptDeadLettered(
         ILogger logger,
         Guid jobId,

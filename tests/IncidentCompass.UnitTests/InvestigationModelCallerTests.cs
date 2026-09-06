@@ -122,13 +122,14 @@ public sealed class InvestigationModelCallerTests
         var caller = CreateCaller(model, writer, new ConstantTimeProvider(now));
         var context = CreateContext(now.AddSeconds(-2), maxWallClockSeconds: 1);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => caller.CompleteAsync(
+        var exception = await Assert.ThrowsAsync<TriageBudgetExhaustedException>(() => caller.CompleteAsync(
             context,
             context.Configuration.Routes[context.RouteId],
             [new AiChatMessage(AiMessageRole.User, "This call should not start.")],
             tools: null,
             CancellationToken.None));
 
+        Assert.Equal(TriageBudgetExhaustedException.WallClockReachedBeforeCallCode, exception.ErrorCode);
         Assert.Contains("wall-clock budget", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, model.CallCount);
         Assert.Contains(writer.Requests, request =>
@@ -148,13 +149,14 @@ public sealed class InvestigationModelCallerTests
             new SequenceTimeProvider(now.AddMilliseconds(900), now.AddSeconds(1), now.AddSeconds(1)));
         var context = CreateContext(now, maxWallClockSeconds: 1);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => caller.CompleteAsync(
+        var exception = await Assert.ThrowsAsync<TriageBudgetExhaustedException>(() => caller.CompleteAsync(
             context,
             context.Configuration.Routes[context.RouteId],
             [new AiChatMessage(AiMessageRole.User, "The boundary expires before dispatch.")],
             tools: null,
             CancellationToken.None));
 
+        Assert.Equal(TriageBudgetExhaustedException.WallClockReachedDuringCallCode, exception.ErrorCode);
         Assert.Contains("MaxWallClockSeconds", exception.Message, StringComparison.Ordinal);
         Assert.Equal(0, model.CallCount);
         Assert.Contains(writer.Requests, request =>
@@ -170,13 +172,14 @@ public sealed class InvestigationModelCallerTests
         var caller = CreateCaller(model, writer, TimeProvider.System);
         var context = CreateContext(TimeProvider.System.GetUtcNow(), maxWallClockSeconds: 1);
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => caller.CompleteAsync(
+        var exception = await Assert.ThrowsAsync<TriageBudgetExhaustedException>(() => caller.CompleteAsync(
             context,
             context.Configuration.Routes[context.RouteId],
             [new AiChatMessage(AiMessageRole.User, "Wait until cancellation.")],
             tools: null,
             CancellationToken.None));
 
+        Assert.Equal(TriageBudgetExhaustedException.WallClockReachedDuringCallCode, exception.ErrorCode);
         Assert.Contains("MaxWallClockSeconds", exception.Message, StringComparison.Ordinal);
         Assert.Equal(1, model.CallCount);
         Assert.Contains(writer.Requests, request =>
@@ -184,25 +187,77 @@ public sealed class InvestigationModelCallerTests
             request.Rationale!.Contains("wall_clock_limit_reached", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task CompleteAsync_TokenBudgetReachedBeforeCallRaisesItsOwnBudgetErrorCode()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var writer = new RecordingLedgerWriter();
+        var model = new StaticModelClient(new AiModelUsage(1, 1, 2));
+        var caller = CreateCaller(model, writer, new ConstantTimeProvider(now), spentTokens: 100000);
+        var context = CreateContext(now, maxWallClockSeconds: 60);
+
+        var exception = await Assert.ThrowsAsync<TriageBudgetExhaustedException>(() => caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, "The token budget is already spent.")],
+            tools: null,
+            CancellationToken.None));
+
+        Assert.Equal(TriageBudgetExhaustedException.MaxTokensReachedCode, exception.ErrorCode);
+        Assert.Contains("token budget", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, model.CallCount);
+        Assert.Contains(writer.Requests, request =>
+            request.EventType == TriageLedgerEventType.BudgetEvent &&
+            request.Rationale!.Contains("max_tokens_reached_before_call", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ContextWindowExceededRaisesItsOwnBudgetErrorCode()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var writer = new RecordingLedgerWriter();
+        var model = new StaticModelClient(new AiModelUsage(1, 1, 2));
+        var caller = CreateCaller(model, writer, new ConstantTimeProvider(now));
+        var context = CreateContext(now, maxWallClockSeconds: 60, contextWindowTokens: 2);
+
+        var exception = await Assert.ThrowsAsync<TriageBudgetExhaustedException>(() => caller.CompleteAsync(
+            context,
+            context.Configuration.Routes[context.RouteId],
+            [new AiChatMessage(AiMessageRole.User, "This prompt is larger than the configured context window.")],
+            tools: null,
+            CancellationToken.None));
+
+        Assert.Equal(TriageBudgetExhaustedException.ContextWindowExceededCode, exception.ErrorCode);
+        Assert.Contains("context window", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, model.CallCount);
+        Assert.Contains(writer.Requests, request =>
+            request.EventType == TriageLedgerEventType.BudgetEvent &&
+            request.Rationale!.Contains("context_window_exceeded", StringComparison.Ordinal));
+    }
+
     private static InvestigationModelCaller CreateCaller(
         IAiModelClient modelClient,
         RecordingLedgerWriter writer,
         TimeProvider timeProvider,
         IProviderOutageTracker? providerOutageTracker = null,
-        IRuntimeTelemetry? telemetry = null)
+        IRuntimeTelemetry? telemetry = null,
+        int spentTokens = 0)
     {
         return new InvestigationModelCaller(
             modelClient,
-            new StaticLedgerReader(),
+            new StaticLedgerReader(spentTokens),
             new TriageLedgerAppender(writer),
             timeProvider,
             providerOutageTracker,
             telemetry);
     }
 
-    private static TriageJobCallContext CreateContext(DateTimeOffset attemptStartedAtUtc, int maxWallClockSeconds)
+    private static TriageJobCallContext CreateContext(
+        DateTimeOffset attemptStartedAtUtc,
+        int maxWallClockSeconds,
+        int contextWindowTokens = 8192)
     {
-        var configuration = CreateConfiguration(maxWallClockSeconds);
+        var configuration = CreateConfiguration(maxWallClockSeconds, contextWindowTokens);
         return new TriageJobCallContext(
             CreateJob(attemptStartedAtUtc),
             configuration,
@@ -211,7 +266,7 @@ public sealed class InvestigationModelCallerTests
             "orchestrator");
     }
 
-    private static TriageConfiguration CreateConfiguration(int maxWallClockSeconds)
+    private static TriageConfiguration CreateConfiguration(int maxWallClockSeconds, int contextWindowTokens)
     {
         return new TriageConfiguration(
             "config-hash",
@@ -221,7 +276,7 @@ public sealed class InvestigationModelCallerTests
             },
             new Dictionary<string, TriageRouteSettings>
             {
-                ["report-chat"] = new("Chat", "mock", "test-model", Temperature: 0, MaxOutputTokens: 100, ContextWindowTokens: 8192)
+                ["report-chat"] = new("Chat", "mock", "test-model", Temperature: 0, MaxOutputTokens: 100, ContextWindowTokens: contextWindowTokens)
             },
             new OrchestratorSettings(
                 "Investigate and publish a report.",
@@ -282,10 +337,10 @@ public sealed class InvestigationModelCallerTests
         }
     }
 
-    private sealed class StaticLedgerReader : ITriageLedgerReader
+    private sealed class StaticLedgerReader(int spentTokens = 0) : ITriageLedgerReader
     {
         public Task<TriageBudgetLedgerUsage> ReadBudgetUsageAsync(TriageJob job, CancellationToken cancellationToken) =>
-            Task.FromResult(new TriageBudgetLedgerUsage(0, 0));
+            Task.FromResult(new TriageBudgetLedgerUsage(spentTokens, 0));
 
         public Task<int> CountPolicyDecisionsAsync(
             TriageJob job,

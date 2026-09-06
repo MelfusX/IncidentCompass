@@ -60,7 +60,9 @@ internal sealed partial class InvestigationModelCaller(
                 tokensDelta: null,
                 workersDelta: null,
                 cancellationToken: CancellationToken.None);
-            throw new InvalidOperationException("The triage attempt exceeded MaxWallClockSeconds during a model call.");
+            throw new TriageBudgetExhaustedException(
+                TriageBudgetExhaustedException.WallClockReachedDuringCallCode,
+                "The triage attempt exceeded MaxWallClockSeconds during a model call.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -103,7 +105,9 @@ internal sealed partial class InvestigationModelCaller(
                 workersDelta: null,
                 cancellationToken: cancellationToken);
             LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "max_tokens_reached_before_call");
-            throw new InvalidOperationException("The triage attempt token budget was reached before the next model call.");
+            throw new TriageBudgetExhaustedException(
+                TriageBudgetExhaustedException.MaxTokensReachedCode,
+                "The triage attempt token budget was reached before the next model call.");
         }
 
         var elapsed = timeProvider.GetUtcNow() - context.AttemptStartedAtUtc;
@@ -116,7 +120,9 @@ internal sealed partial class InvestigationModelCaller(
                 workersDelta: null,
                 cancellationToken: cancellationToken);
             LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "wall_clock_limit_reached_before_call");
-            throw new InvalidOperationException("The triage attempt wall-clock budget was reached before the next model call.");
+            throw new TriageBudgetExhaustedException(
+                TriageBudgetExhaustedException.WallClockReachedBeforeCallCode,
+                "The triage attempt wall-clock budget was reached before the next model call.");
         }
 
         var estimatedPromptTokens = TriageTokenEstimator.EstimateMessages(messages, tools);
@@ -129,7 +135,9 @@ internal sealed partial class InvestigationModelCaller(
                 workersDelta: null,
                 cancellationToken: cancellationToken);
             LogBudgetLimitReached(logger, context.Job.Id, context.Job.Attempt, "context_window_exceeded");
-            throw new InvalidOperationException("The triage prompt exceeds the configured context window.");
+            throw new TriageBudgetExhaustedException(
+                TriageBudgetExhaustedException.ContextWindowExceededCode,
+                "The triage prompt exceeds the configured context window.");
         }
 
         return usage;

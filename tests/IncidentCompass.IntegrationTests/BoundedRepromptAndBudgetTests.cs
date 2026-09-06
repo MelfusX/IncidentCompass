@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Domain.Incidents;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -123,6 +124,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             "SELECT COALESCE(SUM(workers_delta), 0) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent';",
             ("job_id", ingested.JobId.Value));
 
+        Assert.Equal("triage_budget_max_workers_reached", job.LastErrorCode);
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(1, workerDeltas);
         Assert.Contains(budgetEvents, value => value.Contains("max_workers_reached", StringComparison.Ordinal));
@@ -160,6 +162,36 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Assert.True(tokens > 0);
         Assert.Contains(budgetEvents, value => value.Contains("max_tokens_overshot_after_call", StringComparison.Ordinal));
         Assert.Contains(budgetEvents, value => value.Contains("max_tokens_reached_before_call", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Budget exhaustion is permanent for the job: a replay would spend the same tokens and stop at
+    /// the same guard. The over-budget attempt must therefore dead-letter under its own error code
+    /// after exactly one attempt, even when the retry budget still has attempts left.
+    /// </summary>
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_TokenBudgetExhaustionDeadLettersAfterExactlyOneAttempt()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.NoOrchestratorTool, maxReprompts: 2, maxTokens: 10, contextWindowTokens: 8192);
+        var ingested = await IngestOneAsync(scope);
+        Assert.NotNull(ingested.JobId);
+
+        await ProcessNextAsync(scope, "worker-budget-exhaustion", maxAttempts: 3, retryDelay: TimeSpan.Zero);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId.Value);
+        var attempt = await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT attempt FROM incidentcompass.triage_jobs WHERE id = @job_id;",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Equal("triage_budget_max_tokens_reached", job.LastErrorCode);
+        Assert.Equal(1, attempt);
+
+        var reclaimed = await TryClaimNextAsync(scope, "worker-budget-exhaustion");
+        Assert.True(
+            reclaimed?.Id != ingested.JobId.Value,
+            "A dead-lettered over-budget job must not be claimable for a second attempt.");
     }
 
     [DockerAvailableFact]
@@ -243,6 +275,13 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             workerId,
             new TriageJobProcessingSettings(maxAttempts, retryDelay),
             TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<TriageJob?> TryClaimNextAsync(TestScope scope, string workerId)
+    {
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
+        return await runner.ClaimNextAsync(workerId, TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
     }
 
     private static async Task ProcessNextWithMissingConfigAsync(

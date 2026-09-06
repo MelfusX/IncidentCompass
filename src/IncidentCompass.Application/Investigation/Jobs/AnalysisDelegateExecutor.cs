@@ -82,7 +82,9 @@ internal sealed class AnalysisDelegateExecutor(
             tokensDelta: null,
             workersDelta: null,
             cancellationToken: cancellationToken);
-        throw new InvalidOperationException("The triage attempt worker budget was reached before delegation.");
+        throw new TriageBudgetExhaustedException(
+            TriageBudgetExhaustedException.MaxWorkersReachedCode,
+            "The triage attempt worker budget was reached before delegation.");
     }
 
     private async Task<TriageArtifact> InsertWorkerOutputArtifactAsync(
