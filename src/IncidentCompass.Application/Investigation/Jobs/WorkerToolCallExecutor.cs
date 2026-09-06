@@ -76,13 +76,17 @@ internal sealed partial class WorkerToolCallExecutor(
         if (!decision.MayProceed)
         {
             telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
-            throw new InvalidOperationException("Worker tool call denied: " + decision.Reason);
+            throw new TriageGovernanceDeniedException(
+                TriageGovernanceDeniedException.WorkerToolDeniedCode,
+                "Worker tool call denied: " + decision.Reason);
         }
 
         if (validation is null || !validation.IsValid)
         {
             telemetry?.RecordToolCall(RuntimeTelemetryOutcome.Denied);
-            throw new InvalidOperationException("Worker tool call validation failed after policy approval.");
+            throw new TriageGovernanceDeniedException(
+                TriageGovernanceDeniedException.WorkerToolValidationFailedCode,
+                "Worker tool call validation failed after policy approval.");
         }
 
         var execution = await tool!.ExecuteAsync(

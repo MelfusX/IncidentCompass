@@ -92,6 +92,16 @@ Phase 3 evaluates `rate_cap`, `precondition` and budget state by reading the app
 
 `MaxTokens` means the backend will not start a new model call once the current-attempt budget is already reached. A single in-flight call can still overshoot the limit because final usage is known only after the provider responds. The overshoot is recorded as a `BudgetEvent` instead of hidden.
 
+## Budget And Governance Exhaustion Dead-Letters Instead Of Retrying
+
+Reaching a bounded-run limit is treated as a permanent outcome for the job, not a transient fault. When an attempt hits the token budget, the wall-clock budget, the route context window, the per-attempt worker budget (`MaxWorkers`) or a bounded turn limit (orchestrator or worker), or when backend governance denies a worker tool call, the job is dead-lettered immediately with its own `last_error_code` and no next attempt time. It does not spend the remaining `MaxAttempts`.
+
+The reason is that a replay reads the same configuration snapshot and the same policy rules, so it would exhaust or be denied in the same place while spending another full budget of provider tokens. Retrying would multiply cost and delay the operator signal without changing the outcome. The distinct codes (`triage_budget_*` and `triage_governance_*`) are what an operator greps to tell an under-provisioned budget apart from an ordinary fault; the durable `BudgetEvent` and policy-decision ledger rows written before the failure are unchanged, so a dead-lettered exhaustion is exactly as audit-visible as the retried failure was.
+
+Inside a worker the same line is drawn explicitly rather than by where a throw happens to sit. Only the worker output failing schema validation is repromptable, because the model can correct its own JSON on the next bounded turn. A budget stop or a governance denial raised during a worker turn leaves the worker loop instead of being spent as a reprompt, so a denied tool call is never retried by reprompting the model.
+
+The trade-off is honest: an attempt that failed only because a transient slowdown consumed its wall clock is also dead-lettered rather than retried. That is deliberate for a reference deployment, where a visible dead-letter with a specific code is more useful than a silent retry loop, but it means budgets must be provisioned for the slowest acceptable run. Provider outages are classified first and keep their separate delayed-retry path, so an outage never reaches this classification.
+
 ## File-Backed Memory Is The Write Path
 
 Memory content stays in reviewed files instead of an unauthenticated admin endpoint. Source path is

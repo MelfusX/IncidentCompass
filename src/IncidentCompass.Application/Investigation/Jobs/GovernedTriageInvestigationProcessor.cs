@@ -95,7 +95,9 @@ internal sealed partial class GovernedTriageInvestigationProcessor : IClaimedTri
             messages.Add(new AiChatMessage(AiMessageRole.User, "Validation error: unknown tool '" + toolCall.Name + "'. Call delegate or publish_report."));
         }
 
-        throw new InvalidOperationException("Orchestrator exceeded the bounded investigation turn limit before publish_report.");
+        throw new TriageBudgetExhaustedException(
+            TriageBudgetExhaustedException.OrchestratorTurnLimitReachedCode,
+            "Orchestrator exceeded the bounded investigation turn limit before publish_report.");
     }
 
     private async Task<int?> TryPublishAsync(
