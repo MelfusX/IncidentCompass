@@ -4,12 +4,13 @@ using System.Text.Json;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.ModelGateway.OpenAi.Dtos;
+using IncidentCompass.Infrastructure.OpenAiCompatible;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 
-internal sealed class OpenAiModelRequestFactory
+internal static class OpenAiModelRequestFactory
 {
-    public string CreatePayloadJson(AiModelRequest request)
+    public static string CreatePayloadJson(AiModelRequest request)
     {
         var payload = new OpenAiChatCompletionRequest(
             Model: request.Model,
@@ -20,10 +21,10 @@ internal sealed class OpenAiModelRequestFactory
                 ? request.Tools.Select(ToOpenAiTool).ToArray()
                 : null);
 
-        return JsonSerializer.Serialize(payload, OpenAiModelJson.Options);
+        return JsonSerializer.Serialize(payload, OpenAiCompatibleJson.Options);
     }
 
-    public HttpRequestMessage CreateHttpRequest(
+    public static HttpRequestMessage CreateHttpRequest(
         OpenAiCompatibleModelClientOptions clientOptions,
         AiModelRequest request,
         string payloadJson,

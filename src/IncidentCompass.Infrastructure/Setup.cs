@@ -185,6 +185,9 @@ public static class Setup
         services.TryAddScoped<ITriageLedgerWriter, PostgresTriageLedgerWriter>();
         services.TryAddScoped<ITriageLedgerReader, PostgresTriageLedgerReader>();
         services.TryAddScoped<ITriageJobInvestigationContextRepository, PostgresTriageJobInvestigationContextRepository>();
+        services.TryAddScoped<PostgresDocumentationFitResolver>();
+        services.TryAddScoped(serviceProvider => new PostgresReportEvidenceGrounder(
+            serviceProvider.GetRequiredService<IOptions<GitHubIssuesOptions>>().Value.ConfiguredRepository));
         services.TryAddScoped<ITriageReportRepository, PostgresTriageReportRepository>();
         services.TryAddScoped<ITriageReportReadRepository, PostgresTriageReportReadRepository>();
         services.TryAddScoped<ITriageReportListRepository, PostgresTriageReportListRepository>();

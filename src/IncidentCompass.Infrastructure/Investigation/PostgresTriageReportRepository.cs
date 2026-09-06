@@ -5,9 +5,7 @@ using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Governance.PostReportActions;
 using IncidentCompass.Infrastructure.Postgres;
-using IncidentCompass.Infrastructure.Tickets;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Npgsql;
 namespace IncidentCompass.Infrastructure.Investigation;
 
@@ -16,12 +14,11 @@ internal sealed partial class PostgresTriageReportRepository(
     ITriageReportFinalCommitFaultInjector faultInjector,
     ITriageReportPublicationIntentWriter publicationIntentWriter,
     ITriageReportPublicationIntentFaultInjector publicationIntentFaultInjector,
+    PostgresReportEvidenceGrounder evidenceGrounder,
+    PostgresDocumentationFitResolver documentationFitResolver,
     TimeProvider timeProvider,
-    ILogger<PostgresTriageReportRepository> logger,
-    IOptions<GitHubIssuesOptions> ticketOptions) : ITriageReportRepository
+    ILogger<PostgresTriageReportRepository> logger) : ITriageReportRepository
 {
-    private readonly PostgresReportEvidenceGrounder evidenceGrounder = new(ticketOptions.Value.ConfiguredRepository);
-    private readonly PostgresDocumentationFitResolver documentationFitResolver = new();
     public Task<Guid> PublishAsync(
         TriageJob job,
         string workerId,
