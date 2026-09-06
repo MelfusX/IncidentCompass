@@ -90,19 +90,32 @@ internal sealed class ToolRuleEngine(ITriageLedgerReader ledgerReader)
         {
             switch (rule.Type)
             {
-                case "rate_cap":
-                    var count = await factReader.CountAcceptedUsesAsync(
-                        toolName, rule.Scope, cancellationToken);
-                    if (count >= rule.Max.GetValueOrDefault())
+                case TriageRuleTypes.RateCap:
+                    if (rule.Max is not > 0)
                     {
                         return ToolRulePolicyResult.Denied(
-                            $"rate_cap exceeded for {toolName}: {count}/{rule.Max.GetValueOrDefault()} in {rule.Scope} scope");
+                            $"rate_cap_missing_max: rate_cap rule for {toolName} has no positive Max in {rule.Scope} scope");
                     }
 
-                    reasons.Add($"rate_cap {count}/{rule.Max.GetValueOrDefault()} in {rule.Scope} scope");
+                    var max = rule.Max.Value;
+                    var count = await factReader.CountAcceptedUsesAsync(
+                        toolName, rule.Scope, cancellationToken);
+                    if (count >= max)
+                    {
+                        return ToolRulePolicyResult.Denied(
+                            $"rate_cap exceeded for {toolName}: {count}/{max} in {rule.Scope} scope");
+                    }
+
+                    reasons.Add($"rate_cap {count}/{max} in {rule.Scope} scope");
                     break;
-                case "precondition":
-                    var prerequisite = rule.RequiresSuccessfulToolResult!;
+                case TriageRuleTypes.Precondition:
+                    var prerequisite = rule.RequiresSuccessfulToolResult;
+                    if (string.IsNullOrWhiteSpace(prerequisite))
+                    {
+                        return ToolRulePolicyResult.Denied(
+                            $"precondition_missing_prerequisite: precondition rule for {toolName} names no prerequisite tool");
+                    }
+
                     if (!await factReader.HasSuccessfulToolResultAsync(
                             prerequisite, rule.Scope, cancellationToken))
                     {
@@ -112,13 +125,16 @@ internal sealed class ToolRuleEngine(ITriageLedgerReader ledgerReader)
 
                     reasons.Add($"precondition satisfied by {prerequisite} in {rule.Scope} scope");
                     break;
-                case "requires_approval":
+                case TriageRuleTypes.RequiresApproval:
                     decision = TriageLedgerDecision.ApprovalRequired;
                     reasons.Add("approval required by rule");
                     break;
-                case "grounding":
+                case TriageRuleTypes.Grounding:
                     reasons.Add("grounding required by rule");
                     break;
+                default:
+                    return ToolRulePolicyResult.Denied(
+                        $"unknown_rule_type: '{rule.Type}' configured for {toolName}");
             }
         }
 
