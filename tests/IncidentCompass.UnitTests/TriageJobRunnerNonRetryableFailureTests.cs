@@ -38,7 +38,11 @@ public sealed class TriageJobRunnerNonRetryableFailureTests
         var failure = Assert.Single(recorder.Failures);
         Assert.Equal(TriageJobStatus.DeadLettered, failure.Status);
         Assert.Equal(errorCode, failure.ErrorCode);
-        Assert.Equal(message, failure.ErrorMessage);
+        // last_error_message is a bounded classification, not the raw exception text (which for a
+        // provider-originated failure could be an arbitrary upstream HTTP body); it is derived from
+        // the same error code stored in last_error_code plus the exception type name, so this
+        // assertion intentionally no longer echoes the exception's own message.
+        Assert.Equal($"{errorCode}: {nameof(TriageBudgetExhaustedException)}.", failure.ErrorMessage);
         Assert.Null(failure.NextAttemptAtUtc);
         Assert.Equal(TriageJobRetryBudgetDisposition.ConsumeAttempt, failure.RetryBudgetDisposition);
     }

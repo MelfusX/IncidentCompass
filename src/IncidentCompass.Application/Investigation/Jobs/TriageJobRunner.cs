@@ -136,7 +136,7 @@ internal sealed partial class TriageJobRunner(
             return new TriageJobAttemptFailure(
                 TriageJobStatus.DeadLettered,
                 nonRetryableErrorCode,
-                NormalizeMessage(exception),
+                NormalizeMessage(nonRetryableErrorCode, exception),
                 NextAttemptAtUtc: null);
         }
 
@@ -147,24 +147,26 @@ internal sealed partial class TriageJobRunner(
             return new TriageJobAttemptFailure(
                 TriageJobStatus.DeadLettered,
                 errorCode,
-                NormalizeMessage(exception),
+                NormalizeMessage(errorCode, exception),
                 NextAttemptAtUtc: null);
         }
 
         return new TriageJobAttemptFailure(
             TriageJobStatus.RetryPending,
             errorCode,
-            NormalizeMessage(exception),
+            NormalizeMessage(errorCode, exception),
             timeProvider.GetUtcNow().Add(settings.RetryDelay));
     }
 
-    private static string NormalizeMessage(Exception exception)
+    // The stored message is a bounded, self-explanatory classification, not the raw exception
+    // text: for a provider failure, exception.Message can be an arbitrary upstream HTTP body.
+    // The error code is the same closed token already stored in the sibling last_error_code
+    // column (see TriageNonRetryableFailureClassifier and the codes above), so a row read
+    // directly from the database is explained by its message alone without a second lookup.
+    private static string NormalizeMessage(string errorCode, Exception exception)
     {
-        var message = string.IsNullOrWhiteSpace(exception.Message)
-            ? exception.GetType().Name
-            : exception.Message;
-
-        return TextTruncator.Truncate(message, MaxStoredErrorMessageLength);
+        var classified = $"{errorCode}: {exception.GetType().Name}.";
+        return TextTruncator.Truncate(classified, MaxStoredErrorMessageLength);
     }
 
     [LoggerMessage(

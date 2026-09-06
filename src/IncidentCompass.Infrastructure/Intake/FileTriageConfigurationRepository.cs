@@ -50,7 +50,10 @@ internal sealed class FileTriageConfigurationRepository : ITriageConfigurationRe
         var snapshot = await snapshotStore.GetAsync(configHash, cancellationToken);
         if (snapshot is null)
         {
-            throw new NotFoundException($"Triage configuration snapshot with config_hash '{configHash}' was not found.");
+            throw new NotFoundException(
+                $"Triage configuration snapshot with config_hash '{configHash}' was not found.",
+                ApplicationErrorCodes.TriageConfigurationSnapshotNotFound,
+                "The referenced triage configuration snapshot does not exist.");
         }
 
         return materializer.Materialize(configHash, snapshot.SerializedConfig, snapshot.Instructions);

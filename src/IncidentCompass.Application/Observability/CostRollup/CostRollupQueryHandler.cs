@@ -14,7 +14,10 @@ public sealed class CostRollupQueryHandler(
     {
         if (!userContext.IsAuthenticated || string.IsNullOrWhiteSpace(userContext.TenantId))
         {
-            throw new ForbiddenRequestException("Authenticated tenant context is required.");
+            throw new ForbiddenRequestException(
+                "Authenticated tenant context is required.",
+                ApplicationErrorCodes.TenantContextRequired,
+                "Authentication did not resolve a tenant for this request.");
         }
 
         var hours = await repository.ReadAsync(

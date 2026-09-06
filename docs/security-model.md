@@ -79,6 +79,11 @@ the server-loaded job/configuration tenant context.
 - Metadata logging is allowed: request ID, user ID, model, tokens, cost, status.
 - If full prompt logging is ever enabled, it must require opt-in, redaction, encryption, retention policy and restricted access.
 - Tool execution is controlled by backend policy. The model may propose tool calls, but it cannot execute tools directly and never receives infrastructure credentials.
+- The API error boundary never echoes an exception's own message to a client. `NotFoundException`,
+  `ConflictException`, `ForbiddenRequestException` and `ValidationException` map to a `ProblemDetails`
+  response carrying a stable `errorCode` and an authored, client-safe `detail`; the original exception
+  is logged server-side only, tagged with the request's correlation id (`HttpContext.TraceIdentifier`)
+  and the same error code (see `docs/observability.md`).
 
 ## Cost read boundary
 

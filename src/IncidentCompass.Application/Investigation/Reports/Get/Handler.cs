@@ -12,6 +12,9 @@ public sealed class GetTriageReportQueryHandler(ITriageReportReadRepository repo
         CancellationToken cancellationToken)
     {
         return await repository.FindByIdAsync(request.ReportId, await incidentTenantContext.GetTenantIdAsync(cancellationToken), cancellationToken)
-            ?? throw new NotFoundException($"Triage report '{request.ReportId}' was not found.");
+            ?? throw new NotFoundException(
+                $"Triage report '{request.ReportId}' was not found.",
+                ApplicationErrorCodes.TriageReportNotFound,
+                "The requested triage report does not exist.");
     }
 }
