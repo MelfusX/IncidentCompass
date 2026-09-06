@@ -26,16 +26,25 @@ public sealed class ApproveActionCommandHandler(
             cancellationToken);
         if (result.Outcome == ActionDecisionOutcome.NotFound)
         {
-            throw new NotFoundException($"Action approval '{request.ActionId}' was not found.");
+            throw new NotFoundException(
+                $"Action approval '{request.ActionId}' was not found.",
+                ApplicationErrorCodes.ActionApprovalNotFound,
+                "The requested action approval does not exist.");
         }
 
         if (result.Outcome == ActionDecisionOutcome.Conflict)
         {
-            throw new ConflictException($"Action approval conflict: {result.ConflictCode}.");
+            throw new ConflictException(
+                $"Action approval conflict: {result.ConflictCode}.",
+                ApplicationErrorCodes.ActionApprovalConflictCodePrefix + result.ConflictCode,
+                "The action approval is no longer in the expected state.");
         }
 
         var found = await repository.FindAsync(request.ActionId, identity.TenantId, cancellationToken)
-            ?? throw new NotFoundException($"Action approval '{request.ActionId}' was not found.");
+            ?? throw new NotFoundException(
+                $"Action approval '{request.ActionId}' was not found.",
+                ApplicationErrorCodes.ActionApprovalNotFound,
+                "The requested action approval does not exist.");
         return ActionApprovalResponseMapper.ToDetails(found.Action, found.Provenance);
     }
 }

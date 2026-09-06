@@ -91,7 +91,8 @@ An id is stable once published. A retired event keeps its id reserved rather tha
 
 | Id | Level | Meaning |
 | --- | --- | --- |
-| 4001 | Error | A domain exception reached the API error boundary. |
+| 4001 | Error | A domain exception reached the API error boundary, with its correlation id and error code. |
+| 4002 | Warning | A client-facing `NotFoundException`, `ConflictException`, `ForbiddenRequestException` or `ValidationException` reached the API error boundary, with its correlation id and error code. |
 
 ### Level policy
 
@@ -110,8 +111,33 @@ names, tool names, decision outcomes, reason tokens, token counts, durations, at
 bounded error codes and exception type names. They never carry message content, rendered prompts or
 responses, artifact payloads, tool arguments or results, memory document text, embedding vectors,
 credentials or raw provider error strings. Provider and validator exception messages are therefore
-reduced to their type name or to a closed classification token before they reach a log; the bounded,
-truncated failure message stays in the durable job row and triage ledger instead.
+reduced to their type name or to a closed classification token before they reach a log; the durable
+job row uses the same reduction (see "Triage job failure classification" below), not the exception's
+own text.
+
+### API error responses
+
+The API error boundary (`ApiExceptionHandler`, `ApiErrorMapping`) never places an exception's own
+`Message` in an HTTP response. A `NotFoundException`, `ConflictException`, `ForbiddenRequestException`
+or `ValidationException` reaching a request is mapped to a `ProblemDetails` body with an authored,
+client-safe `detail` and a stable `errorCode` extension field; an unrecognized `DomainException` maps
+to a fixed "the request could not be completed" detail under `internal_domain_violation`. The mapping
+from exception type to HTTP status and default code/detail lives in one place, `ApiErrorMapping`; a
+throw site may attach a more specific `Code`/`Detail` pair (see `ApplicationErrorCodes`) when it knows
+which resource or rule was involved, without changing where the status is decided. Every mapped
+exception is logged once, server-side, with the request's `HttpContext.TraceIdentifier` as its
+correlation id and the resolved `errorCode` (events 4001-4002 above); the exception object is attached
+because these messages are authored by this codebase, not raw provider or infrastructure text.
+
+### Triage job failure classification
+
+`last_error_message` on `incidentcompass.triage_jobs` is a bounded classification, not the raw
+exception text a provider or validator may have produced: it is `"<error code>: <exception type
+name>."`, using the exact code already stored in the sibling `last_error_code` column (permanent
+budget/governance codes from `TriageNonRetryableFailureClassifier`, `provider_unavailable`, or the
+generic `triage_job_attempt_failed`/`config_snapshot_unavailable` codes), truncated by the same
+`TextTruncator` bound as before. A row is therefore self-explanatory when read directly from the
+database, and a provider failure's response body can never end up stored in this column.
 
 The triage job attempt failure event (3101) and its disposition event (3102/3103/3104) are written
 before the durable attempt-failure write is attempted, so a failing durable write (3105) can never

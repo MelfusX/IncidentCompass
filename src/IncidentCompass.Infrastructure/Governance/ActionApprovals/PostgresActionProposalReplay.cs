@@ -159,7 +159,10 @@ internal static class PostgresActionProposalReplay
         var matched = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture);
         if (matched != evidenceArtifactIds.Count || existing.ProvenanceCount != matched + 1)
         {
-            throw new ConflictException("Action proposal idempotency key was reused with different provenance.");
+            throw new ConflictException(
+                "Action proposal idempotency key was reused with different provenance.",
+                ApplicationErrorCodes.ActionProposalProvenanceConflict,
+                "This request reused an idempotency key with different request provenance.");
         }
     }
 
@@ -172,7 +175,10 @@ internal static class PostgresActionProposalReplay
             !existing.CanonicalPayload.AsSpan().SequenceEqual(proposal.CanonicalPayload) ||
             existing.ReviewSummary != proposal.ReviewSummary || autoApproved != proposal.AutomaticallyApproved)
         {
-            throw new ConflictException("Action proposal idempotency key was reused with different immutable input.");
+            throw new ConflictException(
+                "Action proposal idempotency key was reused with different immutable input.",
+                ApplicationErrorCodes.ActionProposalInputConflict,
+                "This request reused an idempotency key with different request input.");
         }
 
         return new ActionProposalResult(existing, true);
@@ -186,7 +192,10 @@ internal static class PostgresActionProposalReplay
             !existing.CanonicalPayload.AsSpan().SequenceEqual(proposal.CanonicalPayload) ||
             existing.ReviewSummary != proposal.ReviewSummary)
         {
-            throw new ConflictException("Action proposal idempotency key was reused with different immutable input.");
+            throw new ConflictException(
+                "Action proposal idempotency key was reused with different immutable input.",
+                ApplicationErrorCodes.ActionProposalInputConflict,
+                "This request reused an idempotency key with different request input.");
         }
 
         return new ActionProposalResult(existing, true);

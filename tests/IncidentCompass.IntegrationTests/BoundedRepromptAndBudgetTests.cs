@@ -37,7 +37,11 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, workerModelCalls);
         Assert.Equal(1, workerDeltas);
-        Assert.Contains("bounded reprompts", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // last_error_message is now a bounded classification ("<error code>: <exception type>."),
+        // not the raw exhausted-reprompt exception text, so this checks the new shape instead of
+        // the scenario-specific wording the exception used to carry; the model-call/delta counts
+        // above already discriminate this scenario from the others in this file.
+        Assert.Equal("triage_job_attempt_failed: InvalidOperationException.", job.LastErrorMessage);
     }
 
     [DockerAvailableFact]
@@ -54,7 +58,9 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, orchestratorModelCalls);
-        Assert.Contains("did not propose", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // See the comment on the InvalidWorkerOutput test above: the classified message no longer
+        // echoes the reprompt-exhaustion exception's own text.
+        Assert.Equal("triage_job_attempt_failed: InvalidOperationException.", job.LastErrorMessage);
     }
 
     [DockerAvailableFact]
@@ -108,7 +114,9 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, orchestratorModelCalls);
         Assert.Equal(30, chargedTokens);
-        Assert.Contains("unknown tool", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // See the comment on the InvalidWorkerOutput test above: the classified message no longer
+        // echoes the reprompt-exhaustion exception's own text.
+        Assert.Equal("triage_job_attempt_failed: InvalidOperationException.", job.LastErrorMessage);
     }
 
     [DockerAvailableFact]
@@ -186,6 +194,11 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal("triage_budget_max_tokens_reached", job.LastErrorCode);
+        // last_error_message is a bounded classification built from the same code as
+        // last_error_code, not the raw TriageBudgetExhaustedException text, so the row is
+        // self-explanatory when read directly from the database without a raw provider/exception
+        // string ever being persisted.
+        Assert.Equal("triage_budget_max_tokens_reached: TriageBudgetExhaustedException.", job.LastErrorMessage);
         Assert.Equal(1, attempt);
 
         var reclaimed = await TryClaimNextAsync(scope, "worker-budget-exhaustion");

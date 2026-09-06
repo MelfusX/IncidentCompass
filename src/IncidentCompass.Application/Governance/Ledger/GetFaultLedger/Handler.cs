@@ -15,7 +15,10 @@ public sealed class GetFaultLedgerQueryHandler(
         CancellationToken cancellationToken)
     {
         var fault = await faultRepository.FindByIdAsync(request.FaultId, await incidentTenantContext.GetTenantIdAsync(cancellationToken), cancellationToken)
-            ?? throw new NotFoundException($"Fault '{request.FaultId}' was not found.");
+            ?? throw new NotFoundException(
+                $"Fault '{request.FaultId}' was not found.",
+                ApplicationErrorCodes.FaultNotFound,
+                "The requested fault does not exist.");
         var entries = await ledgerReader.ReadByFaultIdAsync(
             fault.Id,
             fault.TenantId,

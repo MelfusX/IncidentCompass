@@ -14,7 +14,10 @@ public sealed class GetActionApprovalQueryHandler(
     {
         var identity = ActionOperatorIdentity.From(userContext);
         var found = await repository.FindAsync(request.ActionId, identity.TenantId, cancellationToken)
-            ?? throw new NotFoundException($"Action approval '{request.ActionId}' was not found.");
+            ?? throw new NotFoundException(
+                $"Action approval '{request.ActionId}' was not found.",
+                ApplicationErrorCodes.ActionApprovalNotFound,
+                "The requested action approval does not exist.");
         return ActionApprovalResponseMapper.ToDetails(found.Action, found.Provenance);
     }
 }

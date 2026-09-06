@@ -9,7 +9,10 @@ internal sealed record ActionOperatorIdentity(string TenantId, string Actor)
     {
         if (!context.IsAuthenticated || string.IsNullOrWhiteSpace(context.TenantId) || string.IsNullOrWhiteSpace(context.UserId))
         {
-            throw new ForbiddenRequestException("An authenticated action operator is required.");
+            throw new ForbiddenRequestException(
+                "An authenticated action operator is required.",
+                ApplicationErrorCodes.ActionOperatorRequired,
+                "An authenticated action operator is required for this request.");
         }
 
         return new ActionOperatorIdentity(context.TenantId, "key:" + context.UserId);
