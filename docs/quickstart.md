@@ -133,6 +133,11 @@ host secret or environment variable, for example
 triage config and config snapshots. Without a salt, matching identifiers are replaced with
 `[REDACTED]` instead of being persisted in raw form.
 
+The configurable ingestion payload limit must be between 1 KiB and 1 MiB. The upper bound caps
+per-request buffering; the 1 KiB lower bound prevents a misconfiguration that rejects ordinary small
+OTLP exports. `MaxAttributesBytes` must be positive and no greater than `MaxPayloadBytes`. The
+default limits are 64 KiB and 16 KiB.
+
 ## Build And Test
 
 ~~~powershell

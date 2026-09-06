@@ -39,7 +39,7 @@ citation resolves to a stored artifact of that run.
 - **Mock model and embedding providers are the default.** The gated demo and test suite prove the
   **governance, grounding, and packaging rails around a scripted trajectory** - they do not
   demonstrate model autonomy. Optional real-LLM smoke runs against a local OpenAI-compatible endpoint
-  are opt-in, non-gated, and recorded as measurements (`docs/phase-*-real-llm-smoke-result*.md`).
+  are opt-in, non-gated, and recorded in the Real-Model Smoke History table in `docs/trade-offs.md`.
 - **"Grounded" means every citation resolves to a stored artifact of the run** - it does not mean the
   backend verified the reasoning. Controls, not correctness.
 - Endpoints are **unauthenticated demo scope** (local/trusted network only) and the deployment is
