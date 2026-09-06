@@ -17,6 +17,7 @@ public static class Setup
     {
         services.AddHttpContextAccessor();
         services.AddScoped<OtlpPayloadReader>();
+        services.AddScoped<OtlpExportLimitGuard>();
         AddApiKeyBoundary(services, configuration);
         services.AddApiUserContext(configuration, environment);
         services.AddExceptionHandler<ApiExceptionHandler>();

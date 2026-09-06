@@ -93,6 +93,7 @@ An id is stable once published. A retired event keeps its id reserved rather tha
 | --- | --- | --- |
 | 4001 | Error | A domain exception reached the API error boundary, with its correlation id and error code. |
 | 4002 | Warning | A client-facing `NotFoundException`, `ConflictException`, `ForbiddenRequestException` or `ValidationException` reached the API error boundary, with its correlation id and error code. |
+| 4003 | Warning | An OTLP export carried more records than `IngestionLimits:MaxSignalsPerExport` allows and was rejected before any signal was ingested, with the signal kind, the observed record count, the configured limit and the stable code `otlp_export_signal_limit_exceeded`. |
 
 ### Level policy
 
@@ -265,6 +266,16 @@ trace and log exports at `/v1/traces` and `/v1/logs`, maps only the signal field
 intake, and preserves trace, span, parent span, service, operation and error metadata. This makes
 IncidentCompass a consumer of an observability pipeline, not an observability backend. It does not expose
 an OTLP runtime exporter, a metrics receiver or a profile receiver in this release.
+
+OTLP ingestion is bounded per request in two independent ways: `IngestionLimits:MaxPayloadBytes`
+caps the bytes one export may carry, and `IngestionLimits:MaxSignalsPerExport` caps the records it
+may carry. The record bound is checked on the parsed export before mapping and before any command is
+dispatched, so an over-limit export is rejected whole and stores nothing. Because these endpoints
+answer in protobuf rather than `ProblemDetails`, a rejection returns `413 Payload Too Large` with the
+empty body the other OTLP failure paths already use; the stable code
+`otlp_export_signal_limit_exceeded` is recorded in log event 4003 rather than in the response.
+That log carries the signal kind, the observed record count and the configured limit only - never
+record bodies, span names, attributes or resource attributes.
 
 ## Later Options
 
