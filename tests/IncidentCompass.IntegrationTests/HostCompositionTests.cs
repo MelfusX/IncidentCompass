@@ -118,6 +118,26 @@ public sealed class HostCompositionTests
     }
 
     [Fact]
+    public void WorkerHostServices_RejectMissingInfrastructureWiring()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["IncidentCompass:Application:ApiVersion"] = "v1"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTestApplication(configuration);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => services.AddWorker(configuration));
+
+        Assert.Contains("deferred placeholder", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("AddInfrastructure", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WorkerHostServices_RejectInvalidPostReportWorkflowCatalogAtStartup()
     {
         var configuration = new ConfigurationBuilder()

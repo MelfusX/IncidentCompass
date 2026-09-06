@@ -7,8 +7,7 @@ using Npgsql;
 namespace IncidentCompass.Api.Health;
 
 internal sealed class PostgresReadinessHealthCheck(
-    IConfiguration configuration,
-    IOptions<PostgresOptions> options,
+    IOptions<PostgresConnectionOptions> options,
     IPostgresMigrationReadiness migrationReadiness)
     : IHealthCheck
 {
@@ -23,7 +22,7 @@ internal sealed class PostgresReadinessHealthCheck(
         }
 
         var connectionStringName = options.Value.ConnectionStringName;
-        var connectionString = configuration.GetConnectionString(connectionStringName);
+        var connectionString = options.Value.ConnectionString;
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             return HealthCheckResult.Unhealthy(

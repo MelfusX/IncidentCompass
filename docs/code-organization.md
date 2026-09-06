@@ -159,6 +159,8 @@ Rationale: the API exception handler depends only on Application and Domain exce
 - Each `src/*` project exposes a single `Setup.cs` at its root as the DI entry point. The class is named `Setup` and contains the public `AddX` extension method (`AddApplication`, `AddInfrastructure`, etc.). `Setup.cs` doubles as the assembly marker - prefer `typeof(Setup).Assembly` over arbitrary types for embedded-resource or assembly-scanning operations.
 - Feature-level registration delegates live next to the feature as `<Feature>Setup.cs` (for example `HealthSetup.cs`, `UsersSetup.cs`). The root `Setup.cs` composes these via feature-named extension methods such as `AddHealthCore` or `AddUsersCore`.
 - DI modules should register dependencies only; they should not contain business validation or runtime decision logic.
+- `AddApplication` binds deferred "not configured" placeholders for ports that only an infrastructure adapter can implement, so partial graphs stay buildable. Host entry points (`AddApi`, `AddWorker`) end by calling `ValidateApplicationWiring()`, which fails composition when a placeholder is still bound. Add the check to any new host entry point rather than letting the placeholder throw at first use.
+- Configuration is read at composition time and passed to typed options. `IConfiguration` is not registered as an application service by `AddInfrastructure`; connection strings reach adapters through `PostgresConnectionOptions`.
 
 ## Self-Documenting Code
 
