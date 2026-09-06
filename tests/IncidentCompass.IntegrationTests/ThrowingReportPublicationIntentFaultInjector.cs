@@ -1,4 +1,4 @@
-using IncidentCompass.Application.Governance.PostReportActions;
+using IncidentCompass.Application.Governance.PostReportActions.Testing;
 
 namespace IncidentCompass.IntegrationTests;
 

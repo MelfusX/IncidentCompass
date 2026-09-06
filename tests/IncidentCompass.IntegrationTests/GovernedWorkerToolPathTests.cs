@@ -6,6 +6,7 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Jobs.Testing;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Worker;
 using Microsoft.AspNetCore.Mvc.Testing;

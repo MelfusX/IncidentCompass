@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Postgres;
+using IncidentCompass.Infrastructure.Postgres.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

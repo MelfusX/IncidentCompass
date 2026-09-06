@@ -1,3 +1,4 @@
+using IncidentCompass.Infrastructure.Postgres.Testing;
 using Npgsql;
 
 namespace IncidentCompass.Infrastructure.Postgres;

@@ -1,4 +1,4 @@
-using IncidentCompass.Application.Governance.ActionApprovals;
+using IncidentCompass.Application.Governance.ActionApprovals.Testing;
 
 namespace IncidentCompass.IntegrationTests;
 

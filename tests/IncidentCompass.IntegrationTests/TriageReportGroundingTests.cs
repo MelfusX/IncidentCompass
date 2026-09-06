@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Intake.Redaction;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Jobs.Testing;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.ModelGateway.Mock;
