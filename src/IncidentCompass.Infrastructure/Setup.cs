@@ -3,8 +3,10 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.ActionApprovals;
+using IncidentCompass.Application.Governance.ActionApprovals.Testing;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Governance.PostReportActions;
+using IncidentCompass.Application.Governance.PostReportActions.Testing;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.Context;
@@ -22,6 +24,7 @@ using IncidentCompass.Infrastructure.ModelGateway.Mock;
 using IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 using IncidentCompass.Infrastructure.Observability;
 using IncidentCompass.Infrastructure.Postgres;
+using IncidentCompass.Infrastructure.Postgres.Testing;
 using IncidentCompass.Infrastructure.Security;
 using IncidentCompass.Infrastructure.SourceContext;
 using IncidentCompass.Infrastructure.Tickets;
@@ -57,6 +60,10 @@ public static class Setup
     }
     public static IServiceCollection AddPostgresMigrations(this IServiceCollection services)
     {
+        // Test fault seam, not a real service: the no-op default lets PostgresMigrationRunner call
+        // the seam that lets integration tests fail one chosen migration version mid-catalog. It is
+        // registered here rather than with the other seams because AddPostgresMigrations is a
+        // standalone host entry point, so the runner must be able to resolve it on its own.
         services.TryAddSingleton<IPostgresMigrationFailureInjector, NoPostgresMigrationFailureInjector>();
         services.TryAddSingleton<PostgresMigrationReadiness>();
         services.TryAddSingleton<IPostgresMigrationReadiness>(
@@ -183,17 +190,30 @@ public static class Setup
         services.TryAddScoped<ITriageReportListRepository, PostgresTriageReportListRepository>();
         services.TryAddScoped<ITriageToolResultCommitter, PostgresTriageToolResultCommitter>();
         services.TryAddScoped<IReadOnlyContextOutcomeRepository, PostgresReadOnlyContextOutcomeRepository>();
-        services.TryAddScoped<IActionApprovalTransactionFaultInjector, NoopActionApprovalTransactionFaultInjector>();
         services.TryAddScoped<IActionProposalRepository, PostgresActionProposalRepository>();
         services.TryAddScoped<IActionApprovalReviewRepository, PostgresActionReviewRepository>();
         services.TryAddScoped<IActionDispatchRepository, PostgresActionDispatchRepository>();
         services.TryAddScoped<IApprovedActionDispatcher, ApprovedActionDispatcher>();
         services.TryAddSingleton<PostReportActionWorkflowCatalog>();
         services.TryAddScoped<ITriageReportPublicationIntentWriter, PostgresReportPublicationIntentWriter>();
-        services.TryAddScoped<ITriageReportPublicationIntentFaultInjector,
-            NoopTriageReportPublicationIntentFaultInjector>();
         services.TryAddScoped<IPostReportActionIntentRepository,
             PostgresPostReportActionIntentRepository>();
+        services.AddPersistenceTestFaultSeams();
+        return services;
+    }
+
+    /// <summary>
+    /// Binds the no-op defaults for the governance <c>Testing</c> fault seams. These are not real
+    /// services: they exist so the integration tests can simulate a crash between two statements of
+    /// one commit transaction, which no decorator around the outer repository port can reach.
+    /// Production always gets the no-ops, so this registration is deliberately grouped and named
+    /// rather than scattered among the real persistence adapters.
+    /// </summary>
+    private static IServiceCollection AddPersistenceTestFaultSeams(this IServiceCollection services)
+    {
+        services.TryAddScoped<IActionApprovalTransactionFaultInjector, NoopActionApprovalTransactionFaultInjector>();
+        services.TryAddScoped<ITriageReportPublicationIntentFaultInjector,
+            NoopTriageReportPublicationIntentFaultInjector>();
         return services;
     }
 }

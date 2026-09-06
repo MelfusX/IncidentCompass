@@ -1,6 +1,10 @@
-namespace IncidentCompass.Application.Governance.ActionApprovals;
+namespace IncidentCompass.Application.Governance.ActionApprovals.Testing;
 
-public sealed class NoopActionApprovalTransactionFaultInjector : IActionApprovalTransactionFaultInjector
+/// <summary>
+/// Production binding for <see cref="IActionApprovalTransactionFaultInjector"/>. It never faults; the
+/// consuming approval and dispatch transactions need something to call at each seam.
+/// </summary>
+internal sealed class NoopActionApprovalTransactionFaultInjector : IActionApprovalTransactionFaultInjector
 {
     public Task AfterActionRowAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     public Task AfterProposalArtifactAsync(CancellationToken cancellationToken) => Task.CompletedTask;

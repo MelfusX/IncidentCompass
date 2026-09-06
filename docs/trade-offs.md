@@ -24,6 +24,39 @@ release gate remains the mock-backed demo plus the automated tests.
 The Phase 3 `3/3` result was measured with `Orchestrator.Budget.MaxReprompts: 2`; the Phase 2
 baseline predates bounded reprompts.
 
+## Test Fault Seams Live In Production Code
+
+Five interfaces exist in `src` for one reason: integration tests need to crash the process at an
+exact statement inside a database transaction. `ITriageToolResultCommitFaultInjector`,
+`ITriageReportFinalCommitFaultInjector`, `IActionApprovalTransactionFaultInjector`,
+`ITriageReportPublicationIntentFaultInjector` and `IPostgresMigrationFailureInjector` are all
+`internal`, all live under a feature-local `Testing/` folder, and are always bound to their no-op
+default in production composition.
+
+The obvious cleanup is to delete them and let tests wrap the real service in a decorator. That does
+not work here, and the reason is worth stating plainly. Every hook sits *between* two statements of
+one transaction: between the tool artifact insert and its `ToolResult` ledger insert, between the
+terminal fault update and `ReportPublished`, between the action row and its provenance and ledger
+rows, between the publication intent insert and the commit that publishes the report. A decorator
+wrapped around `ITriageToolResultCommitter` or `ITriageReportRepository` can only throw before the
+call or after it, and by then the transaction has already committed or rolled back as a unit. It can
+prove that a failure is visible; it cannot prove that two writes roll back *together*, which is the
+invariant these tests exist for and the reason the approval and publication code is shaped the way
+it is. The migration seam fails for a different reason: one `MigrateAsync` call applies every pending
+migration, so a decorator can only fail the whole run, never version 15 of a catalog while leaving
+1 through 14 applied and 15 recorded as `Failed`.
+
+So all five stayed. The split the plan anticipated - commit-time seams kept, whole-operation seams
+removed - turned out not to exist, because no seam here is a whole-operation seam. The cost is real:
+these are testability hooks in production code, they add a constructor parameter to eleven
+PostgreSQL adapters, and a reader who does not know why they exist could mistake them for dead code.
+The mitigations are that the types are `internal` and invisible outside the assembly, the folder
+name says what they are, each interface carries an XML comment naming the fault it simulates and
+stating that production always gets the no-op, and the DI registrations are grouped into named
+`AddInvestigationTestFaultSeams` / `AddPersistenceTestFaultSeams` methods instead of being scattered
+among real services. Weakening a partial-failure test to remove a seam would have been the worse
+trade.
+
 ## Full Prompt Logging vs Privacy
 
 Full prompt logs help debugging but may leak sensitive data. Default logging is metadata-only.
