@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using IncidentCompass.Api.Configuration;
 using IncidentCompass.Api.Health;
 using IncidentCompass.Api.Security;
+using IncidentCompass.Application.Core.Composition;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
@@ -30,6 +31,12 @@ public static class Setup
             options.AddDocumentTransformer<ApiKeyOpenApiDocumentTransformer>();
             options.AddOperationTransformer<ApiKeyOpenApiOperationTransformer>();
         });
+
+        // The API host does not run the claim loop, but it does ingest signals, so it reaches the
+        // recurrence escalation port. Both deferred placeholders throw when called, so a host that
+        // composed AddApplication without AddInfrastructure must fail here rather than at the first
+        // ingested signal. The real API host composes AddInfrastructure and passes.
+        services.ValidateApplicationWiring();
 
         return services;
     }

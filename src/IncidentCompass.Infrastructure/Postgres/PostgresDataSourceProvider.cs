@@ -1,5 +1,4 @@
 using IncidentCompass.Infrastructure.Configuration;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -7,15 +6,11 @@ namespace IncidentCompass.Infrastructure.Postgres;
 
 internal sealed class PostgresDataSourceProvider : IDisposable
 {
-    private readonly IConfiguration configuration;
-    private readonly IOptions<PostgresOptions> options;
+    private readonly IOptions<PostgresConnectionOptions> options;
     private readonly Lazy<NpgsqlDataSource> dataSource;
 
-    public PostgresDataSourceProvider(
-        IConfiguration configuration,
-        IOptions<PostgresOptions> options)
+    public PostgresDataSourceProvider(IOptions<PostgresConnectionOptions> options)
     {
-        this.configuration = configuration;
         this.options = options;
         dataSource = new Lazy<NpgsqlDataSource>(
             CreateDataSource,
@@ -42,16 +37,16 @@ internal sealed class PostgresDataSourceProvider : IDisposable
 
     private NpgsqlDataSource CreateDataSource()
     {
-        var connectionStringName = options.Value.ConnectionStringName;
-        var connectionString = configuration.GetConnectionString(connectionStringName);
-        if (string.IsNullOrWhiteSpace(connectionString))
+        var connectionOptions = options.Value;
+        var connectionStringName = connectionOptions.ConnectionStringName;
+        if (string.IsNullOrWhiteSpace(connectionOptions.ConnectionString))
         {
             throw PostgresConnectionConfigurationException.Missing(connectionStringName);
         }
 
         try
         {
-            var builder = new NpgsqlDataSourceBuilder(connectionString);
+            var builder = new NpgsqlDataSourceBuilder(connectionOptions.ConnectionString);
             builder.UseVector();
             return builder.Build();
         }

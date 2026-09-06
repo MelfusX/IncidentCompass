@@ -40,9 +40,6 @@ public static class Setup
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        // Raw ServiceCollection-based tests and non-host composition still need IConfiguration
-        // for connection-string resolution in PostgreSQL adapters.
-        services.TryAddSingleton(configuration);
         services.AddInfrastructureOptions(configuration);
         services.AddModelGatewayAdapters();
         services.AddEmbeddingAdapters();
@@ -87,7 +84,7 @@ public static class Setup
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<PostgresOptions>(configuration.GetSection(PostgresOptions.SectionName));
+        services.AddPostgresConnectionOptions(configuration);
         services
             .AddOptions<ModelGatewayOptions>()
             .Bind(configuration.GetSection(ModelGatewayOptions.SectionName))
@@ -125,56 +122,61 @@ public static class Setup
     }
     private static IServiceCollection AddModelGatewayAdapters(this IServiceCollection services)
     {
+        // AddHttpClient registers the typed client itself; the mock has no HTTP dependency and is
+        // registered directly. Both stay concrete-type registrations so the selector below can pick
+        // one without a second factory.
         services.AddHttpClient<OpenAiCompatibleModelClient>();
-
         services.TryAddScoped<MockAiModelClient>();
-        services.TryAddScoped<IAiModelClient>(serviceProvider =>
-        {
-            var options = serviceProvider
-                .GetRequiredService<IOptions<ModelGatewayOptions>>()
-                .Value;
 
-            if (!ProviderKindParser.TryParse(options.Provider, out var providerKind))
-            {
-                throw new InvalidOperationException(
-                    $"Unsupported model gateway provider '{options.Provider}'.");
-            }
-
-            return providerKind switch
-            {
-                ProviderKind.Mock => serviceProvider.GetRequiredService<MockAiModelClient>(),
-                ProviderKind.OpenAiCompatible => serviceProvider.GetRequiredService<OpenAiCompatibleModelClient>(),
-                _ => throw new InvalidOperationException(
-                    $"Unsupported model gateway provider '{options.Provider}'.")
-            };
-        });
-
-        return services;
+        return services.AddProviderSelectedClient<
+            IAiModelClient, ModelGatewayOptions, MockAiModelClient, OpenAiCompatibleModelClient>(
+            static options => options.Provider,
+            static provider => $"Unsupported model gateway provider '{provider}'.");
     }
     private static IServiceCollection AddEmbeddingAdapters(this IServiceCollection services)
     {
         services.AddHttpClient<OpenAiCompatibleEmbeddingClient>();
-
         services.TryAddScoped<MockEmbeddingClient>();
-        services.TryAddScoped<IEmbeddingClient>(serviceProvider =>
-        {
-            var options = serviceProvider
-                .GetRequiredService<IOptions<EmbeddingOptions>>()
-                .Value;
 
-            if (!ProviderKindParser.TryParse(options.Provider, out var providerKind))
+        return services.AddProviderSelectedClient<
+            IEmbeddingClient, EmbeddingOptions, MockEmbeddingClient, OpenAiCompatibleEmbeddingClient>(
+            static options => options.Provider,
+            static provider => $"Unsupported embedding provider '{provider}'.");
+    }
+
+    /// <summary>
+    /// The single provider-selection path shared by the model gateway and the embedding gateway.
+    /// The switch deliberately has no discard arm. CS8524 (the "unnamed enum value" half of switch
+    /// exhaustiveness) is suppressed for it, while CS8509 (a declared <see cref="ProviderKind"/>
+    /// member is not handled) stays on and is an error under TreatWarningsAsErrors, so adding a
+    /// third provider kind breaks the build here instead of falling through at runtime.
+    /// </summary>
+    private static IServiceCollection AddProviderSelectedClient<TClient, TOptions, TMock, TOpenAiCompatible>(
+        this IServiceCollection services,
+        Func<TOptions, string?> providerAccessor,
+        Func<string?, string> unsupportedProviderMessage)
+        where TClient : class
+        where TOptions : class
+        where TMock : class, TClient
+        where TOpenAiCompatible : class, TClient
+    {
+        services.TryAddScoped<TClient>(serviceProvider =>
+        {
+            var provider = providerAccessor(
+                serviceProvider.GetRequiredService<IOptions<TOptions>>().Value);
+
+            if (!ProviderKindParser.TryParse(provider, out var providerKind))
             {
-                throw new InvalidOperationException(
-                    $"Unsupported embedding provider '{options.Provider}'.");
+                throw new InvalidOperationException(unsupportedProviderMessage(provider));
             }
 
+#pragma warning disable CS8524
             return providerKind switch
             {
-                ProviderKind.Mock => serviceProvider.GetRequiredService<MockEmbeddingClient>(),
-                ProviderKind.OpenAiCompatible => serviceProvider.GetRequiredService<OpenAiCompatibleEmbeddingClient>(),
-                _ => throw new InvalidOperationException(
-                    $"Unsupported embedding provider '{options.Provider}'.")
+                ProviderKind.Mock => serviceProvider.GetRequiredService<TMock>(),
+                ProviderKind.OpenAiCompatible => serviceProvider.GetRequiredService<TOpenAiCompatible>()
             };
+#pragma warning restore CS8524
         });
 
         return services;

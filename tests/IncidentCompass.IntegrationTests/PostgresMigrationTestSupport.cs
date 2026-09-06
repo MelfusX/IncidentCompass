@@ -54,9 +54,7 @@ internal static class PostgresMigrationTestSupport
             })
             .Build();
 
-        services.AddSingleton<IConfiguration>(configuration);
-        services.Configure<PostgresOptions>(
-            configuration.GetSection(PostgresOptions.SectionName));
+        services.AddPostgresConnectionOptions(configuration);
         services.AddSingleton<PostgresDataSourceProvider>();
         services.AddSingleton<PostgresMigrationReadiness>();
         services.AddSingleton<IPostgresMigrationReadiness>(

@@ -1,3 +1,4 @@
+using IncidentCompass.Application.Core.Composition;
 using IncidentCompass.Application.Core.Security;
 using IncidentCompass.Application.Governance.PostReportActions;
 using IncidentCompass.Application.Governance.Tools;
@@ -69,6 +70,10 @@ public static class Setup
         services.AddHostedService<Worker>();
         services.AddHostedService<ActionDispatchWorker>();
         services.AddHostedService<PostReportActionEvaluationWorker>();
+
+        // Last, so it sees every registration: the Worker host must not start with the deferred
+        // "not configured" placeholders still bound for the investigation and re-triage ports.
+        services.ValidateApplicationWiring();
 
         return services;
     }
