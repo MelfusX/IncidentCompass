@@ -47,9 +47,8 @@ internal sealed partial class WorkerActionTaskSet(ILogger<WorkerActionPump> logg
             return;
         }
 
-        var delayTask = Task.Delay(delay, cancellationToken);
-        var completionTask = Task.WhenAny(actions.Select(static action => action.DispatchTask));
-        await Task.WhenAny(delayTask, completionTask);
+        await WorkerWakeDelay.WaitAsync(
+            delay, actions.Select(static action => action.DispatchTask), cancellationToken);
     }
 
     private async Task ObserveAsync(

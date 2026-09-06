@@ -126,6 +126,78 @@ public sealed class WorkerJobPumpTests
         Assert.True(runner.ProcessingCancelled.Task.IsCompletedSuccessfully);
         Assert.Equal(0, pump.ActiveJobCount);
     }
+    [Fact]
+    public async Task WaitForNextWakeAsync_ReturnsWhenAnActiveJobCompletesBeforeTheDelayElapses()
+    {
+        var processorRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runner = new BlockingTriageJobRunner(availableJobs: 1, processorRelease.Task);
+        using var provider = BuildProvider(runner);
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-wake-completion", SlowPollOptions(), TestContext.Current.CancellationToken));
+        await WaitUntilAsync(() => runner.StartedProcessingCount == 1);
+        var wake = pump.WaitForNextWakeAsync(TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
+        Assert.False(wake.IsCompleted);
+
+        processorRelease.SetResult();
+        await wake.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await pump.ObserveCompletedAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, pump.ActiveJobCount);
+    }
+
+    [Fact]
+    public async Task WaitForNextWakeAsync_ReturnsAfterTheDelayWhileJobsKeepRunning()
+    {
+        var runner = new BlockingTriageJobRunner(availableJobs: 1, new TaskCompletionSource().Task);
+        using var provider = BuildProvider(runner);
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-wake-delay", SlowPollOptions(), TestContext.Current.CancellationToken));
+        await WaitUntilAsync(() => runner.StartedProcessingCount == 1);
+        var started = TimeProvider.System.GetTimestamp();
+        await pump.WaitForNextWakeAsync(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
+
+        Assert.True(TimeProvider.System.GetElapsedTime(started) >= TimeSpan.FromMilliseconds(120));
+        Assert.Equal(1, pump.ActiveJobCount);
+        await pump.DrainAsync();
+    }
+
+    [Fact]
+    public async Task WaitForNextWakeAsync_ObservesTheAbandonedDelayWhenCancellationRacesActiveJobs()
+    {
+        var runner = new BlockingTriageJobRunner(availableJobs: 1, new TaskCompletionSource().Task);
+        using var provider = BuildProvider(runner);
+        var pump = ActivatorUtilities.CreateInstance<WorkerJobPump>(provider);
+        using var cancellation = new CancellationTokenSource();
+
+        Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-wake-cancel", SlowPollOptions(), cancellation.Token));
+        await WaitUntilAsync(() => runner.StartedProcessingCount == 1);
+        await cancellation.CancelAsync();
+
+        // The wait must still return rather than throw, and the delay it abandons must be observed
+        // so no faulted task is left behind for the finalizer to report.
+        await pump.WaitForNextWakeAsync(TimeSpan.FromMinutes(5), cancellation.Token)
+            .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await pump.DrainAsync();
+    }
+
+    private static ServiceProvider BuildProvider(ITriageJobRunner runner)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(runner);
+        services.AddSingleton<WorkerJobLeaseRenewer>();
+        return services.BuildServiceProvider();
+    }
+
+    private static WorkerOptions SlowPollOptions() => new()
+    {
+        MaxConcurrentJobs = 1,
+        LeaseSeconds = 60,
+        MaxAttempts = 3,
+        RetryDelaySeconds = 1
+    };
+
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
