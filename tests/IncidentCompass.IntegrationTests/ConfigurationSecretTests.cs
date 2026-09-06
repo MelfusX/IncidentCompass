@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+using IncidentCompass.TestSupport;
 
 namespace IncidentCompass.IntegrationTests;
 
@@ -10,7 +10,7 @@ public sealed class ConfigurationSecretTests
     public async Task RuntimeAppSettings_DoNotContainPostgresPasswords(string relativePath)
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(FindRepositoryRoot(), relativePath));
+            Path.Combine(RepositoryRootLocator.Find(), relativePath));
 
         Assert.DoesNotContain("incidentcompass_dev_password", content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Password=", content, StringComparison.OrdinalIgnoreCase);
@@ -22,7 +22,7 @@ public sealed class ConfigurationSecretTests
     [InlineData("tests/IncidentCompass.IntegrationTests/Fixtures/retriage-triage-config/incidentcompass.config.json")]
     public async Task TriageConfigurationContainsNoTelegramHostAuthorityOrCredential(string relativePath)
     {
-        var content = await File.ReadAllTextAsync(Path.Combine(FindRepositoryRoot(), relativePath));
+        var content = await File.ReadAllTextAsync(Path.Combine(RepositoryRootLocator.Find(), relativePath));
 
         Assert.DoesNotContain("BotToken", content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ChatId", content, StringComparison.OrdinalIgnoreCase);
@@ -35,32 +35,10 @@ public sealed class ConfigurationSecretTests
     [InlineData("tests/IncidentCompass.IntegrationTests/Fixtures/retriage-triage-config/incidentcompass.config.json")]
     public async Task TriageConfigurationContainsNoGitHubHostAuthorityOrCredential(string relativePath)
     {
-        var content = await File.ReadAllTextAsync(Path.Combine(FindRepositoryRoot(), relativePath));
+        var content = await File.ReadAllTextAsync(Path.Combine(RepositoryRootLocator.Find(), relativePath));
 
         Assert.DoesNotContain("GitHub", content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("api.github.com", content, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("owner/repo", content, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string FindRepositoryRoot(
-        [CallerFilePath] string sourceFilePath = "")
-    {
-        foreach (var startPath in new[] { sourceFilePath, AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
-        {
-            var directory = File.Exists(startPath)
-                ? new FileInfo(startPath).Directory
-                : new DirectoryInfo(startPath);
-            while (directory is not null)
-            {
-                if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-                {
-                    return directory.FullName;
-                }
-
-                directory = directory.Parent;
-            }
-        }
-
-        throw new InvalidOperationException("Could not find repository root.");
     }
 }

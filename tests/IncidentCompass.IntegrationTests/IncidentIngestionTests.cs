@@ -65,6 +65,7 @@ public sealed class IncidentIngestionTests(PostgresRepositoryFixture postgres)
         Assert.True(snapshotExists);
     }
 
+    [DockerAvailableFact]
     public async Task OtlpTraceExport_ErrorSpanFlowsThroughTheOtelNormalizer()
     {
         using var scope = await CreateScopeAsync(postgres);

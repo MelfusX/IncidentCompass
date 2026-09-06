@@ -5,6 +5,7 @@ using IncidentCompass.Application.Notifications;
 using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Configuration;
 using IncidentCompass.Infrastructure.Intake;
+using IncidentCompass.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -373,17 +374,6 @@ public sealed class TriageConfigurationValidationParityTests
         }
     }
 
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
-    }
-
     private sealed record CommandResult(int? ExitCode, string StandardOutput, string StandardError);
 
     private sealed class RecordingSnapshotStore : ITriageConfigurationSnapshotStore
@@ -441,7 +431,7 @@ public sealed class TriageConfigurationValidationParityTests
         public static TemporaryConfigFixture Create(string fixtureName)
         {
             var rootPath = Path.Combine(Path.GetTempPath(), "IncidentCompass", "config-validation", fixtureName, Guid.NewGuid().ToString("N"));
-            var sourcePath = Path.Combine(FindRepositoryRoot(), "config");
+            var sourcePath = Path.Combine(RepositoryRootLocator.Find(), "config");
             foreach (var sourceFile in Directory.EnumerateFiles(sourcePath, "*", SearchOption.AllDirectories))
             {
                 var relativePath = Path.GetRelativePath(sourcePath, sourceFile);

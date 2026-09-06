@@ -10,12 +10,25 @@ public sealed class RuntimeTelemetryTests
     [Fact]
     public void RecordsOnlyFixedOperationNamesAndNoSensitiveActivityTags()
     {
+        // ActivityListener registration is process-wide: without correlating captured activities
+        // back to this test's own root, a listener here would also observe (and could be
+        // observed observing) unrelated "IncidentCompass.Runtime" activities from any other test
+        // running concurrently in a different xUnit collection. RootId correlation scopes what
+        // this test collects to activities started within its own using block, so the listener
+        // is effectively disposed with the test and cannot leak into or be polluted by others.
+        using var rootActivity = new Activity("RuntimeTelemetryTests.Root").Start();
         var activities = new List<Activity>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "IncidentCompass.Runtime",
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activities.Add
+            ActivityStopped = activity =>
+            {
+                if (activity.RootId == rootActivity.RootId)
+                {
+                    activities.Add(activity);
+                }
+            }
         };
         ActivitySource.AddActivityListener(listener);
         var telemetry = new RuntimeTelemetry();
@@ -36,11 +49,21 @@ public sealed class RuntimeTelemetryTests
     [Fact]
     public void ListenerFailuresDoNotEscapeTelemetryCalls()
     {
+        // Same RootId-correlation reasoning as above: only fail on activities this test itself
+        // started, so a process-wide listener registration cannot throw for unrelated activities
+        // from a concurrently running test in another collection.
+        using var rootActivity = new Activity("RuntimeTelemetryTests.Root").Start();
         using var activityListener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "IncidentCompass.Runtime",
             Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-            ActivityStarted = static _ => throw new InvalidOperationException("export unavailable")
+            ActivityStarted = activity =>
+            {
+                if (activity.RootId == rootActivity.RootId)
+                {
+                    throw new InvalidOperationException("export unavailable");
+                }
+            }
         };
         ActivitySource.AddActivityListener(activityListener);
         using var meterListener = new MeterListener();

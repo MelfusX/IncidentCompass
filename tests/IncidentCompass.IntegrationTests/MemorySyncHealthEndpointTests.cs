@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Infrastructure;
 using IncidentCompass.Infrastructure.Memory;
+using IncidentCompass.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -76,7 +77,7 @@ public sealed class MemorySyncHealthEndpointTests(PostgresRepositoryFixture post
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:IncidentCompass"] = connectionString,
-                    ["IncidentCompass:ConfigSource:Path"] = Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.config.json"),
+                    ["IncidentCompass:ConfigSource:Path"] = Path.Combine(RepositoryRootLocator.Find(), "config", "incidentcompass.config.json"),
                     ["IncidentCompass:Memory:Seed:Enabled"] = "true",
                     ["IncidentCompass:Memory:Seed:TenantId"] = "local",
                     ["IncidentCompass:Memory:Seed:Owner"] = owner,
@@ -124,22 +125,6 @@ public sealed class MemorySyncHealthEndpointTests(PostgresRepositoryFixture post
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         await using var command = new NpgsqlCommand("DELETE FROM incidentcompass.memory_seed_sync_status;", connection);
         await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(Environment.CurrentDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Repository root was not found.");
     }
 
     private sealed class DeterministicEmbeddingClient : IEmbeddingClient

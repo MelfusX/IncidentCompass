@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using IncidentCompass.TestSupport;
 
 namespace IncidentCompass.UnitTests;
 
@@ -128,7 +129,7 @@ public sealed class ArchitectureTests
     [Fact]
     public void DomainProject_DoesNotDeclareApplicationPorts()
     {
-        var domainDirectory = Path.Combine(RepositoryRoot(), "src", "IncidentCompass.Domain");
+        var domainDirectory = Path.Combine(RepositoryRootLocator.Find(), "src", "IncidentCompass.Domain");
         var filesWithInterfaces = EnumerateSourceFiles(domainDirectory)
             .Where(filePath => File.ReadAllText(filePath).Contains("interface ", StringComparison.Ordinal))
             .Select(filePath => Path.GetRelativePath(domainDirectory, filePath).Replace('\\', '/'))
@@ -141,7 +142,7 @@ public sealed class ArchitectureTests
     [Fact]
     public void ApplicationProject_DoesNotReferenceExternalMcpSdkOrProcessIo()
     {
-        var applicationDirectory = Path.Combine(RepositoryRoot(), "src", "IncidentCompass.Application");
+        var applicationDirectory = Path.Combine(RepositoryRootLocator.Find(), "src", "IncidentCompass.Application");
         var forbiddenMarkers = new[]
         {
             "ModelContextProtocol",
@@ -155,7 +156,7 @@ public sealed class ArchitectureTests
         {
             AddForbiddenMarkers(
                 failures,
-                Path.GetRelativePath(RepositoryRoot(), projectPath),
+                Path.GetRelativePath(RepositoryRootLocator.Find(), projectPath),
                 File.ReadAllText(projectPath),
                 forbiddenMarkers);
         }
@@ -164,7 +165,7 @@ public sealed class ArchitectureTests
         {
             AddForbiddenMarkers(
                 failures,
-                Path.GetRelativePath(RepositoryRoot(), sourcePath),
+                Path.GetRelativePath(RepositoryRootLocator.Find(), sourcePath),
                 File.ReadAllText(sourcePath),
                 forbiddenMarkers);
         }
@@ -187,12 +188,12 @@ public sealed class ArchitectureTests
 
         foreach (var projectName in new[] { "IncidentCompass.Application", "IncidentCompass.Domain" })
         {
-            var projectDirectory = Path.Combine(RepositoryRoot(), "src", projectName);
+            var projectDirectory = Path.Combine(RepositoryRootLocator.Find(), "src", projectName);
             foreach (var sourcePath in EnumerateSourceFiles(projectDirectory))
             {
                 AddForbiddenMarkers(
                     failures,
-                    Path.GetRelativePath(RepositoryRoot(), sourcePath),
+                    Path.GetRelativePath(RepositoryRootLocator.Find(), sourcePath),
                     File.ReadAllText(sourcePath),
                     forbiddenMarkers);
             }
@@ -203,7 +204,7 @@ public sealed class ArchitectureTests
 
     private static Dictionary<string, SourceProject> LoadSourceProjects()
     {
-        var sourceDirectory = Path.Combine(RepositoryRoot(), "src");
+        var sourceDirectory = Path.Combine(RepositoryRootLocator.Find(), "src");
         return Directory.EnumerateFiles(sourceDirectory, "*.csproj", SearchOption.AllDirectories)
             .Select(LoadSourceProject)
             .ToDictionary(project => project.Name, StringComparer.OrdinalIgnoreCase);
@@ -301,22 +302,6 @@ public sealed class ArchitectureTests
                 failures.Add($"{relativePath} contains forbidden external MCP/I/O marker {marker}.");
             }
         }
-    }
-
-    private static string RepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException("Could not locate IncidentCompass.slnx.");
     }
 
     private sealed record SourceProject(string Name, string Directory, string[] ProjectReferences);

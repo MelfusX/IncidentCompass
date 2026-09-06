@@ -1,4 +1,5 @@
 using IncidentCompass.Infrastructure.Tickets;
+using IncidentCompass.TestSupport;
 
 namespace IncidentCompass.UnitTests;
 
@@ -37,23 +38,12 @@ public sealed class GitHubIssuesOptionsTests
     [Fact]
     public void WorkerAppSettings_DoNotPersistGitHubToken()
     {
-        var root = FindRepositoryRoot();
+        var root = RepositoryRootLocator.Find();
         foreach (var name in new[] { "appsettings.json", "appsettings.Development.json" })
         {
             var content = File.ReadAllText(Path.Combine(root, "src", "IncidentCompass.Worker", name));
             Assert.DoesNotContain("\"Token\"", content, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("Authorization", content, StringComparison.OrdinalIgnoreCase);
         }
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-        {
-            directory = directory.Parent;
-        }
-
-        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
     }
 }

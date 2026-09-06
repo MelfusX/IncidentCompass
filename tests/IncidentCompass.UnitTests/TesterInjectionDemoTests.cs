@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Intake.Fingerprinting;
 using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Tester;
+using IncidentCompass.TestSupport;
 
 namespace IncidentCompass.UnitTests;
 
@@ -14,7 +15,7 @@ public sealed class TesterInjectionDemoTests
     [Fact]
     public void SharedFixture_IsHashPinnedAndMappedWithoutDuplicatingItsInstruction()
     {
-        var root = RepositoryRoot();
+        var root = RepositoryRootLocator.Find();
         var fixturePath = Path.Combine(root, "samples", "incidents", "tester-ticket-action-injection.json");
         var bytes = File.ReadAllBytes(fixturePath);
         Assert.Equal(DemoInjectionScenarioLoader.ExpectedSha256, Convert.ToHexString(SHA256.HashData(bytes)));
@@ -121,7 +122,7 @@ public sealed class TesterInjectionDemoTests
 
     private static DemoScenario LoadScenario() =>
         DemoInjectionScenarioLoader.Load(Path.Combine(
-            RepositoryRoot(),
+            RepositoryRootLocator.Find(),
             "samples",
             "incidents",
             "tester-ticket-action-injection.json"));
@@ -194,17 +195,6 @@ public sealed class TesterInjectionDemoTests
                 new JsonObject(),
                 envelope.ObservedAtUtc),
             1).Value;
-
-    private static string RepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null && !File.Exists(Path.Combine(current.FullName, "IncidentCompass.slnx")))
-        {
-            current = current.Parent;
-        }
-
-        return Assert.IsType<DirectoryInfo>(current).FullName;
-    }
 
     private sealed class InjectionDemoHandler : HttpMessageHandler
     {

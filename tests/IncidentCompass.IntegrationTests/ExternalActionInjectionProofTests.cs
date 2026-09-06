@@ -9,6 +9,7 @@ using IncidentCompass.Application.Tickets;
 using IncidentCompass.Domain.Incidents.Actions;
 using IncidentCompass.Infrastructure.Notifications.Telegram;
 using IncidentCompass.Infrastructure.Tickets;
+using IncidentCompass.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -245,7 +246,7 @@ public sealed class ExternalActionInjectionProofTests(PostgresRepositoryFixture 
 
     private static void AssertFixtureCopiedByBothProjects()
     {
-        var root = FindRepositoryRoot();
+        var root = RepositoryRootLocator.Find();
         var testerProject = File.ReadAllText(
             Path.Combine(root, "src", "IncidentCompass.Tester", "IncidentCompass.Tester.csproj"));
         var integrationProject = File.ReadAllText(
@@ -255,17 +256,6 @@ public sealed class ExternalActionInjectionProofTests(PostgresRepositoryFixture 
         Assert.Contains(fixtureName, integrationProject, StringComparison.Ordinal);
         Assert.DoesNotContain("IncidentCompass.IntegrationTests.csproj", testerProject, StringComparison.Ordinal);
         Assert.DoesNotContain("IncidentCompass.Tester.csproj", integrationProject, StringComparison.Ordinal);
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null && !File.Exists(Path.Combine(current.FullName, "IncidentCompass.slnx")))
-        {
-            current = current.Parent;
-        }
-
-        return Assert.IsType<DirectoryInfo>(current).FullName;
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

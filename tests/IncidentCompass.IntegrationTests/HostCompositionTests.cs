@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
@@ -10,6 +9,7 @@ using IncidentCompass.Application.Tickets;
 using IncidentCompass.Domain.Incidents.Actions;
 using IncidentCompass.Infrastructure;
 using IncidentCompass.Infrastructure.Tickets;
+using IncidentCompass.TestSupport;
 using IncidentCompass.Worker;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -503,7 +503,7 @@ public sealed class HostCompositionTests
         // config so these unrelated tests do not need to know about intake at all.
         var configurationOverrides = new Dictionary<string, string?>(values)
         {
-            ["IncidentCompass:ConfigSource:Path"] = Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.config.json")
+            ["IncidentCompass:ConfigSource:Path"] = Path.Combine(RepositoryRootLocator.Find(), "config", "incidentcompass.config.json")
         };
 
         return new HostBuilder()
@@ -660,22 +660,6 @@ public sealed class HostCompositionTests
         {
             Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
         }
-    }
-
-    private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")
-    {
-        var directory = new FileInfo(sourceFilePath).Directory;
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not find repository root.");
     }
 
     private static IEnumerable<string> GetOptionsValidationFailures(Exception exception)

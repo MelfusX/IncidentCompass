@@ -16,14 +16,15 @@ internal static class OtlpExportTestFactory
 {
     public static ExportTraceServiceRequest TraceExport(string serviceName, int spanCount)
     {
+        var callSeed = Guid.NewGuid().ToByteArray();
         var scopeSpans = new ScopeSpans();
         for (var index = 0; index < spanCount; index++)
         {
             scopeSpans.Spans.Add(new Span
             {
                 Name = "POST /limit-probe",
-                TraceId = ByteString.CopyFrom(Identifier(index, 16)),
-                SpanId = ByteString.CopyFrom(Identifier(index, 8)),
+                TraceId = ByteString.CopyFrom(Identifier(callSeed, index, 16)),
+                SpanId = ByteString.CopyFrom(Identifier(callSeed, index, 8)),
                 StartTimeUnixNano = 1_700_000_000_000_000_000,
                 EndTimeUnixNano = 1_700_000_000_250_000_000,
                 Status = new Status { Code = Status.Types.StatusCode.Error },
@@ -89,11 +90,19 @@ internal static class OtlpExportTestFactory
         }
     };
 
-    private static byte[] Identifier(int index, int length)
+    // The OTLP trace delivery key is "traceId:spanId", uniquely indexed by (tenant_id, source,
+    // delivery_key) without a service scope, so identifiers that only depended on `index` would
+    // collide across different tests using this factory with the same span count and dedupe
+    // against each other's rows. Mixing in a fresh per-call seed keeps identifiers unique across
+    // factory calls while `index` still keeps them distinct within a single call's span list.
+    private static byte[] Identifier(byte[] callSeed, int index, int length)
     {
         var bytes = new byte[length];
-        bytes[0] = (byte)(index + 1);
-        bytes[length - 1] = (byte)(index + 1);
+        for (var position = 0; position < length; position++)
+        {
+            bytes[position] = (byte)(callSeed[position % callSeed.Length] + index);
+        }
+
         return bytes;
     }
 
