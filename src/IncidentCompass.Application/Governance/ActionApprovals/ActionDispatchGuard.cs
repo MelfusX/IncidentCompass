@@ -48,7 +48,7 @@ internal static class ActionDispatchGuard
         configuration.Actions.RequireApprovalForAll ||
         action.Category != ActionCategory.Notification ||
         configuration.Rules.Any(rule =>
-            string.Equals(rule.Type, "requires_approval", StringComparison.Ordinal) &&
+            string.Equals(rule.Type, TriageRuleTypes.RequiresApproval, StringComparison.Ordinal) &&
             string.Equals(rule.Tool, action.ToolId, StringComparison.Ordinal));
 
     private static ActionExecutionMode EffectiveMode(string globalMode, string? overrideMode)
