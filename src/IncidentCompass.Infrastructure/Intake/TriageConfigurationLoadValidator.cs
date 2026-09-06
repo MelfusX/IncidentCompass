@@ -3,6 +3,7 @@ using System.Text.Json;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
+using IncidentCompass.Application.Investigation.Jobs;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
 
 namespace IncidentCompass.Infrastructure.Intake;
@@ -15,7 +16,7 @@ internal sealed class TriageConfigurationLoadValidator(
     private static readonly HashSet<string> ProviderKinds = new(["Mock", "OpenAICompatible"], StringComparer.Ordinal);
     private const string MemoryRoleName = "memory";
     private const string MemorySearchToolName = "memory_search";
-    private static readonly HashSet<string> OrchestratorTools = new(["delegate", "publish_report"], StringComparer.Ordinal);
+    private static readonly HashSet<string> OrchestratorTools = new(OrchestratorToolNames.All, StringComparer.Ordinal);
     private readonly TriageToolConfigurationLoadValidator toolValidator = new(toolRegistry);
 
     public void Validate(TriageConfiguration configuration)
@@ -93,7 +94,7 @@ internal sealed class TriageConfigurationLoadValidator(
         var tools = orchestrator.Tools.ToHashSet(StringComparer.Ordinal);
         if (tools.Count != OrchestratorTools.Count || !tools.SetEquals(OrchestratorTools))
         {
-            throw Invalid("Orchestrator.Tools", string.Join(",", orchestrator.Tools), "exactly: delegate, publish_report");
+            throw Invalid("Orchestrator.Tools", string.Join(",", orchestrator.Tools), "exactly: " + string.Join(", ", OrchestratorToolNames.All));
         }
 
         if (orchestrator.Budget.MaxWorkers <= 0)
@@ -114,6 +115,15 @@ internal sealed class TriageConfigurationLoadValidator(
         if (orchestrator.Budget.MaxReprompts < 0)
         {
             throw Invalid("Orchestrator.Budget.MaxReprompts", orchestrator.Budget.MaxReprompts.ToString(CultureInfo.InvariantCulture), "zero or a positive integer");
+        }
+
+        if (orchestrator.Budget.MaxTurns is < OrchestratorBudgetSettings.MinimumMaxTurns or > OrchestratorBudgetSettings.MaximumMaxTurns)
+        {
+            throw Invalid(
+                "Orchestrator.Budget.MaxTurns",
+                orchestrator.Budget.MaxTurns.ToString(CultureInfo.InvariantCulture),
+                FormattableString.Invariant(
+                    $"an integer between {OrchestratorBudgetSettings.MinimumMaxTurns} and {OrchestratorBudgetSettings.MaximumMaxTurns}"));
         }
     }
 

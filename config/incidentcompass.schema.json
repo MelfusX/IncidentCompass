@@ -104,7 +104,8 @@
             "MaxWorkers": { "type": "integer", "minimum": 1 },
             "MaxTokens": { "type": "integer", "minimum": 1 },
             "MaxWallClockSeconds": { "type": "integer", "minimum": 1 },
-            "MaxReprompts": { "type": "integer", "minimum": 0 }
+            "MaxReprompts": { "type": "integer", "minimum": 0 },
+            "MaxTurns": { "type": "integer", "minimum": 1, "maximum": 64 }
           }
         }
       }

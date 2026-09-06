@@ -9,7 +9,13 @@ internal sealed class WorkerRoleRunner(
     InvestigationModelCaller modelCaller,
     WorkerToolCallExecutor toolCallExecutor)
 {
+    /// <summary>
+    /// Turns the worker's bound allows beyond one per granted tool and one per configured reprompt.
+    /// The role's own turn budget is deliberately not the orchestrator's <c>Budget.MaxTurns</c>: that
+    /// one bounds orchestrator work turns for the whole attempt, while this bounds a single worker.
+    /// </summary>
     private const int WorkerTurnSlack = 4;
+
     public async Task<string> RunAsync(
         TriageJob job,
         TriageConfiguration configuration,
@@ -20,7 +26,18 @@ internal sealed class WorkerRoleRunner(
         DateTimeOffset attemptStartedAtUtc,
         CancellationToken cancellationToken)
     {
-        var route = configuration.Routes[role.RouteId];
+        if (!configuration.Routes.TryGetValue(role.RouteId, out var route))
+        {
+            // Load-time validation rejects a configuration like this, but the worker loop must not
+            // depend on having been handed a validated configuration: a rehydrated snapshot whose role
+            // names a route it does not contain fails closed under its own governance error code
+            // instead of throwing KeyNotFoundException out of the claim loop.
+            throw new TriageGovernanceDeniedException(
+                TriageGovernanceDeniedException.WorkerRouteMissingCode,
+                "Role '" + roleName + "' names route '" + role.RouteId +
+                "', which is not a configured route in this triage configuration.");
+        }
+
         var toolSurface = toolCallExecutor.CreateToolSurface(configuration, role);
         var messages = new List<AiChatMessage>
         {
@@ -29,11 +46,11 @@ internal sealed class WorkerRoleRunner(
         };
 
         var reprompts = 0;
-        var maxTurns = Math.Max(4, configuration.Orchestrator.Budget.MaxReprompts + role.Tools.Count + WorkerTurnSlack);
+        var maxTurns = configuration.Orchestrator.Budget.MaxReprompts + role.Tools.Count + WorkerTurnSlack;
         for (var turn = 0; turn < maxTurns; turn++)
         {
             var response = await modelCaller.CompleteAsync(
-                new TriageJobCallContext(job, configuration, attemptStartedAtUtc, role.RouteId, "worker", roleName),
+                new TriageJobCallContext(job, configuration, attemptStartedAtUtc, role.RouteId, TriageModelCallKinds.Worker, roleName),
                 route,
                 messages,
                 toolSurface.Count > 0 ? toolSurface : null,
