@@ -8,6 +8,7 @@ using IncidentCompass.Application.Intake.Normalization;
 using IncidentCompass.Application.Intake.Redaction;
 using IncidentCompass.Domain.Exceptions;
 using IncidentCompass.Domain.Incidents;
+using Microsoft.Extensions.Logging;
 
 namespace IncidentCompass.Application.Intake.IngestSignal;
 
@@ -18,7 +19,8 @@ public sealed class IngestSignalCommandHandler(
     FaultGroupingCoordinator faultGroupingCoordinator,
     ISignalRepository signalRepository,
     TimeProvider timeProvider,
-    IIncidentTenantContext incidentTenantContext) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
+    IIncidentTenantContext incidentTenantContext,
+    ILogger<IngestSignalCommandHandler> logger) : IRequestHandler<IngestSignalCommand, IngestSignalResponse>
 {
     public async Task<IngestSignalResponse> HandleAsync(IngestSignalCommand command, CancellationToken cancellationToken)
     {
@@ -30,7 +32,8 @@ public sealed class IngestSignalCommandHandler(
         var redacted = SecretRedactor.Redact(
             pseudonymized,
             configuration.Redaction,
-            pseudonymizer.IsCanonicalPseudonym);
+            pseudonymizer.IsCanonicalPseudonym,
+            logger);
         var fingerprint = FingerprintCalculator.Compute(redacted, configuration.FaultGrouping);
         var tenantId = await incidentTenantContext.GetTenantIdAsync(cancellationToken);
         var draftSignal = BuildSignal(

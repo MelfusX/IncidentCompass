@@ -110,6 +110,27 @@ Built-in secret patterns remain active for every signal. The triage config can a
 redaction and bounded .NET regular-expression replacements before persistence and before model calls.
 These rules are defense in depth, not a guarantee that every possible secret or PII shape is known.
 
+A built-in property-name denylist redacts values whose JSON property name looks like a secret holder,
+independently of the configured attribute keys. The rule an operator can predict: a property name is
+lowercased and split into segments on every non-alphanumeric character and on camel-case and
+letter/digit boundaries, and the value is redacted when any run of consecutive segments joins to one
+of `accesskey`, `apikey`, `authorization`, `clientsecret`, `connectionstring`, `cookie`, `jwt`,
+`passwd`, `password`, `privatekey`, `secret` or `token`; the value is also redacted when the whole
+name, with separators removed, equals the whole-name-only term `session`. So `x-api-key`, `Cookie`,
+`Set-Cookie`, `Authorization-Bearer`, `user_password_hash`, `db_password_2`, `access_token` and a
+property named exactly `session` are redacted, while `session_id`, `sessionCount`,
+`session_start_time`, `keyword`, `key_count` and `totalTokens` are not. Broad words are whole-name
+terms precisely so that ordinary incident context is not destroyed; the trade-off is that a name such
+as `token_count` is redacted and a plural such as `cookies` is not. Like the configured rules, this
+matcher is best effort (see `docs/trade-offs.md`).
+
+Configured patterns are compiled once per configuration snapshot and each match runs under a 200 ms
+timeout. A pattern that exceeds it fails closed: the entire field is replaced with the distinct marker
+`[REDACTED:PATTERN_TIMEOUT]`, never with the partially processed intermediate value, so a hostile
+input cannot pass through a redaction rule that did not finish and cannot abort intake either. The
+timeout is logged once per pattern per configuration snapshot with the pattern name and the field
+path only. The field value is exactly the text redaction failed to clean, so it is never logged.
+
 Configured user-identifier attributes are replaced before redaction with an HMAC-SHA256 pseudonym.
 The salt comes only from host secrets or `IncidentCompass__Pseudonymization__Salt`; it is not stored in
 the triage config, config snapshot, artifact or ledger. If the salt is absent, identifiers fail safe to
