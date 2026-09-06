@@ -2,11 +2,16 @@
 
 These rules keep the production codebase easy to audit, refactor and hand over to another team. Treat them as engineering guardrails, not formatting ceremony. An exception is acceptable only when it is explicit, local and easier to defend than the split it avoids.
 
-These guardrails apply to production source code. Test code is out of scope for this gate.
+The gate covers both `src/` and `tests/`, with a looser size budget for test code: a production file
+stays under 400 lines, a test file under 800. The responsibility, naming and design rules below are
+production rules; the gate applies its nested-private-type and status-string checks to `src/` only,
+because test code legitimately declares private nested test doubles and asserts on the persisted
+status representation.
 
 ## Size Guardrails
 
 - A production class should stay under 400 physical lines. If it exceeds that limit, the code should be split unless the file is a simple composition root, generated code, a framework-required shape, or another clearly justified exception.
+- A test file should stay under 800 physical lines. Test classes carry fixtures, doubles and setup, so they get a looser budget than production code; past that limit, split them by the subject under test rather than by line count and move shared setup into a named support type.
 - A method should fit in one readable workflow step. Long methods should be split by intent, for example validation, state loading, policy decision, side effect, persistence and response mapping.
 - A large handler is a design smell. A handler should orchestrate a use case; domain rules, provider-specific work, rendering, parsing, persistence details and reusable policies should live behind named collaborators.
 - Do not hide complexity by extracting vague helpers. Prefer small methods and types named after the business or workflow concept they represent.
