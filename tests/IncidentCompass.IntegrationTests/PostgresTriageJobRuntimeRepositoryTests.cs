@@ -67,7 +67,11 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
     [DockerAvailableFact]
     public async Task RenewLeaseAsync_ExtendsOnlyTheCurrentUnexpiredOwnerLease()
     {
-        using var scope = await CreateScopeAsync();
+        // ClaimNextAsync/RenewAsync compute "now" and lease expiry from the injected TimeProvider
+        // rather than SQL now(), so a fake clock lets this test advance virtual time deterministically
+        // instead of sleeping for real wall-clock milliseconds.
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        using var scope = await CreateScopeAsync(timeProvider);
         var seed = await SeedJobAsync(scope.ConnectionString, "renew-lease", "Pending");
         var repository = scope.Services.GetRequiredService<ITriageJobRuntimeRepository>();
         var claimed = await repository.ClaimNextAsync(
@@ -76,14 +80,14 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
             TestContext.Current.CancellationToken);
         Assert.NotNull(claimed);
 
-        await Task.Delay(TimeSpan.FromMilliseconds(400), TestContext.Current.CancellationToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(400));
         Assert.True(await repository.RenewLeaseAsync(
             claimed,
             "worker-renew-a",
             TimeSpan.FromSeconds(1),
             TestContext.Current.CancellationToken));
 
-        await Task.Delay(TimeSpan.FromMilliseconds(700), TestContext.Current.CancellationToken);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(700));
         Assert.Null(await repository.ClaimNextAsync(
             "worker-renew-b",
             TimeSpan.FromSeconds(1),
@@ -329,7 +333,7 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
             artifact => artifact.Id == priorAttemptId);
     }
 
-    private async Task<RepositoryScope> CreateScopeAsync()
+    private async Task<RepositoryScope> CreateScopeAsync(TimeProvider? timeProvider = null)
     {
         var connectionString = await postgres.GetConnectionStringAsync();
         await PostgresSchemaTestHelper.EnsureSchemaAsync(connectionString);
@@ -345,6 +349,15 @@ public sealed class PostgresTriageJobRuntimeRepositoryTests(PostgresRepositoryFi
         services.AddLogging();
         services.AddTestApplication(configuration);
         services.AddInfrastructure(configuration);
+        if (timeProvider is not null)
+        {
+            // ClaimNextAsync/RenewAsync compute lease timestamps from the injected TimeProvider
+            // (not SQL now()), so a fake clock here lets lease-timing tests advance virtual time
+            // instead of sleeping in real wall-clock time. AddSingleton after AddInfrastructure's
+            // TryAddSingleton(TimeProvider.System) wins on resolution.
+            services.AddSingleton(timeProvider);
+        }
+
         var serviceProvider = services.BuildServiceProvider();
 
         return new RepositoryScope(serviceProvider, connectionString);

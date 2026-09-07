@@ -1,5 +1,5 @@
-using IncidentCompass.Application.Core.ModelClients;
 using System.Text.Json;
+using IncidentCompass.Application.Core.ModelClients;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.Mock;
 

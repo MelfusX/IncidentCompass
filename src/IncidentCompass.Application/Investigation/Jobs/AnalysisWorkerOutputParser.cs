@@ -35,7 +35,7 @@ internal static class AnalysisWorkerOutputParser
         return new AnalysisWorkerOutput(keyFacts, classification, needsContextElement.GetBoolean(), rationale);
     }
 
-    private static IReadOnlyCollection<string> ReadKeyFacts(JsonElement root, string outputLabel)
+    private static List<string> ReadKeyFacts(JsonElement root, string outputLabel)
     {
         if (!root.TryGetProperty("keyFacts", out var keyFactsElement) ||
             keyFactsElement.ValueKind != JsonValueKind.Array)

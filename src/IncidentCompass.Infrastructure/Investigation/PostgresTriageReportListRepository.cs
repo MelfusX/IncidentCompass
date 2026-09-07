@@ -22,9 +22,10 @@ internal sealed class PostgresTriageReportListRepository(PostgresDataSourceProvi
     {
         await using var connection = await dataSourceProvider.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT r.id, r.fault_id, r.status, r.summary, r.classification, r.confidence,
+            SELECT r.id AS report_id, r.fault_id, r.status, r.summary, r.classification, r.confidence,
                    r.is_mass_issue, r.recommended_next_action, r.created_at_utc,
-                   f.service_name, f.environment, r.supersedes_report_id, successor.id
+                   f.service_name, f.environment, r.supersedes_report_id,
+                   successor.id AS superseded_by_report_id
             FROM incidentcompass.triage_reports r
             JOIN incidentcompass.faults f ON f.id = r.fault_id
             LEFT JOIN LATERAL (
@@ -60,15 +61,10 @@ internal sealed class PostgresTriageReportListRepository(PostgresDataSourceProvi
 
         var reports = new List<TriageReportListItemResponse>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var mapper = new TriageReportListRowMapper(reader);
         while (await reader.ReadAsync(cancellationToken))
         {
-            Guid? supersededByReportId = reader.IsDBNull(12) ? null : reader.GetGuid(12);
-            reports.Add(new TriageReportListItemResponse(
-                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
-                reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetBoolean(6),
-                reader.IsDBNull(7) ? string.Empty : reader.GetString(7), reader.GetDateTimeOffset(8),
-                reader.GetString(9), reader.GetString(10), reader.IsDBNull(11) ? null : reader.GetGuid(11),
-                supersededByReportId, supersededByReportId is null));
+            reports.Add(mapper.Map(reader));
         }
 
         return reports;

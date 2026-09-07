@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Globalization;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Infrastructure;
 using IncidentCompass.Infrastructure.Memory;
+using IncidentCompass.TestSupport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -381,7 +383,13 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
             Path.Combine(sourceDirectory, "runbooks", "checkout-timeout.md"),
             "\nStartup-only update.",
             TestContext.Current.CancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+
+        // This proves an absence (no resync), so there is no positive condition to poll for.
+        // MemorySeedHostedService.StartAsync only assigns resyncTask when RuntimeResyncEnabled,
+        // so with it disabled no resync loop is ever scheduled - a long margin adds no additional
+        // confidence over a short one. Keep a small fixed margin as defense-in-depth against a
+        // future regression that re-enables scheduling without checking the flag.
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
 
         var state = await ReadSeedStateAsync(connectionString, "runbooks/checkout-timeout.md");
         Assert.Equal(1, state.Version);
@@ -493,12 +501,12 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:IncidentCompass"] = connectionString,
-                    ["IncidentCompass:ConfigSource:Path"] = Path.Combine(FindRepositoryRoot(), "config", "incidentcompass.config.json"),
+                    ["IncidentCompass:ConfigSource:Path"] = Path.Combine(RepositoryRootLocator.Find(), "config", "incidentcompass.config.json"),
                     ["IncidentCompass:Memory:Seed:Enabled"] = "true",
                     ["IncidentCompass:Memory:Seed:TenantId"] = "local",
                     ["IncidentCompass:Memory:Seed:Owner"] = owner,
                     ["IncidentCompass:Memory:Seed:RuntimeResyncEnabled"] = runtimeResyncEnabled.ToString(),
-                    ["IncidentCompass:Memory:Seed:RuntimeResyncIntervalSeconds"] = runtimeResyncIntervalSeconds.ToString(),
+                    ["IncidentCompass:Memory:Seed:RuntimeResyncIntervalSeconds"] = runtimeResyncIntervalSeconds.ToString(CultureInfo.InvariantCulture),
                     ["IncidentCompass:Memory:Seed:SourceDirectory"] = sourceDirectory
                 });
             })
@@ -637,22 +645,6 @@ public sealed class MemorySeedHostedServiceTests(PostgresRepositoryFixture postg
             reader.IsDBNull(5) ? null : reader.GetString(5),
             reader.GetFieldValue<string[]>(6),
             reader.GetBoolean(7));
-    }
-
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(Environment.CurrentDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Repository root was not found.");
     }
 
     private sealed class BlockingFailureStatusWriter : IMemorySeedSyncStatusWriter

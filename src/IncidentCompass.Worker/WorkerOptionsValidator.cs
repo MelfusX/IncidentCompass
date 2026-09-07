@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace IncidentCompass.Worker;
 
-internal sealed class WorkerOptionsValidator : IValidateOptions<WorkerOptions>
+public sealed class WorkerOptionsValidator : IValidateOptions<WorkerOptions>
 {
     public ValidateOptionsResult Validate(string? name, WorkerOptions options)
     {
@@ -22,7 +22,7 @@ internal sealed class WorkerOptionsValidator : IValidateOptions<WorkerOptions>
     {
         if (value <= 0)
         {
-            failures.Add($"IncidentCompass:Worker:{name} must be greater than zero.");
+            failures.Add($"{WorkerOptions.SectionName}:{name} must be greater than zero.");
         }
     }
 
@@ -30,7 +30,7 @@ internal sealed class WorkerOptionsValidator : IValidateOptions<WorkerOptions>
     {
         if (value < 0)
         {
-            failures.Add($"IncidentCompass:Worker:{name} must be zero or greater.");
+            failures.Add($"{WorkerOptions.SectionName}:{name} must be zero or greater.");
         }
     }
 }

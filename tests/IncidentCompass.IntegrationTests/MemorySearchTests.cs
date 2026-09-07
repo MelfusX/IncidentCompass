@@ -9,7 +9,6 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Memory;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,23 +58,125 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
             embeddingDimensions: 2,
             [1f, 0f],
             TestContext.Current.CancellationToken);
+        await InsertFilterCandidateAsync(
+            scope.ConnectionString, "other-tenant", "foreign-tenant.md", "mock", MemoryModel, 2, [1f, 0f]);
+        await InsertFilterCandidateAsync(
+            scope.ConnectionString, "local", "foreign-provider.md", "foreign-provider", MemoryModel, 2, [1f, 0f]);
+        await InsertFilterCandidateAsync(
+            scope.ConnectionString, "local", "foreign-model.md", "mock", "foreign-model", 2, [1f, 0f]);
+        await InsertFilterCandidateAsync(
+            scope.ConnectionString, "local", "foreign-dimension.md", "mock", MemoryModel, 3, [1f, 0f, 0f]);
+        var crossWiredItemId = await InsertMemoryItemAsync(
+            scope.ConnectionString,
+            "other-tenant",
+            "cross-wired-parent.md");
+        await InsertMemoryChunkAsync(
+            scope.ConnectionString,
+            crossWiredItemId,
+            "local",
+            "mock",
+            MemoryModel,
+            2,
+            [1f, 0f],
+            TestContext.Current.CancellationToken);
+        var inactiveItemId = await InsertFilterCandidateAsync(
+            scope.ConnectionString, "local", "inactive-filter.md", "mock", MemoryModel, 2, [1f, 0f], isActive: false);
 
         using var serviceScope = scope.Factory.Services.CreateScope();
         var repository = serviceScope.ServiceProvider.GetRequiredService<IMemoryRepository>();
 
         var match = await repository.SearchAsync(
-            new MemorySearchRequest("local", "mock", MemoryModel, 2, [1f, 0f], TopK: 5, MinScore: 0.25),
+            new MemorySearchRequest("local", "mock", MemoryModel, 2, [1f, 0f], CandidateCount: 5, MinScore: 0.25),
             TestContext.Current.CancellationToken);
         var dimensionMismatch = await repository.SearchAsync(
-            new MemorySearchRequest("local", "mock", MemoryModel, 3, [1f, 0f, 0f], TopK: 5, MinScore: 0.25),
+            new MemorySearchRequest("local", "mock", MemoryModel, 4, [1f, 0f, 0f, 0f], CandidateCount: 5, MinScore: 0.25),
             TestContext.Current.CancellationToken);
         var modelMismatch = await repository.SearchAsync(
-            new MemorySearchRequest("local", "mock", "other-model", 2, [1f, 0f], TopK: 5, MinScore: 0.25),
+            new MemorySearchRequest("local", "mock", "other-model", 2, [1f, 0f], CandidateCount: 5, MinScore: 0.25),
+            TestContext.Current.CancellationToken);
+        var providerMismatch = await repository.SearchAsync(
+            new MemorySearchRequest("local", "other-provider", MemoryModel, 2, [1f, 0f], CandidateCount: 5, MinScore: 0.25),
+            TestContext.Current.CancellationToken);
+        var tenantMismatch = await repository.SearchAsync(
+            new MemorySearchRequest("other-tenant", "mock", MemoryModel, 2, [1f, 0f], CandidateCount: 5, MinScore: 0.25),
             TestContext.Current.CancellationToken);
 
         Assert.Single(match);
         Assert.Empty(dimensionMismatch);
         Assert.Empty(modelMismatch);
+        Assert.Empty(providerMismatch);
+        Assert.Single(tenantMismatch);
+        Assert.Equal("foreign-tenant.md", tenantMismatch[0].Source);
+        Assert.DoesNotContain(match, candidate => candidate.MemoryItemId == crossWiredItemId);
+        Assert.DoesNotContain(match, candidate => candidate.MemoryItemId == inactiveItemId);
+    }
+
+    [DockerAvailableFact]
+    public async Task SearchAsync_OrdersVectorScoreThenFixedChunkUuid()
+    {
+        using var scope = await CreateScopeAsync();
+        var itemId = await InsertMemoryItemAsync(scope.ConnectionString, "local", "ordering.md");
+        var lowerId = Guid.Parse("20000000-0000-0000-0000-000000000001");
+        var higherId = Guid.Parse("20000000-0000-0000-0000-000000000002");
+        await InsertMemoryChunkAsync(
+            scope.ConnectionString,
+            itemId,
+            "local",
+            "mock",
+            MemoryModel,
+            2,
+            [1f, 0f],
+            TestContext.Current.CancellationToken,
+            higherId,
+            chunkPosition: 1);
+        await InsertMemoryChunkAsync(
+            scope.ConnectionString,
+            itemId,
+            "local",
+            "mock",
+            MemoryModel,
+            2,
+            [1f, 0f],
+            TestContext.Current.CancellationToken,
+            lowerId);
+
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var repository = serviceScope.ServiceProvider.GetRequiredService<IMemoryRepository>();
+        var matches = await repository.SearchAsync(
+            new MemorySearchRequest("local", "mock", MemoryModel, 2, [1f, 0f], CandidateCount: 20, MinScore: 0.25),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([lowerId, higherId], matches.Select(static match => match.ChunkId));
+    }
+
+    [DockerAvailableFact]
+    public async Task CandidateStrategy_PassesBaselineComparatorsAndMandatoryScenarios()
+    {
+        await using var harness = await BenchmarkHarness.CreateAsync(postgres);
+        var run = await MemoryRetrievalBenchmarkRunner.MeasureAsync(harness.Production, harness.Corpus);
+        var candidate = MemoryRetrievalMetrics.Evaluate(harness.Corpus, run.Results);
+        var baseline = MemoryRetrievalBaselineRecord.Load(FindRepoRoot()).Deterministic;
+
+        Assert.True(candidate.Metrics.ChunkMacroRecallAt5 >= baseline.Metrics.ChunkMacroRecallAt5);
+        Assert.True(candidate.Metrics.ChunkMicroRecallAt5 >= baseline.Metrics.ChunkMicroRecallAt5);
+        Assert.True(candidate.Metrics.ItemMacroRecallAt5 >= baseline.Metrics.ItemMacroRecallAt5);
+        Assert.True(candidate.Metrics.ItemMicroRecallAt5 >= baseline.Metrics.ItemMicroRecallAt5);
+        Assert.True(candidate.Metrics.MeanFirstRelevantChunkRank <= baseline.Metrics.MeanFirstRelevantChunkRank);
+        Assert.True(candidate.Metrics.NoMatchPrecision >= baseline.Metrics.NoMatchPrecision);
+        Assert.True(candidate.Metrics.NoMatchFalsePositiveCount <= baseline.Metrics.NoMatchFalsePositiveCount);
+
+        var falseEmpty = Assert.Single(candidate.Queries,
+            static query => query.QueryId == "false-empty-checkout-timeout");
+        Assert.Contains(Guid.Parse("20000000-0000-0000-0000-000000000001"), falseEmpty.ReturnedChunkIds);
+        Assert.Contains(Guid.Parse("20000000-0000-0000-0000-000000000002"), falseEmpty.ReturnedChunkIds);
+        var currentService = Assert.Single(candidate.Queries,
+            static query => query.QueryId == "current-inventory-mitigation");
+        Assert.Equal(Guid.Parse("20000000-0000-0000-0000-000000000003"), currentService.ReturnedChunkIds[0]);
+
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            "CANDIDATE_METRICS=" + JsonSerializer.Serialize(candidate.Metrics));
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            "CANDIDATE_LATENCY=" + JsonSerializer.Serialize(run.Latency));
     }
 
     [DockerAvailableFact]
@@ -100,6 +201,9 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         Assert.Contains(ledgerRows, row => row.EventType == "ToolProposed" && row.ToolName == "memory_search");
         Assert.Contains(ledgerRows, row => row.EventType == "PolicyDecision" && row.ToolName == "memory_search" && row.Decision == "Allowed");
         Assert.Contains(ledgerRows, row => row.EventType == "ToolResult" && row.ToolName == "memory_search" && row.ToolStatus == "Succeeded");
+        Assert.Single(ledgerRows, row => row.EventType == "ToolProposed");
+        Assert.Single(ledgerRows, row => row.EventType == "PolicyDecision");
+        Assert.Single(ledgerRows, row => row.EventType == "ToolResult");
     }
 
     [DockerAvailableFact]
@@ -286,7 +390,9 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         string model,
         int embeddingDimensions,
         float[] values,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Guid? chunkId = null,
+        int chunkPosition = 0)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -296,13 +402,14 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
                 embedding_provider, embedding_model, embedding_dimensions,
                 embedding_values, embedding_vector, created_at_utc)
             VALUES (
-                @id, @memory_item_id, @tenant_id, 0, 'checkout timeout inventory', @text_hash,
+                @id, @memory_item_id, @tenant_id, @chunk_position, 'checkout timeout inventory', @text_hash,
                 @embedding_provider, @embedding_model, @embedding_dimensions,
                 @embedding_values, @embedding_vector::vector, @created_at_utc);
             """, connection);
-        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("id", chunkId ?? Guid.NewGuid());
         command.Parameters.AddWithValue("memory_item_id", itemId);
         command.Parameters.AddWithValue("tenant_id", tenantId);
+        command.Parameters.AddWithValue("chunk_position", chunkPosition);
         command.Parameters.AddWithValue("text_hash", Hash(model + embeddingDimensions));
         command.Parameters.AddWithValue("embedding_provider", provider);
         command.Parameters.AddWithValue("embedding_model", model);
@@ -311,6 +418,49 @@ public sealed class MemorySearchTests(PostgresRepositoryFixture postgres)
         command.Parameters.AddWithValue("embedding_vector", "[" + string.Join(",", values.Select(static value => value.ToString(System.Globalization.CultureInfo.InvariantCulture))) + "]");
         command.Parameters.AddWithValue("created_at_utc", DateTimeOffset.UtcNow);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task SetMemoryItemActiveAsync(
+        string connectionString,
+        Guid itemId,
+        bool isActive)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE incidentcompass.memory_items SET is_active = @is_active WHERE id = @id;",
+            connection);
+        command.Parameters.AddWithValue("id", itemId);
+        command.Parameters.AddWithValue("is_active", isActive);
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<Guid> InsertFilterCandidateAsync(
+        string connectionString,
+        string tenantId,
+        string source,
+        string provider,
+        string model,
+        int embeddingDimensions,
+        float[] values,
+        bool isActive = true)
+    {
+        var itemId = await InsertMemoryItemAsync(connectionString, tenantId, source);
+        await InsertMemoryChunkAsync(
+            connectionString,
+            itemId,
+            tenantId,
+            provider,
+            model,
+            embeddingDimensions,
+            values,
+            TestContext.Current.CancellationToken);
+        if (!isActive)
+        {
+            await SetMemoryItemActiveAsync(connectionString, itemId, false);
+        }
+
+        return itemId;
     }
 
     private static async Task ClearMemoryAsync(string connectionString)

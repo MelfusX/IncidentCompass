@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace IncidentCompass.Tester;
 
 internal sealed record DemoScenario(
@@ -8,16 +11,18 @@ internal sealed record DemoScenario(
     string ErrorMessage,
     string Route,
     int SignalCount,
-    string ExpectedClassification,
+    string? ExpectedClassification,
     bool? ExpectedIsMassIssue,
-    string? ExpectedEvidenceKind)
+    string? ExpectedEvidenceKind,
+    IncidentEnvelope? ExactEnvelope = null,
+    bool RequiresNoActionGate = false)
 {
     public static IReadOnlyList<DemoScenario> CreateAll(string runId) =>
     [
         new(
             "1",
             "known-timeout-runbook",
-            "payments-api-" + runId,
+            "checkout-api",
             "TimeoutException",
             "Checkout call timed out while waiting on inventory after 30000ms.",
             "/checkout",
@@ -60,9 +65,30 @@ internal sealed record DemoScenario(
             null)
     ];
 
+    public static DemoScenario CreateInjection(IncidentEnvelope envelope) =>
+        new(
+            "5",
+            "injection-disabled-action-gate",
+            envelope.ServiceName,
+            envelope.Attributes.ErrorType,
+            envelope.Attributes.ErrorMessage,
+            envelope.Attributes.HttpRoute,
+            1,
+            null,
+            null,
+            null,
+            envelope,
+            true);
+
     public IncidentEnvelope CreateEnvelope(string runId, int index)
     {
+        if (ExactEnvelope is not null)
+        {
+            return ExactEnvelope;
+        }
+
         var externalId = $"demo-{runId}-{Id}-{index}";
+        var httpRoute = Id == "1" ? Route + "/" + CreateRunToken(runId) : Route;
         return new IncidentEnvelope(
             "tester",
             ServiceName,
@@ -73,7 +99,7 @@ internal sealed record DemoScenario(
             new IncidentAttributes(
                 ErrorType,
                 ErrorMessage + " event " + index,
-                Route,
+                httpRoute,
                 "POST " + Route,
                 Id == "4" ? 200 : 500),
             new Dictionary<string, object?>
@@ -81,6 +107,21 @@ internal sealed record DemoScenario(
                 ["demoScenario"] = Id,
                 ["demoRunId"] = runId,
                 ["eventIndex"] = index
+            });
+    }
+
+    private static string CreateRunToken(string runId)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(runId));
+        return string.Create(
+            16,
+            hash,
+            static (characters, bytes) =>
+            {
+                for (var index = 0; index < characters.Length; index++)
+                {
+                    characters[index] = (char)('g' + bytes[index] % 20);
+                }
             });
     }
 }

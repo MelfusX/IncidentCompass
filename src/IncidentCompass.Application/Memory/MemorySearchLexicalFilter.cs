@@ -24,6 +24,58 @@ internal static class MemorySearchLexicalFilter
             .ToArray();
     }
 
+    internal static IReadOnlyList<MemorySearchMatch> ApplyForReranking(
+        string query,
+        IReadOnlyList<MemorySearchMatch> matches)
+    {
+        var queryTokens = Tokenize(query);
+        if (queryTokens.Count == 0)
+        {
+            return matches;
+        }
+
+        return matches
+            .Where(match => HasSufficientCoverage(queryTokens, Tokenize(match.Text)))
+            .ToArray();
+    }
+
+    internal static double Coverage(string query, string value)
+    {
+        var queryTokens = Tokenize(query);
+        var valueTokens = Tokenize(value);
+        return queryTokens.Count == 0
+            ? 0
+            : (double)queryTokens.Count(valueTokens.Contains) / queryTokens.Count;
+    }
+
+    internal static bool ContainsNormalizedTokenOrPhrase(string query, string value)
+    {
+        var queryTokens = SplitTokens(query).ToArray();
+        var valueTokens = SplitTokens(value).ToArray();
+        if (valueTokens.Length == 0 || valueTokens.Length > queryTokens.Length)
+        {
+            return false;
+        }
+
+        for (var start = 0; start <= queryTokens.Length - valueTokens.Length; start++)
+        {
+            if (queryTokens.AsSpan(start, valueTokens.Length).SequenceEqual(valueTokens))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasSufficientCoverage(
+        HashSet<string> queryTokens,
+        IReadOnlySet<string> valueTokens)
+    {
+        var requiredMatches = Math.Max(1, (queryTokens.Count + 1) / 2);
+        return queryTokens.Count(valueTokens.Contains) >= requiredMatches;
+    }
+
     private static HashSet<string> Tokenize(string value)
     {
         var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

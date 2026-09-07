@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Normalization;
+using IncidentCompass.Application.Tickets;
 using IncidentCompass.Infrastructure.Intake;
 
 namespace IncidentCompass.UnitTests;
@@ -261,6 +263,104 @@ public sealed class TriageConfigurationMaterializerTests
     }
 
     [Fact]
+    public void Materialize_SourceLookupCanOnlyBeGrantedToSourceRole()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["source_lookup"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)((JsonObject)node["Roles"]!)["analysis"]!)["Tools"] = new JsonArray("source_lookup");
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_RemovingSourceRoleLeavesHostConfigurationValidAndToolDisabled()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["source_lookup"] = new JsonObject { ["Kind"] = "internal" };
+
+        var configuration = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+
+        Assert.DoesNotContain("source", configuration.Roles.Keys);
+        Assert.Contains("source_lookup", configuration.Tools.Keys);
+    }
+
+    [Fact]
+    public void Materialize_SourceRoleWithoutGrantLeavesRoleToolSurfaceEmpty()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["source_lookup"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)node["Roles"]!)["source"] = new JsonObject
+        {
+            ["RouteId"] = "analysis-chat",
+            ["Instructions"] = "ref:instructions/source.md",
+            ["Tools"] = new JsonArray(),
+            ["OutputSchema"] = "ref:schemas/source.json"
+        };
+
+        var configuration = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+
+        Assert.Empty(configuration.Roles["source"].Tools);
+    }
+
+    [Fact]
+    public void Materialize_TicketSearchCanOnlyBeGrantedToTicketsRole()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["ticket_search"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)((JsonObject)node["Roles"]!)["analysis"]!)["Tools"] = new JsonArray("ticket_search");
+
+        var exception = Assert.Throws<TriageConfigurationLoadException>(() =>
+            CreateMaterializer().Materialize("hash-1", node, ResolvedReferences()));
+
+        Assert.Contains("Roles.analysis.Tools", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Materialize_RemovingTicketsRoleOrGrantDisablesTicketSurfaceWithoutHostFailure()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)["ticket_search"] = new JsonObject { ["Kind"] = "internal" };
+        ((JsonObject)node["Roles"]!)["tickets"] = new JsonObject
+        {
+            ["RouteId"] = "analysis-chat",
+            ["Instructions"] = "ref:instructions/tickets.md",
+            ["Tools"] = new JsonArray(),
+            ["OutputSchema"] = "ref:schemas/tickets.json"
+        };
+
+        var ungranted = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+        ((JsonObject)node["Roles"]!).Remove("tickets");
+        var removed = CreateMaterializer().Materialize("hash-2", node, ResolvedReferences());
+
+        Assert.Empty(ungranted.Roles["tickets"].Tools);
+        Assert.DoesNotContain("tickets", removed.Roles.Keys);
+        Assert.Contains("ticket_search", removed.Tools.Keys);
+    }
+
+    [Fact]
+    public void Materialize_AcceptsDisabledBackendTicketCreateDescriptorWithoutRoleGrant()
+    {
+        var node = ValidConfigNode();
+        ((JsonObject)node["Tools"]!)[TicketCreateTool.ToolId] = new JsonObject
+        {
+            ["Kind"] = "external_action",
+            ["Category"] = "ticket_create",
+            ["LogicalTargetId"] = TicketCreateTool.LogicalTargetId,
+            ["Mode"] = "disabled"
+        };
+
+        var configuration = CreateMaterializer().Materialize("hash-1", node, ResolvedReferences());
+
+        Assert.Empty(configuration.Actions.AllowedTools);
+        Assert.Equal("disabled", configuration.Tools[TicketCreateTool.ToolId].Mode);
+        Assert.DoesNotContain(configuration.Roles.Values,
+            role => role.Tools.Contains(TicketCreateTool.ToolId, StringComparer.Ordinal));
+    }
+
+    [Fact]
     public void Materialize_InvalidConfiguredRedactionPattern_FailsLoadValidation()
     {
         var node = ValidConfigNode();
@@ -286,14 +386,24 @@ public sealed class TriageConfigurationMaterializerTests
             new UserReportSignalNormalizer()
         ]);
 
-        return new TriageConfigurationMaterializer(new TriageConfigurationLoadValidator(registry));
+        var tools = new AgentToolRegistry([
+            new AgentToolDescriptor("memory_search", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor("source_lookup", AgentToolCapability.ImmediateRead),
+            new AgentToolDescriptor("ticket_search", AgentToolCapability.ImmediateRead),
+            TicketCreateTool.Descriptor
+        ]);
+        return new TriageConfigurationMaterializer(new TriageConfigurationLoadValidator(registry, tools));
     }
 
     private static JsonObject ResolvedReferences() => new()
     {
         ["ref:instructions/orchestrator.md"] = "orchestrator body",
         ["ref:instructions/analysis.md"] = "analysis body",
-        ["ref:schemas/analysis.json"] = "{ \"type\": \"object\" }"
+        ["ref:schemas/analysis.json"] = "{ \"type\": \"object\" }",
+        ["ref:instructions/source.md"] = "source body",
+        ["ref:schemas/source.json"] = "{ \"type\": \"object\" }",
+        ["ref:instructions/tickets.md"] = "tickets body",
+        ["ref:schemas/tickets.json"] = "{ \"type\": \"object\" }"
     };
 
     private static JsonObject ValidConfigNode()

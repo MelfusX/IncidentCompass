@@ -7,7 +7,6 @@ using IncidentCompass.Application.Core.Resilience;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Infrastructure.ModelGateway.Mock;
 using IncidentCompass.Worker;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -114,11 +113,16 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
     public async Task ProviderOutage_BackpressuresClaimsThenRecoversAndPublishes()
     {
         var modelClient = new ProviderOutageThenSuccessModelClient();
+        // ProviderOutageTracker computes its backpressure window from the injected TimeProvider,
+        // so a fake clock lets the test fast-forward past the 1-second BackpressureSeconds window
+        // deterministically instead of sleeping for real wall-clock seconds.
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
         using var scope = await CreateScopeAsync(services =>
         {
             services.RemoveAll<IAiModelClient>();
             services.AddSingleton(modelClient);
             services.AddScoped<IAiModelClient>(serviceProvider => serviceProvider.GetRequiredService<ProviderOutageThenSuccessModelClient>());
+            services.AddSingleton<TimeProvider>(timeProvider);
         });
         var ingested = await PostIngestAsync(scope.Client, TesterEnvelope());
         Assert.NotNull(ingested.JobId);
@@ -143,7 +147,7 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
         var options = new WorkerOptions { MaxConcurrentJobs = 1, LeaseSeconds = 3, MaxAttempts = 1, RetryDelaySeconds = 1 };
         Assert.Equal(0, await pump.FillAvailableSlotsAsync("worker-provider-recover", options, TestContext.Current.CancellationToken));
 
-        await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
         Assert.Equal(1, await pump.FillAvailableSlotsAsync("worker-provider-recover", options, TestContext.Current.CancellationToken));
         await WaitForPumpToDrainAsync(pump);
 
@@ -190,7 +194,11 @@ public sealed class TriageInvestigationLoopTests(PostgresRepositoryFixture postg
             ("fault_id", ingested.FaultId));
         Assert.Equal("Succeeded", job.Status);
         Assert.Equal(1, reportCount);
-        Assert.InRange(modelClient.RequestCount, 1, 4);
+        // The mock orchestrator script for a single tester ticket is a fixed sequence - delegate
+        // to the analysis worker, delegate to the memory worker, then publish_report - so a
+        // successful single-attempt run always makes exactly 3 model calls. A range here would
+        // hide a change in that turn count instead of catching it.
+        Assert.Equal(3, modelClient.RequestCount);
     }
 
     [DockerAvailableFact]

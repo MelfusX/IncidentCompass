@@ -1,5 +1,7 @@
 using IncidentCompass.Api.Configuration;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Core.Tenancy;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace IncidentCompass.Api.Security;
@@ -14,6 +16,22 @@ internal static class ApiUserContextSetup
         services
             .AddOptions<DemoAuthOptions>()
             .Bind(configuration.GetSection(DemoAuthOptions.SectionName));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IStartupFilter, ApiUserContextStartupFilter>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuthorizationHandler, ActionOperatorAuthorizationHandler>());
+        services.RemoveAll<IAuthorizationMiddlewareResultHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, ActionOperatorAuthorizationResultHandler>();
+
+        var apiKeyOptions = configuration
+            .GetSection(ApiKeyAuthOptions.SectionName)
+            .Get<ApiKeyAuthOptions>() ?? new ApiKeyAuthOptions();
+        if (apiKeyOptions.Enabled)
+        {
+            services.RemoveAll<IUserContext>();
+            services.RemoveAll<IIncidentTenantContext>();
+            services.AddScoped<IUserContext, ApiKeyUserContext>();
+            services.AddScoped<IIncidentTenantContext, ApiKeyIncidentTenantContext>();
+            return services;
+        }
 
         var demoAuthOptions = configuration
             .GetSection(DemoAuthOptions.SectionName)
@@ -49,5 +67,5 @@ internal static class ApiUserContextSetup
     }
 
     internal static InvalidOperationException CreateMissingUserContextException() =>
-        new("API user context is not configured. Register a real IUserContext authentication adapter for deployed API hosts. Demo header auth is limited to Development and explicit non-production demo environments; see docs/security-model.md.");
+        new("API user context is not configured. Enable host-managed API-key authentication or register a real IUserContext authentication adapter for deployed API hosts. Demo header auth is limited to Development and explicit non-production demo environments; see docs/security-model.md.");
 }

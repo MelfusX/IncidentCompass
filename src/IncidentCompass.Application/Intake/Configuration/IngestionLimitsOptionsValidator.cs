@@ -6,6 +6,8 @@ internal sealed class IngestionLimitsOptionsValidator : IValidateOptions<Ingesti
 {
     private const int MinimumPayloadBytes = 1024;
     private const int MaximumPayloadBytes = 1_048_576;
+    private const int MinimumSignalsPerExport = 1;
+    private const int MaximumSignalsPerExport = 10_000;
 
     public ValidateOptionsResult Validate(string? name, IngestionLimitsOptions options)
     {
@@ -17,6 +19,11 @@ internal sealed class IngestionLimitsOptionsValidator : IValidateOptions<Ingesti
         if (options.MaxAttributesBytes < 1 || options.MaxAttributesBytes > options.MaxPayloadBytes)
         {
             return ValidateOptionsResult.Fail("MaxAttributesBytes must be positive and no greater than MaxPayloadBytes.");
+        }
+
+        if (options.MaxSignalsPerExport < MinimumSignalsPerExport || options.MaxSignalsPerExport > MaximumSignalsPerExport)
+        {
+            return ValidateOptionsResult.Fail($"MaxSignalsPerExport must be between {MinimumSignalsPerExport} and {MaximumSignalsPerExport}.");
         }
 
         return ValidateOptionsResult.Success;

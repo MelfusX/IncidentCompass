@@ -32,7 +32,7 @@ internal sealed class AnalysisDelegateExecutor(
         }
 
         await EnsureWorkerBudgetAsync(job, configuration, roleName, cancellationToken);
-        await ledgerAppender.AppendAsync(job, TriageLedgerEventType.Delegated, roleName, "delegate", task, null, cancellationToken);
+        await ledgerAppender.AppendAsync(job, TriageLedgerEventType.Delegated, roleName, OrchestratorToolNames.Delegate, task, null, cancellationToken);
         await ledgerAppender.AppendBudgetEventAsync(
             job,
             "worker_started: accepted delegated worker for this attempt.",
@@ -82,7 +82,9 @@ internal sealed class AnalysisDelegateExecutor(
             tokensDelta: null,
             workersDelta: null,
             cancellationToken: cancellationToken);
-        throw new InvalidOperationException("The triage attempt worker budget was reached before delegation.");
+        throw new TriageBudgetExhaustedException(
+            TriageBudgetExhaustedException.MaxWorkersReachedCode,
+            "The triage attempt worker budget was reached before delegation.");
     }
 
     private async Task<TriageArtifact> InsertWorkerOutputArtifactAsync(

@@ -6,9 +6,9 @@ using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Governance.Validation;
 using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Application.Investigation.Jobs.Testing;
 using IncidentCompass.Domain.Governance;
 using IncidentCompass.Worker;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,21 +54,13 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
     }
 
     [DockerAvailableFact]
-    public async Task ProcessClaimedAsync_RequiresApprovalDeniesToolAndRecordsLimitation()
+    public async Task ConfigurationLoadRejectsApprovalRuleForImmediateTool()
     {
-        using var scope = await CreateScopeAsync(GovernanceScenario.RequiresApproval);
-        var ingested = await RunOneAsync(scope);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CreateScopeAsync(GovernanceScenario.RequiresApproval));
 
-        var decisions = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId!.Value, "PolicyDecision");
-        var toolResults = await ReadLedgerRowsAsync(scope.ConnectionString, ingested.JobId.Value, "ToolResult");
-        var workerRationale = await ScalarAsync<string>(
-            scope.ConnectionString,
-            "SELECT redacted_payload->>'rationale' FROM incidentcompass.triage_artifacts WHERE job_id = @job_id AND kind = 'WorkerOutput';",
-            ("job_id", ingested.JobId.Value));
-
-        Assert.Contains(decisions, row => row.ToolName == "tool_x" && row.Decision == "ApprovalRequired");
-        Assert.DoesNotContain(toolResults, row => row.ToolName == "tool_x");
-        Assert.Contains("approval required", workerRationale, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Rules.requires_approval.Tool", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("external action tool id", exception.Message, StringComparison.Ordinal);
     }
 
     [DockerAvailableFact]
@@ -121,10 +113,10 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
             GovernanceScenario.Precondition,
             services =>
             {
-                services.RemoveAll<IAgentTool>();
-                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_x"));
+                services.RemoveAll<IImmediateAgentTool>();
+                services.AddScoped<IImmediateAgentTool>(_ => new SyntheticTool("tool_x"));
                 services.AddSingleton(blockingTool);
-                services.AddScoped<IAgentTool>(serviceProvider => serviceProvider.GetRequiredService<BlockingSyntheticTool>());
+                services.AddScoped<IImmediateAgentTool>(serviceProvider => serviceProvider.GetRequiredService<BlockingSyntheticTool>());
             });
         var ingested = await PostIngestAsync(scope.Client);
         var pump = new WorkerJobPump(
@@ -180,8 +172,10 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
             {
                 services.RemoveAll<IAiModelClient>();
                 services.AddScoped<IAiModelClient>(_ => new SyntheticGovernanceModelClient(scenario));
-                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_x"));
-                services.AddScoped<IAgentTool>(_ => new SyntheticTool("tool_y"));
+                services.AddScoped<IImmediateAgentTool>(_ => new SyntheticTool("tool_x"));
+                services.AddScoped<IImmediateAgentTool>(_ => new SyntheticTool("tool_y"));
+                services.AddSingleton(new AgentToolDescriptor("tool_x", AgentToolCapability.ImmediateRead));
+                services.AddSingleton(new AgentToolDescriptor("tool_y", AgentToolCapability.ImmediateRead));
                 configureServices?.Invoke(services);
             });
         });
@@ -434,6 +428,8 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
 
     private sealed class SyntheticGovernanceModelClient(GovernanceScenario scenario) : IAiModelClient
     {
+        private static readonly string[] SyntheticKeyFacts = ["Synthetic tool path exercised."];
+
         private int orchestratorCalls;
 
         public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
@@ -469,7 +465,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
             {
                 var toolName = scenario == GovernanceScenario.UnknownTool
                     ? "unknown_tool"
-                    : request.Tools?.FirstOrDefault()?.Name ?? "tool_x";
+                    : (request.Tools is { Count: > 0 } tools ? tools[0].Name : null) ?? "tool_x";
                 return Response(request, "propose " + toolName, [ToolCall("worker-" + toolName + "-" + Guid.NewGuid().ToString("N"), toolName, "{}")]);
             }
 
@@ -505,7 +501,7 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         {
             return JsonSerializer.Serialize(new
             {
-                keyFacts = new[] { "Synthetic tool path exercised." },
+                keyFacts = SyntheticKeyFacts,
                 candidateClassification = "SimpleKnownError",
                 needsDeeperContext = false,
                 rationale
@@ -546,11 +542,9 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         }
     }
 
-    private sealed class SyntheticTool(string name) : IAgentTool
+    private sealed class SyntheticTool(string name) : IImmediateAgentTool
     {
         public AiToolDefinition Definition { get; } = new(name, "Synthetic test-only tool.", "v1", Element("{\"type\":\"object\"}"));
-
-        public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Synthetic test tool is safe.");
 
         public ToolValidationResult Validate(JsonElement arguments)
         {
@@ -571,15 +565,13 @@ public sealed class GovernedWorkerToolPathTests(PostgresRepositoryFixture postgr
         }
     }
 
-    private sealed class BlockingSyntheticTool(string name) : IAgentTool
+    private sealed class BlockingSyntheticTool(string name) : IImmediateAgentTool
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public AiToolDefinition Definition { get; } = new(name, "Blocking synthetic test-only tool.", "v1", Element("{\"type\":\"object\"}"));
-
-        public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Synthetic test tool is safe.");
 
         public ToolValidationResult Validate(JsonElement arguments) => ToolValidationResult.Valid(arguments.Clone());
 

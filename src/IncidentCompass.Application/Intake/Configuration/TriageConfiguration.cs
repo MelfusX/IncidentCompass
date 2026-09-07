@@ -14,4 +14,6 @@ public sealed record TriageConfiguration(
 {
     public IReadOnlyDictionary<string, string> CurrentReleases { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    public TriageActionSettings Actions { get; init; } = TriageActionSettings.Default;
 }

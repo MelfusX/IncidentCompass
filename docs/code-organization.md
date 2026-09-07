@@ -2,11 +2,16 @@
 
 These rules keep the production codebase easy to audit, refactor and hand over to another team. Treat them as engineering guardrails, not formatting ceremony. An exception is acceptable only when it is explicit, local and easier to defend than the split it avoids.
 
-These guardrails apply to production source code. Test code is out of scope for this gate.
+The gate covers both `src/` and `tests/`, with a looser size budget for test code: a production file
+stays under 400 lines, a test file under 800. The responsibility, naming and design rules below are
+production rules; the gate applies its nested-private-type and status-string checks to `src/` only,
+because test code legitimately declares private nested test doubles and asserts on the persisted
+status representation.
 
 ## Size Guardrails
 
-- A production class should stay under 200 physical lines. If it exceeds that limit, the code should be split unless the file is a simple composition root, generated code, a framework-required shape, or another clearly justified exception.
+- A production class should stay under 400 physical lines. If it exceeds that limit, the code should be split unless the file is a simple composition root, generated code, a framework-required shape, or another clearly justified exception.
+- A test file should stay under 800 physical lines. Test classes carry fixtures, doubles and setup, so they get a looser budget than production code; past that limit, split them by the subject under test rather than by line count and move shared setup into a named support type.
 - A method should fit in one readable workflow step. Long methods should be split by intent, for example validation, state loading, policy decision, side effect, persistence and response mapping.
 - A large handler is a design smell. A handler should orchestrate a use case; domain rules, provider-specific work, rendering, parsing, persistence details and reusable policies should live behind named collaborators.
 - Do not hide complexity by extracting vague helpers. Prefer small methods and types named after the business or workflow concept they represent.
@@ -60,12 +65,37 @@ IncidentCompass.Application/
     Embeddings/
 
   Governance/
+    ActionApprovals/
+    Ledger/
     Tools/
-      Execution/
     Validation/
 ```
 
-`Core/`, `Governance/`, `Intake/`, `Investigation/` and `Memory/` are the current folders. `Memory/` contains memory_search contracts, seed records and retrieval orchestration; keep storage details in Infrastructure.
+`Core/`, `Governance/`, `Intake/`, `Investigation/`, `Memory/`, `Observability/`, `SourceContext/` and `Tickets/` are the current
+folders. `Governance/` contains the common worker-tool contract, validation primitives, triage
+ledger ports and post-report action approval contracts/use cases, including the deterministic approved
+action dispatcher. PostgreSQL action approval, provenance, claim, recovery and terminal-transition
+implementations stay under `Infrastructure/Governance/ActionApprovals/`.
+The single live tool rule engine and the immediate/action capability contracts live under
+`Governance/Tools/`; investigation-only execution orchestration stays under `Investigation/Jobs/`.
+`Memory/` contains memory_search contracts, seed records and retrieval orchestration.
+`Observability/CostRollup/` contains the tenant-scoped read request, validator, response and
+persistence port. ModelCall JSON parsing, effective-price ambiguity handling and PostgreSQL query
+details stay under `Infrastructure/Observability/`; API endpoints remain transport-only.
+`SourceContext/` contains the provider-neutral read port, bounded signal frame extraction and tool;
+filesystem roots, canonicalization and file reads stay in Infrastructure. Report-level context
+outcome contracts and backend limitation policy live under `Investigation/Reports/Context/`.
+`Tickets/` contains the provider-neutral search, cited-update-evidence and action-history ports,
+bounded signal-field extraction, read worker tool, ticket-create and ticket-update descriptors,
+eligibility checks and canonical payload rules. Provider query syntax, HTTP transport, credentials,
+response parsing, ranking, durable evidence/history queries and write adapters stay under
+`Infrastructure/Tickets/`. Ticket writes must enter through the governed post-report proposal,
+approval and dispatch path, never a worker role tool.
+
+The Worker keeps triage-job and approved-action scheduling in separate pump/task-set types. The action
+pump owns only bounded polling, task observation and shutdown draining; current-policy checks, exact
+payload dispatch and terminal workflow decisions remain in Application, while database fencing remains
+in Infrastructure.
 
 Use `Query.cs` instead of `Command.cs` when the use case is read-only. Avoid repeating the full folder context in file names, such as `GetCurrentUserQuery.cs`, when `Users/GetCurrent/Query.cs` already communicates the intent.
 
@@ -129,6 +159,8 @@ Rationale: the API exception handler depends only on Application and Domain exce
 - Each `src/*` project exposes a single `Setup.cs` at its root as the DI entry point. The class is named `Setup` and contains the public `AddX` extension method (`AddApplication`, `AddInfrastructure`, etc.). `Setup.cs` doubles as the assembly marker - prefer `typeof(Setup).Assembly` over arbitrary types for embedded-resource or assembly-scanning operations.
 - Feature-level registration delegates live next to the feature as `<Feature>Setup.cs` (for example `HealthSetup.cs`, `UsersSetup.cs`). The root `Setup.cs` composes these via feature-named extension methods such as `AddHealthCore` or `AddUsersCore`.
 - DI modules should register dependencies only; they should not contain business validation or runtime decision logic.
+- `AddApplication` binds deferred "not configured" placeholders for ports that only an infrastructure adapter can implement, so partial graphs stay buildable. Host entry points (`AddApi`, `AddWorker`) end by calling `ValidateApplicationWiring()`, which fails composition when a placeholder is still bound. Add the check to any new host entry point rather than letting the placeholder throw at first use.
+- Configuration is read at composition time and passed to typed options. `IConfiguration` is not registered as an application service by `AddInfrastructure`; connection strings reach adapters through `PostgresConnectionOptions`.
 
 ## Self-Documenting Code
 
@@ -142,7 +174,7 @@ Rationale: the API exception handler depends only on Application and Domain exce
 
 Before merging a change, check:
 
-- Does any production class exceed 200 lines without a clear reason?
+- Does any production class exceed 400 lines without a clear reason?
 - Does any method mix unrelated workflow stages?
 - Does each file contain one entity?
 - Are command/query, handler, validator and response types placed under a feature/action folder?

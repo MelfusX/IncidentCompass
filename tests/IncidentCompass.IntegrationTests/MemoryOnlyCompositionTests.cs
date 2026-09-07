@@ -3,15 +3,17 @@ using IncidentCompass.Application.Core.Dispatching;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Application.Core.Security;
+using IncidentCompass.Application.Governance.ActionApprovals;
 using IncidentCompass.Application.Governance.Ledger;
 using IncidentCompass.Application.Intake.Artifacts;
+using IncidentCompass.Application.Intake.Configuration;
+using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Investigation.Reports;
 using IncidentCompass.Application.Investigation.Reports.Get;
 using IncidentCompass.Application.Investigation.Reports.List;
-using IncidentCompass.Application.Intake.Configuration;
-using IncidentCompass.Application.Intake.FaultGrouping;
 using IncidentCompass.Application.Memory;
+using IncidentCompass.Application.Observability.CostRollup;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Domain.Incidents.Statuses;
 using Microsoft.Extensions.Configuration;
@@ -51,6 +53,9 @@ public sealed class MemoryOnlyCompositionTests
         services.AddSingleton<ITriageReportReadRepository, InMemoryTriageReportReadRepository>();
         services.AddSingleton<ITriageReportListRepository, InMemoryTriageReportListRepository>();
         services.AddSingleton<ITriageLedgerReader, InMemoryTriageLedgerReader>();
+        services.AddSingleton<IModelCostRollupRepository, InMemoryModelCostRollupRepository>();
+        services.AddSingleton<IActionProposalRepository, InMemoryActionProposalRepository>();
+        services.AddSingleton<IActionApprovalReviewRepository, InMemoryActionApprovalReviewRepository>();
         services.AddSingleton<IEmbeddingClient, InMemoryEmbeddingClient>();
         services.AddSingleton<IMemoryRepository, InMemoryMemoryRepository>();
 
@@ -278,6 +283,54 @@ public sealed class MemoryOnlyCompositionTests
             Guid faultId,
             string tenantId,
             CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<TriageLedgerEntry>>([]);
+    }
+    private sealed class InMemoryModelCostRollupRepository : IModelCostRollupRepository
+    {
+        public Task<IReadOnlyList<CostRollupHour>> ReadAsync(
+            string tenantId,
+            DateTimeOffset fromUtc,
+            DateTimeOffset toUtc,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<CostRollupHour>>([]);
+    }
+    private sealed class InMemoryActionApprovalReviewRepository : IActionApprovalReviewRepository
+    {
+        public Task<IReadOnlyList<ActionApprovalRecord>> ListAsync(
+            ActionApprovalListFilter filter,
+            string tenantId,
+            CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<ActionApprovalRecord>>([]);
+
+        public Task<(ActionApprovalRecord Action, IReadOnlyList<ActionApprovalProvenance> Provenance)?> FindAsync(
+            Guid actionId,
+            string tenantId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<(ActionApprovalRecord, IReadOnlyList<ActionApprovalProvenance>)?>(null);
+
+        public Task<ActionDecisionResult> DecideAsync(
+            ActionDecisionRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new ActionDecisionResult(ActionDecisionOutcome.NotFound, null, null));
+    }
+    private sealed class InMemoryActionProposalRepository : IActionProposalRepository
+    {
+        public Task<ActionProposalOrigin?> FindSafeOriginAsync(
+            string tenantId,
+            Guid originReportId,
+            CancellationToken cancellationToken) => Task.FromResult<ActionProposalOrigin?>(null);
+
+        public Task<bool> RecordDenialAsync(
+            string tenantId,
+            Guid originReportId,
+            string? auditedToolId,
+            string reasonCode,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<ActionProposalResult> CreateAsync(
+            PreparedActionProposal proposal,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<ActionProposalResult> CreateGovernedAsync(
+            GovernedActionProposal proposal,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
     private sealed class InMemoryTriageReportReadRepository : ITriageReportReadRepository
     {

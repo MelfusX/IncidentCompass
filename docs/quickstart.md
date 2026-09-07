@@ -32,7 +32,10 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1
 The script builds the API, Worker and Tester images, starts PostgreSQL/API/Worker, waits for
 the API health endpoint on its resolved host port, then runs the Tester against the local scenarios. Compose
 health checks also gate API readiness and Worker process startup before the Tester runs. The printed
-table includes FaultId, ReportId, is_mass_issue, Classification, ledger URL and report URL.
+table includes FaultId, ReportId, is_mass_issue, Classification, ledger URL, report URL and the check result.
+The fifth scenario parses the exact reviewed injection fixture, waits for its report and fails if a
+bounded readback of that exact fault ledger contains an action proposal, approval decision, dispatch
+start or completion.
 
 Useful variants:
 
@@ -44,6 +47,11 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
 `-NoBuild` reuses existing images. `-Mock` adds `compose.mock.yml` and is intended for automated or
 deterministic checks, not for validating the product against an actual model.
 
+The injection row is disabled-policy packaging evidence, not provider-delivery evidence. Tester does
+not call the approval API, enable an action or contact Telegram/GitHub. Mandatory-Docker integration
+coverage separately proves configured-policy and requested-only approval behavior with in-process
+recording handlers and zero external provider calls.
+
 Compose host mappings default to API `5198` and PostgreSQL `5432`. Override collisions in the
 ignored `.env` file without changing container-to-container URLs:
 
@@ -54,6 +62,18 @@ IC_POSTGRES_PORT=55432
 
 `scripts/demo.ps1` resolves the effective API mapping from Compose, so its health check and the
 Tester output follow `IC_API_PORT`.
+
+For deterministic Compose acceptance, run `scripts/demo.ps1 -Mock` once with a fresh PostgreSQL
+volume and once with the retained volume. Reset the mock composition only when a fresh run is needed:
+
+~~~powershell
+docker compose -f docker-compose.yml -f compose.mock.yml --profile demo down --volumes
+~~~
+
+Host-port overrides do not alter the fixed internal addresses `api:8080`, `postgres:5432` or
+`otel-collector:4318`. The mock override changes only model and embedding providers. GitHub and
+Telegram use fixed production authorities, so their automated doubles are in-process recording
+handlers rather than Compose services or configurable endpoint overrides.
 
 ## OTLP Collector Demo
 
@@ -103,7 +123,8 @@ dotnet run --project src/IncidentCompass.Api -- config validate
 ~~~
 
 The command resolves instruction and output-schema references, expands environment placeholders and
-checks routes, roles, tools, rules, budgets, grouping and redaction settings. It validates without
+checks routes, roles, immediate versus external tool capabilities, action grants and mode ceilings,
+rules, budgets, grouping and redaction settings. It validates without
 starting the server or writing a configuration snapshot to PostgreSQL.
 
 If `Redaction.UserIdentifierAttributes` is configured, set the pseudonymization salt only through a
@@ -112,13 +133,33 @@ host secret or environment variable, for example
 triage config and config snapshots. Without a salt, matching identifiers are replaced with
 `[REDACTED]` instead of being persisted in raw form.
 
+The configurable ingestion payload limit must be between 1 KiB and 1 MiB. The upper bound caps
+per-request buffering; the 1 KiB lower bound prevents a misconfiguration that rejects ordinary small
+OTLP exports. `MaxAttributesBytes` must be positive and no greater than `MaxPayloadBytes`. The
+default limits are 64 KiB and 16 KiB.
+
+`IncidentCompass__IngestionLimits__MaxSignalsPerExport` bounds how many records one OTLP export may
+carry, independently of its size in bytes: protobuf is compact, so a payload well inside the byte cap
+can still hold a very large number of spans or log records, and each record can open a fault and a
+triage job. It must be between 1 and 10000 and defaults to 500. The limit is applied to the records
+the export carries, before any of them is ingested, so an export above the limit is rejected whole
+with `413 Payload Too Large` and stores nothing rather than being ingested in part. This bound is
+independent of request rate limiting, which bounds callers per time window rather than work per
+request.
+
 ## Build And Test
 
 ~~~powershell
 dotnet restore IncidentCompass.slnx
 dotnet build IncidentCompass.slnx
-dotnet test IncidentCompass.slnx
+dotnet test --solution IncidentCompass.slnx
 ~~~
+
+Every project commits a `packages.lock.json` and CI restores with `--locked-mode`. After changing a
+package version in `Directory.Packages.props`, regenerate the whole graph with
+`dotnet restore IncidentCompass.slnx --force-evaluate` and commit every lock file it changes. See
+[Dependency lock files](versioning.md#dependency-lock-files) for why one bump touches several lock
+files and how Dependabot pull requests repair themselves.
 
 PostgreSQL repository tests use Testcontainers. Outside CI they skip when Docker is unavailable; in
 CI, or when `INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS=true` is set, Docker-backed tests are required and

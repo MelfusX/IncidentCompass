@@ -38,7 +38,9 @@ internal static class IncidentEndpoints
             .WithName("IngestIncidentSignal")
             .WithSummary("Ingest an incident signal envelope and resolve it to a fault and triage job.")
             .Produces<IngestSignalResponse>(StatusCodes.Status201Created)
-            .ProducesProblem(StatusCodes.Status400BadRequest);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests);
 
         api.MapGet("/faults/{id:guid}", async (
                 Guid id,
@@ -54,6 +56,8 @@ internal static class IncidentEndpoints
             .WithName("GetFaultById")
             .WithSummary("Return fault details, including its current triage job summary.")
             .Produces<FaultDetailsResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
 
@@ -71,6 +75,8 @@ internal static class IncidentEndpoints
             .WithName("GetFaultLedgerByFaultId")
             .WithSummary("Return DB-ordered governed investigation ledger events for a fault.")
             .Produces<FaultLedgerResponse>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status404NotFound);
         return api;
     }

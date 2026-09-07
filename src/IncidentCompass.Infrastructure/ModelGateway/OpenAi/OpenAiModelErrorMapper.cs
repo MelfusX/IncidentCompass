@@ -1,14 +1,13 @@
 using System.Net;
 using System.Text.Json;
 using IncidentCompass.Application.Core.ModelGateway;
-using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.OpenAiCompatible;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 
-internal sealed class OpenAiModelErrorMapper
+internal static class OpenAiModelErrorMapper
 {
-    public AiModelException FromHttpFailure(
+    public static AiModelException FromHttpFailure(
         HttpStatusCode statusCode,
         string responseContent)
     {
@@ -22,7 +21,7 @@ internal sealed class OpenAiModelErrorMapper
             providerError?.Error?.Code);
     }
 
-    public AiModelException Timeout(TaskCanceledException exception)
+    public static AiModelException Timeout(TaskCanceledException exception)
     {
         return new AiModelException(
             OpenAiModelProvider.Name,
@@ -31,7 +30,7 @@ internal sealed class OpenAiModelErrorMapper
             innerException: exception);
     }
 
-    public AiModelException Transport(HttpRequestException exception)
+    public static AiModelException Transport(HttpRequestException exception)
     {
         return new AiModelException(
             OpenAiModelProvider.Name,
@@ -41,7 +40,7 @@ internal sealed class OpenAiModelErrorMapper
             innerException: exception);
     }
 
-    public AiModelException InvalidJson(JsonException exception)
+    public static AiModelException InvalidJson(JsonException exception)
     {
         return new AiModelException(
             OpenAiModelProvider.Name,
@@ -50,7 +49,7 @@ internal sealed class OpenAiModelErrorMapper
             innerException: exception);
     }
 
-    public AiModelException EmptyResponse()
+    public static AiModelException EmptyResponse()
     {
         return new AiModelException(
             OpenAiModelProvider.Name,

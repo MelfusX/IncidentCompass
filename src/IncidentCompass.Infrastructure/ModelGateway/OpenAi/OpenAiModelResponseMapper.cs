@@ -1,21 +1,21 @@
 using System.Text.Json;
-using IncidentCompass.Application.Core.ModelGateway;
 using IncidentCompass.Application.Core.ModelClients;
 using IncidentCompass.Infrastructure.ModelGateway.OpenAi.Dtos;
+using IncidentCompass.Infrastructure.OpenAiCompatible;
 
 namespace IncidentCompass.Infrastructure.ModelGateway.OpenAi;
 
-internal sealed class OpenAiModelResponseMapper
+internal static class OpenAiModelResponseMapper
 {
-    public AiModelResponse Map(
+    public static AiModelResponse Map(
         string responseContent,
-        AiModelRequest request,
-        OpenAiModelErrorMapper errorMapper)
+        AiModelRequest request)
     {
         var completion = JsonSerializer.Deserialize<OpenAiChatCompletionResponse>(
             responseContent,
-            OpenAiModelJson.Options);
-        var message = completion?.Choices?.FirstOrDefault()?.Message;
+            OpenAiCompatibleJson.Options);
+        var choices = completion?.Choices;
+        var message = choices is { Count: > 0 } && choices[0] is { } choice ? choice.Message : null;
         var content = message?.Content;
         var proposedToolCalls = message?.ToolCalls?
             .Select(ToAiToolCall)
@@ -25,7 +25,7 @@ internal sealed class OpenAiModelResponseMapper
 
         if (string.IsNullOrWhiteSpace(content) && proposedToolCalls.Length == 0)
         {
-            throw errorMapper.EmptyResponse();
+            throw OpenAiModelErrorMapper.EmptyResponse();
         }
 
         return new AiModelResponse(

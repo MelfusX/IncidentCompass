@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -8,7 +9,7 @@ using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Memory;
-using Microsoft.AspNetCore.Hosting;
+using IncidentCompass.TestSupport;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -43,7 +44,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         await WriteResultAsync(settings, outcomes);
     }
 
-    private async Task<SmokeOutcome> RunOneAsync(
+    private static async Task<SmokeOutcome> RunOneAsync(
         TestScope scope,
         int index,
         RealLocalLlmSmokeSettings settings)
@@ -115,7 +116,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:ChatCompletionsPath", settings.ChatCompletionsPath);
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:ApiKey", settings.ApiKey);
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:AllowInsecureHttpForLoopback", "true");
-            builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:TimeoutSeconds", settings.TimeoutSeconds.ToString());
+            builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:TimeoutSeconds", settings.TimeoutSeconds.ToString(CultureInfo.InvariantCulture));
             builder.UseSetting("IncidentCompass:ModelGateway:OpenAiCompatible:MaxRetryAttempts", "0");
             builder.UseSetting("IncidentCompass:Embeddings:Provider", "Mock");
             builder.UseSetting("IncidentCompass:Embeddings:DefaultModel", MemoryModel);
@@ -168,7 +169,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         await File.WriteAllTextAsync(
             Path.Combine(directory, "schemas", "memory.json"),
             await File.ReadAllTextAsync(
-                Path.Combine(FindRepositoryRoot(), "config", "schemas", "memory.json"),
+                Path.Combine(RepositoryRootLocator.Find(), "config", "schemas", "memory.json"),
                 TestContext.Current.CancellationToken),
             TestContext.Current.CancellationToken);
 
@@ -391,7 +392,7 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         var embeddingClient = serviceScope.ServiceProvider.GetRequiredService<IEmbeddingClient>();
         var repository = serviceScope.ServiceProvider.GetRequiredService<IMemoryRepository>();
         var content = await File.ReadAllTextAsync(
-            Path.Combine(FindRepositoryRoot(), "samples", "runbooks", "checkout-timeout.md"),
+            Path.Combine(RepositoryRootLocator.Find(), "samples", "runbooks", "checkout-timeout.md"),
             TestContext.Current.CancellationToken);
         var embedding = await embeddingClient.CreateEmbeddingAsync(
             new EmbeddingRequest(content, MemoryModel, "real-llm-smoke-memory-seed"),
@@ -547,22 +548,6 @@ public sealed class TriageInvestigationRealLlmSmokeTests(PostgresRepositoryFixtu
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     }
 
-    private static string FindRepositoryRoot([CallerFilePath] string sourceFilePath = "")
-    {
-        var directory = new FileInfo(sourceFilePath).Directory;
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not find repository root.");
-    }
-
     private sealed record JobRow(string Status, string? LastErrorCode, string? LastErrorMessage);
 
     private sealed record ReportRow(string Status);
@@ -628,7 +613,7 @@ internal sealed record RealLocalLlmSmokeSettings(
             ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_RUNS", 3),
             ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_LEASE_SECONDS", 180),
             ReadPositiveInt("INCIDENTCOMPASS_LLM_SMOKE_TIMEOUT_SECONDS", 120),
-            Path.GetFullPath(Read("INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH", Path.Combine(FindRepositoryRoot(), "docs", "phase-5-real-llm-smoke-result.md"))));
+            Path.GetFullPath(Read("INCIDENTCOMPASS_LLM_SMOKE_RESULT_PATH", Path.Combine(RepositoryRootLocator.Find(), "artifacts", "real-llm-smoke-result.md"))));
     }
 
     private static string Read(string name, string fallback)
@@ -643,19 +628,4 @@ internal sealed record RealLocalLlmSmokeSettings(
         return int.TryParse(value, out var parsed) && parsed > 0 ? parsed : fallback;
     }
 
-    private static string FindRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(Path.Combine(directory.FullName, "IncidentCompass.slnx")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new InvalidOperationException("Could not find repository root.");
-    }
 }

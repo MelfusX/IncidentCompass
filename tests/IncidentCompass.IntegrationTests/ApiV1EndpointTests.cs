@@ -1,13 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using Google.Protobuf;
-using OpenTelemetry.Proto.Collector.Trace.V1;
-using OpenTelemetry.Proto.Trace.V1;
 using IncidentCompass.Application.Core.Security;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Proto.Collector.Trace.V1;
+using OpenTelemetry.Proto.Trace.V1;
 
 namespace IncidentCompass.IntegrationTests;
 

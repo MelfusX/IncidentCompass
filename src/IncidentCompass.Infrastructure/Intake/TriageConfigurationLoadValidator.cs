@@ -1,18 +1,23 @@
+using System.Globalization;
 using System.Text.Json;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Intake.Normalization;
+using IncidentCompass.Application.Investigation.Jobs;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
 
 namespace IncidentCompass.Infrastructure.Intake;
 
-internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry normalizerRegistry)
+internal sealed class TriageConfigurationLoadValidator(
+    SignalNormalizerRegistry normalizerRegistry,
+    IAgentToolRegistry toolRegistry)
 {
     private static readonly HashSet<string> RouteKinds = new(["Chat", "Embedding"], StringComparer.Ordinal);
     private static readonly HashSet<string> ProviderKinds = new(["Mock", "OpenAICompatible"], StringComparer.Ordinal);
-    private static readonly HashSet<string> ToolKinds = new(["internal"], StringComparer.Ordinal);
     private const string MemoryRoleName = "memory";
     private const string MemorySearchToolName = "memory_search";
-    private static readonly HashSet<string> OrchestratorTools = new(["delegate", "publish_report"], StringComparer.Ordinal);
+    private static readonly HashSet<string> OrchestratorTools = new(OrchestratorToolNames.All, StringComparer.Ordinal);
+    private readonly TriageToolConfigurationLoadValidator toolValidator = new(toolRegistry);
 
     public void Validate(TriageConfiguration configuration)
     {
@@ -24,10 +29,9 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         ValidateRoutes(configuration.Providers, configuration.Routes);
         ValidateOrchestrator(configuration.Routes, configuration.Orchestrator);
         ValidateRoles(configuration.Routes, configuration.Tools, configuration.Roles);
-        ValidateTools(configuration.Routes, configuration.Tools);
+        toolValidator.Validate(configuration.Routes, configuration.Tools, configuration.Actions);
         TriageRuleLoadValidator.Validate(configuration.Tools, configuration.Rules);
     }
-
     private void ValidateAllowedSources(IngestionSettings settings)
     {
         foreach (var source in settings.AllowedSources)
@@ -38,7 +42,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             }
         }
     }
-
     private static void ValidateCurrentReleases(IReadOnlyDictionary<string, string> currentReleases)
     {
         foreach (var (service, release) in currentReleases)
@@ -47,7 +50,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             RequireNonBlank("CurrentReleases." + service, release);
         }
     }
-
     private static void ValidateProviders(IReadOnlyDictionary<string, TriageProviderSettings> providers)
     {
         foreach (var (providerId, provider) in providers)
@@ -56,7 +58,6 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
             RequireKnown("Providers." + providerId + ".Kind", provider.Kind, ProviderKinds);
         }
     }
-
     private static void ValidateRoutes(
         IReadOnlyDictionary<string, TriageProviderSettings> providers,
         IReadOnlyDictionary<string, TriageRouteSettings> routes)
@@ -74,16 +75,15 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
 
             if (route.MaxOutputTokens is <= 0)
             {
-                throw Invalid("Routes." + routeId + ".MaxOutputTokens", route.MaxOutputTokens.Value.ToString(), "a positive integer when set");
+                throw Invalid("Routes." + routeId + ".MaxOutputTokens", route.MaxOutputTokens.Value.ToString(CultureInfo.InvariantCulture), "a positive integer when set");
             }
 
             if (route.ContextWindowTokens is <= 0)
             {
-                throw Invalid("Routes." + routeId + ".ContextWindowTokens", route.ContextWindowTokens.Value.ToString(), "a positive integer when set");
+                throw Invalid("Routes." + routeId + ".ContextWindowTokens", route.ContextWindowTokens.Value.ToString(CultureInfo.InvariantCulture), "a positive integer when set");
             }
         }
     }
-
     private static void ValidateOrchestrator(
         IReadOnlyDictionary<string, TriageRouteSettings> routes,
         OrchestratorSettings orchestrator)
@@ -94,27 +94,36 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
         var tools = orchestrator.Tools.ToHashSet(StringComparer.Ordinal);
         if (tools.Count != OrchestratorTools.Count || !tools.SetEquals(OrchestratorTools))
         {
-            throw Invalid("Orchestrator.Tools", string.Join(",", orchestrator.Tools), "exactly: delegate, publish_report");
+            throw Invalid("Orchestrator.Tools", string.Join(",", orchestrator.Tools), "exactly: " + string.Join(", ", OrchestratorToolNames.All));
         }
 
         if (orchestrator.Budget.MaxWorkers <= 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxWorkers", orchestrator.Budget.MaxWorkers.ToString(), "a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxWorkers", orchestrator.Budget.MaxWorkers.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (orchestrator.Budget.MaxTokens <= 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxTokens", orchestrator.Budget.MaxTokens.ToString(), "a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxTokens", orchestrator.Budget.MaxTokens.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (orchestrator.Budget.MaxWallClockSeconds <= 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxWallClockSeconds", orchestrator.Budget.MaxWallClockSeconds.ToString(), "a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxWallClockSeconds", orchestrator.Budget.MaxWallClockSeconds.ToString(CultureInfo.InvariantCulture), "a positive integer");
         }
 
         if (orchestrator.Budget.MaxReprompts < 0)
         {
-            throw Invalid("Orchestrator.Budget.MaxReprompts", orchestrator.Budget.MaxReprompts.ToString(), "zero or a positive integer");
+            throw Invalid("Orchestrator.Budget.MaxReprompts", orchestrator.Budget.MaxReprompts.ToString(CultureInfo.InvariantCulture), "zero or a positive integer");
+        }
+
+        if (orchestrator.Budget.MaxTurns is < OrchestratorBudgetSettings.MinimumMaxTurns or > OrchestratorBudgetSettings.MaximumMaxTurns)
+        {
+            throw Invalid(
+                "Orchestrator.Budget.MaxTurns",
+                orchestrator.Budget.MaxTurns.ToString(CultureInfo.InvariantCulture),
+                FormattableString.Invariant(
+                    $"an integer between {OrchestratorBudgetSettings.MinimumMaxTurns} and {OrchestratorBudgetSettings.MaximumMaxTurns}"));
         }
     }
 
@@ -136,44 +145,25 @@ internal sealed class TriageConfigurationLoadValidator(SignalNormalizerRegistry 
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "a configured worker tool id");
                 }
-
+                if (string.Equals(tools[toolName].Kind, "external_action", StringComparison.Ordinal))
+                {
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "an immediate internal tool id");
+                }
                 if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal) &&
                     !string.Equals(roleName, MemoryRoleName, StringComparison.Ordinal))
                 {
                     throw Invalid("Roles." + roleName + ".Tools", toolName, "memory_search granted only to the memory role");
                 }
-            }
-        }
-    }
-
-    private static void ValidateTools(
-        IReadOnlyDictionary<string, TriageRouteSettings> routes,
-        IReadOnlyDictionary<string, TriageToolSettings> tools)
-    {
-        foreach (var (toolName, tool) in tools)
-        {
-            RequireKey(toolName, "Tools");
-            RequireKnown("Tools." + toolName + ".Kind", tool.Kind, ToolKinds);
-            if (string.Equals(toolName, MemorySearchToolName, StringComparison.Ordinal))
-            {
-                RequireNonBlank("Tools." + toolName + ".EmbeddingRouteId", tool.EmbeddingRouteId ?? string.Empty);
-                RequireEmbeddingRoute(routes, tool.EmbeddingRouteId!, "Tools." + toolName + ".EmbeddingRouteId");
-                if (tool.TopK is <= 0)
+                if (string.Equals(toolName, "source_lookup", StringComparison.Ordinal) &&
+                    !string.Equals(roleName, "source", StringComparison.Ordinal))
                 {
-                    throw Invalid("Tools." + toolName + ".TopK", tool.TopK.Value.ToString(), "a positive integer when set");
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "source_lookup granted only to the source role");
                 }
-
-                if (tool.MinScore is < -1 or > 1)
+                if (string.Equals(toolName, "ticket_search", StringComparison.Ordinal) &&
+                    !string.Equals(roleName, "tickets", StringComparison.Ordinal))
                 {
-                    throw Invalid("Tools." + toolName + ".MinScore", tool.MinScore.Value.ToString(), "a score between -1 and 1 when set");
+                    throw Invalid("Roles." + roleName + ".Tools", toolName, "ticket_search granted only to the tickets role");
                 }
-
-                continue;
-            }
-
-            if (!string.IsNullOrWhiteSpace(tool.EmbeddingRouteId))
-            {
-                RequireEmbeddingRoute(routes, tool.EmbeddingRouteId, "Tools." + toolName + ".EmbeddingRouteId");
             }
         }
     }

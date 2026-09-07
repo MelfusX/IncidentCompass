@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Logging;
-
 namespace IncidentCompass.Worker;
 
-internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
+internal sealed partial class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
 {
     private readonly List<(Task ProcessingTask, CancellationTokenSource Cancellation)> jobs = [];
 
@@ -31,7 +29,7 @@ internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
             }
             catch (Exception exception)
             {
-                logger.LogWarning(exception, "Claimed triage job processing failed after claim.");
+                LogJobFailedAfterClaim(logger, exception);
             }
             finally
             {
@@ -60,7 +58,7 @@ internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
             }
             catch (Exception exception)
             {
-                logger.LogWarning(exception, "Claimed triage job processing failed while draining the worker.");
+                LogJobFailedWhileDraining(logger, exception);
             }
             finally
             {
@@ -77,8 +75,13 @@ internal sealed class WorkerJobTaskSet(ILogger<WorkerJobPump> logger)
             return;
         }
 
-        var delayTask = Task.Delay(delay, cancellationToken);
-        var completionTask = Task.WhenAny(jobs.Select(static job => job.ProcessingTask));
-        await Task.WhenAny(delayTask, completionTask);
+        await WorkerWakeDelay.WaitAsync(
+            delay, jobs.Select(static job => job.ProcessingTask), cancellationToken);
     }
+
+    [LoggerMessage(EventId = 1401, Level = LogLevel.Warning, Message = "Claimed triage job processing failed after claim.")]
+    private static partial void LogJobFailedAfterClaim(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 1402, Level = LogLevel.Warning, Message = "Claimed triage job processing failed while draining the worker.")]
+    private static partial void LogJobFailedWhileDraining(ILogger logger, Exception exception);
 }

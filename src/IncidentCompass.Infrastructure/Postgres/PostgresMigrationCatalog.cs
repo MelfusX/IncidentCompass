@@ -25,6 +25,10 @@ internal static class PostgresMigrationCatalog
         new(10, "v0.2-retriage-jobs", ["019-retriage-jobs.sql"]),
         new(11, "v0.2-report-listing", ["020-report-listing.sql"]),
         new(12, "v0.2-memory-seed-sync-status", ["021-memory-seed-sync-status.sql"]),
-        new(13, "v0.2-triage-job-retry-budget", ["022-triage-job-retry-budget.sql"])
+        new(13, "v0.2-triage-job-retry-budget", ["022-triage-job-retry-budget.sql"]),
+        new(14, "v0.3-action-approvals-outbox", ["023-action-approvals-outbox.sql"]),
+        new(15, "v0.3-post-report-action-intents", ["024-post-report-action-intents.sql"]),
+        new(16, "v0.3-external-action-audit-projection", ["025-external-action-audit-projection.sql"]),
+        new(17, "v0.3-model-cost-rollup-index", ["026-model-cost-rollup-index.sql"])
     ];
 }

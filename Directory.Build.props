@@ -3,9 +3,33 @@
   <PropertyGroup>
     <!-- Deterministic, reproducible restores: every project commits a packages.lock.json.
          CI restores in locked mode so any dependency drift fails the build instead of
-         silently resolving a different version. Regenerate by running `dotnet restore`
-         after changing a PackageReference, then commit the updated lock files. -->
+         silently resolving a different version. After changing a PackageReference or a
+         PackageVersion in Directory.Packages.props, regenerate the whole graph by running
+         `dotnet restore IncidentCompass.slnx` with the force-evaluate option, then commit every
+         lock file it changes: package versions are managed centrally, so one bump also changes
+         the lock file of every project that reaches the package through a ProjectReference.
+         The exact command, and how Dependabot pull requests repair themselves, are documented
+         in docs/versioning.md under "Dependency Lock Files". -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+
+    <!-- Enforce the .editorconfig code-style rules (unused usings, formatting, file-scoped
+         namespaces, using placement) as build warnings, not just editor suggestions. -->
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Warnings are build-breaking so drift is caught at build time instead of drifting
+         unnoticed; AnalysisLevel opts every project into the current recommended set of
+         .NET analyzer rules. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- IDE0005 (unused usings) is configured as a build-enforced diagnostic in .editorconfig,
+         but the compiler only reports it during build when GenerateDocumentationFile is true
+         (https://github.com/dotnet/roslyn/issues/41640). XML doc generation is enabled solely to
+         make that enforcement real; the generated .xml files are a build by-product and are not
+         published. CS1591 (missing XML comment for a publicly visible type or member) is
+         suppressed because this reference project documents selectively rather than exhaustively. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
 </Project>

@@ -11,7 +11,7 @@ using IncidentCompass.Domain.Incidents;
 
 namespace IncidentCompass.Application.Memory;
 
-internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemoryRepository memoryRepository, TimeProvider timeProvider) : IAgentTool
+internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemoryRepository memoryRepository, TimeProvider timeProvider) : IImmediateAgentTool
 {
     private const int DefaultTopK = 5;
     private const double DefaultMinScore = 0.25;
@@ -32,8 +32,6 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
             },
             ["required"] = new JsonArray("query")
         }));
-
-    public ToolPolicyMetadata Policy => ToolPolicyMetadata.Allowed("Read-only tenant-scoped memory retrieval.");
 
     public ToolValidationResult Validate(JsonElement arguments)
     {
@@ -77,12 +75,17 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
             new EmbeddingRequest(query, route.Model, context.Job.Id.ToString()),
             cancellationToken);
 
-        var matches = MemorySearchLexicalFilter.Apply(
+        var topK = NormalizeTopK(toolSettings.TopK);
+        var candidates = await memoryRepository.SearchAsync(
+            new MemorySearchRequest(context.TenantId, embedding.Provider, embedding.Model,
+                embedding.Vector.Count, embedding.Vector, CalculateCandidateCount(topK), NormalizeMinScore(toolSettings.MinScore)),
+            cancellationToken);
+        var matches = MemorySearchReranker.Rank(
             query,
-            await memoryRepository.SearchAsync(
-                new MemorySearchRequest(context.TenantId, embedding.Provider, embedding.Model,
-                    embedding.Vector.Count, embedding.Vector, NormalizeTopK(toolSettings.TopK), NormalizeMinScore(toolSettings.MinScore)),
-                cancellationToken));
+            context.Configuration,
+            context.FaultServiceName,
+            candidates,
+            topK);
 
         var artifacts = matches
             .Select(match => CreateRetrievedArtifact(context, embedding, match))
@@ -133,7 +136,7 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
         };
     }
 
-    private static JsonElement CreateOutput(AgentToolExecutionContext context, IReadOnlyList<MemorySearchMatch> matches, IReadOnlyList<TriageArtifact> artifacts)
+    private static JsonElement CreateOutput(AgentToolExecutionContext context, IReadOnlyList<MemorySearchMatch> matches, TriageArtifact[] artifacts)
     {
         var items = new JsonArray();
         for (var i = 0; i < matches.Count; i++)
@@ -183,5 +186,10 @@ internal sealed class MemorySearchTool(IEmbeddingClient embeddingClient, IMemory
     private static double NormalizeMinScore(double? minScore)
     {
         return Math.Clamp(minScore ?? DefaultMinScore, -1.0, 1.0);
+    }
+
+    private static int CalculateCandidateCount(int topK)
+    {
+        return Math.Min(100, topK * 4);
     }
 }

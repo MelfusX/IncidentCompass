@@ -1,3 +1,5 @@
+using System.Globalization;
+using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using static IncidentCompass.Infrastructure.Intake.TriageConfigurationValidationGuards;
 
@@ -5,7 +7,7 @@ namespace IncidentCompass.Infrastructure.Intake;
 
 internal static class TriageRuleLoadValidator
 {
-    private static readonly HashSet<string> RuleTypes = new(["rate_cap", "precondition", "grounding", "requires_approval"], StringComparer.Ordinal);
+    private static readonly HashSet<string> RuleTypes = new(TriageRuleTypes.All, StringComparer.Ordinal);
     private static readonly HashSet<string> RuleScopes = new(["attempt", "job"], StringComparer.Ordinal);
 
     public static void Validate(
@@ -35,14 +37,14 @@ internal static class TriageRuleLoadValidator
     {
         switch (rule.Type)
         {
-            case "rate_cap":
+            case TriageRuleTypes.RateCap:
                 if (rule.Max is not > 0)
                 {
-                    throw Invalid("Rules.rate_cap.Max", rule.Max?.ToString() ?? "", "a positive integer");
+                    throw Invalid("Rules.rate_cap.Max", rule.Max?.ToString(CultureInfo.InvariantCulture) ?? "", "a positive integer");
                 }
 
                 break;
-            case "precondition":
+            case TriageRuleTypes.Precondition:
                 if (string.IsNullOrWhiteSpace(rule.RequiresSuccessfulToolResult) ||
                     !tools.ContainsKey(rule.RequiresSuccessfulToolResult))
                 {
@@ -50,8 +52,16 @@ internal static class TriageRuleLoadValidator
                 }
 
                 break;
-            case "requires_approval":
-            case "grounding":
+            case TriageRuleTypes.RequiresApproval:
+                if (string.Equals(rule.Tool, "*", StringComparison.Ordinal) ||
+                    !tools.TryGetValue(rule.Tool, out var approvalTool) ||
+                    !string.Equals(approvalTool.Kind, "external_action", StringComparison.Ordinal))
+                {
+                    throw Invalid("Rules.requires_approval.Tool", rule.Tool, "an exact configured external action tool id");
+                }
+
+                break;
+            case TriageRuleTypes.Grounding:
                 break;
         }
     }

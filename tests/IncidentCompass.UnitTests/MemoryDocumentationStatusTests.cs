@@ -1,15 +1,18 @@
+using System.Globalization;
 using System.Text.Json;
 using IncidentCompass.Application.Core.Embeddings;
 using IncidentCompass.Application.Governance.Tools;
 using IncidentCompass.Application.Intake.Configuration;
 using IncidentCompass.Application.Memory;
 using IncidentCompass.Domain.Incidents;
-using IncidentCompass.Domain.Incidents.Statuses;
 
 namespace IncidentCompass.UnitTests;
 
 public sealed class MemoryDocumentationStatusTests
 {
+    private static readonly string[] ExpectedDocumentationStatuses =
+        ["Current", "Stale", "Unversioned", "ServiceMismatch"];
+
     [Fact]
     public async Task ExecuteAsync_AnnotatesEveryRetrievedArtifactAndOutputItem()
     {
@@ -33,7 +36,7 @@ public sealed class MemoryDocumentationStatusTests
             TestContext.Current.CancellationToken);
 
         var items = result.Output.GetProperty("items").EnumerateArray().ToArray();
-        Assert.Equal(new[] { "Current", "Stale", "Unversioned", "ServiceMismatch" },
+        Assert.Equal(ExpectedDocumentationStatuses,
             items.Select(static item => item.GetProperty("documentationStatus").GetString()));
         Assert.All(items, item => Assert.Equal(
             "2026.07.13.2",
@@ -42,7 +45,7 @@ public sealed class MemoryDocumentationStatusTests
         Assert.NotNull(result.Artifacts);
         var artifacts = result.Artifacts.ToArray();
         Assert.Equal(4, artifacts.Length);
-        Assert.Equal(new[] { "Current", "Stale", "Unversioned", "ServiceMismatch" },
+        Assert.Equal(ExpectedDocumentationStatuses,
             artifacts.Select(static artifact => artifact.RedactedPayload.GetProperty("documentationStatus").GetString()));
         Assert.All(artifacts, artifact => Assert.Equal(
             "2026.07.13.2",
@@ -99,7 +102,7 @@ public sealed class MemoryDocumentationStatusTests
 
     private static AgentToolExecutionContext Context(TriageConfiguration configuration, string faultService)
     {
-        var now = DateTimeOffset.Parse("2026-07-13T00:00:00Z");
+        var now = DateTimeOffset.Parse("2026-07-13T00:00:00Z", CultureInfo.InvariantCulture);
         return new AgentToolExecutionContext(
             new TriageJob(
                 Guid.NewGuid(),

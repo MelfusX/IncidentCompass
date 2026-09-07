@@ -41,17 +41,32 @@ powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
 `-NoBuild` reuses existing images. `-Mock` adds `compose.mock.yml`; use it when you need a stable
 backend packaging check without provider calls.
 
+The deterministic mock acceptance path is:
+
+~~~powershell
+powershell -ExecutionPolicy Bypass -File scripts/demo.ps1 -Mock
+~~~
+
+It can be run against a fresh volume and then again against the retained volume. The script resolves
+the API host mapping from Compose, so both runs work with the default ports or with
+`IC_API_PORT` and `IC_POSTGRES_PORT` overrides. These are host-only mappings: service-to-service
+traffic always remains on `api:8080`, `postgres:5432` and `otel-collector:4318`.
+
 Stop the demo services with:
 
 ~~~powershell
-docker compose --profile demo down
+docker compose -f docker-compose.yml -f compose.mock.yml --profile demo down
 ~~~
 
 If you need a fresh database volume after schema or seed changes, use:
 
 ~~~powershell
-docker compose --profile demo down --volumes
+docker compose -f docker-compose.yml -f compose.mock.yml --profile demo down --volumes
 ~~~
+
+The first command retains the named PostgreSQL volume for a retained run. The second removes it,
+so the next `scripts/demo.ps1 -Mock` run is fresh. For the default non-mock path, omit
+`-f compose.mock.yml`.
 
 ## Service Layout
 
@@ -78,6 +93,14 @@ configuration. Put overrides in the ignored `.env` file.
 Compose waits for PostgreSQL health before starting the hosts, checks API readiness with GET
 /health, and uses a process-level Worker health check before running the Tester. API and Worker still
 use restart-on-failure because config warmup intentionally fails fast if durable storage is unavailable.
+
+## Fixed-Authority Action Adapters
+
+The Compose demo does not provide GitHub or Telegram endpoint doubles. Production adapters use fixed
+authorities, and their host-owned repository, recipient and credential bindings are deliberately not
+made configurable through Compose. Automated GitHub and Telegram coverage instead uses deterministic
+in-process recording HTTP handlers. That keeps test doubles from becoming a second runtime endpoint
+configuration path while the mock demo proves the disabled-policy packaging path.
 ## Grouping, Suppression And Recurrence
 
 The grouping configuration separates delivery deduplication from fault lifecycle. Reusing one delivery
@@ -117,15 +140,18 @@ Set these in `.env` before starting the stack when your provider uses different 
 
 ## Demo Scenarios
 
-The Tester first exports a real error span through the OpenTelemetry SDK to the Collector, which forwards it to `/v1/traces`, then runs four scenarios from docs and samples-backed local data:
+The Tester first exports a real error span through the OpenTelemetry SDK to the Collector, which forwards it to `/v1/traces`, then runs five scenarios from docs and samples-backed local data:
 
 1. Known timeout error with a matching seeded runbook.
 2. Unknown null-reference error with no matching memory.
 3. Repeated provider-unavailable errors crossing the configured mass-issue threshold.
 4. Validation/noise input the analysis worker should close quickly.
+5. The exact reviewed injection fixture from `samples/incidents/tester-ticket-action-injection.json`.
+   After its report publishes, Tester performs four bounded reads of that exact fault ledger and fails
+   if `ActionProposed`, `ApprovalDecision`, `ActionDispatchStarted` or `ActionCompleted` appears.
 
 The output table includes FaultId, ReportId, is_mass_issue, Classification, a host-reachable ledger
-URL and a host-reachable report URL. With real providers, exact classifications can vary by model;
+URL, a host-reachable report URL and the explicit bounded action-gate result. With real providers, exact classifications can vary by model;
 the backend checks are about durable grounding, policy and readback, not pretending model reasoning is
 deterministic.
 
@@ -143,3 +169,9 @@ artifact grounding, report persistence and readback.
 
 It does not prove the configured model is always correct. Grounded citations mean each citation
 resolves to a stored artifact from this run; they do not prove the model's conclusion is correct.
+
+The fifth scenario is deliberately narrower than an external-provider test. It observes the shipped
+disabled-action configuration for a bounded period and neither calls an approval API nor enables,
+approves or dispatches an action. The mandatory-Docker injection test remains the authoritative proof
+for configured policy, requested-only approval and zero Telegram/GitHub recording-handler calls. No
+real Telegram or GitHub provider is called by either deterministic check.

@@ -51,8 +51,11 @@ internal sealed class PostgresMemoryRepository(
                        mi.component,
                        mi.release_name
                 FROM incidentcompass.memory_chunks mc
-                JOIN incidentcompass.memory_items mi ON mi.id = mc.memory_item_id
+                JOIN incidentcompass.memory_items mi
+                  ON mi.id = mc.memory_item_id
+                 AND mi.tenant_id = mc.tenant_id
                 WHERE mc.tenant_id = @tenant_id
+                  AND mi.tenant_id = @tenant_id
                   AND mi.is_active = true
                   AND mc.embedding_provider = @embedding_provider
                   AND mc.embedding_model = @embedding_model
@@ -68,7 +71,7 @@ internal sealed class PostgresMemoryRepository(
             FROM scored_chunks
             WHERE score >= @min_score
             ORDER BY score DESC, chunk_id
-            LIMIT @top_k;
+            LIMIT @candidate_count;
             """, connection);
         command.AddParameter("tenant_id", request.TenantId);
         command.AddParameter("embedding_provider", request.EmbeddingProvider);
@@ -76,7 +79,7 @@ internal sealed class PostgresMemoryRepository(
         command.AddParameter("embedding_dimensions", request.EmbeddingDimensions);
         command.Parameters.AddWithValue("query_vector", PostgresVectorParameter.From(request.QueryVector));
         command.AddParameter("min_score", request.MinScore);
-        command.AddParameter("top_k", request.TopK);
+        command.AddParameter("candidate_count", request.CandidateCount);
         var results = new List<MemorySearchMatch>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

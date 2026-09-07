@@ -1,4 +1,6 @@
 using IncidentCompass.Application.Investigation.Reports;
+using IncidentCompass.Application.Investigation.Reports.Context;
+using IncidentCompass.Application.Tickets;
 using IncidentCompass.Domain.Incidents;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
@@ -7,6 +9,13 @@ namespace IncidentCompass.Infrastructure.Investigation;
 
 internal sealed class PostgresReportEvidenceGrounder
 {
+    private readonly string? configuredTicketRepository;
+
+    public PostgresReportEvidenceGrounder(string? configuredTicketRepository = null)
+    {
+        this.configuredTicketRepository = configuredTicketRepository;
+    }
+
     public async Task<IReadOnlyList<GroundedReportEvidence>> GroundAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -23,7 +32,7 @@ internal sealed class PostgresReportEvidenceGrounder
         return grounded;
     }
 
-    private static async Task<GroundedReportEvidence> GroundOneAsync(
+    private async Task<GroundedReportEvidence> GroundOneAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TriageJob job,
@@ -42,8 +51,12 @@ internal sealed class PostgresReportEvidenceGrounder
                        ELSE NULL
                    END AS score,
                    mi.id AS memory_item_id,
-                   a.redacted_payload->>'documentationStatus' AS documentation_status
+                   a.redacted_payload->>'documentationStatus' AS documentation_status,
+                   snapshot.serialized_config->'CurrentReleases'->>fault.service_name AS current_release
             FROM incidentcompass.triage_artifacts a
+            JOIN incidentcompass.triage_jobs job ON job.id = a.job_id
+            JOIN incidentcompass.faults fault ON fault.id = job.fault_id
+            JOIN incidentcompass.triage_config_snapshots snapshot ON snapshot.config_hash = job.config_hash
             LEFT JOIN incidentcompass.memory_items mi
               ON a.kind = 'RetrievedItem'
              AND a.domain_ref = 'memory_item:' || mi.id::text
@@ -70,9 +83,11 @@ internal sealed class PostgresReportEvidenceGrounder
         double? score = reader.IsDBNull(4) ? null : reader.GetDouble(4);
         Guid? memoryItemId = reader.IsDBNull(5) ? null : reader.GetGuid(5);
         var documentationStatus = reader.IsDBNull(6) ? null : reader.GetString(6);
+        var domainRef = reader.IsDBNull(1) ? null : reader.GetString(1);
+        var currentRelease = reader.IsDBNull(7) ? null : reader.GetString(7);
         return new GroundedReportEvidence(
             artifactId,
-            DeriveEvidenceKind(artifactKind, memoryKind),
+            DeriveEvidenceKind(artifactKind, memoryKind, domainRef, payload, currentRelease),
             reference.ReferenceId,
             ValidateQuote(reference.Quote, payload),
             score,
@@ -93,8 +108,29 @@ internal sealed class PostgresReportEvidenceGrounder
         throw new TriageReportValidationException("publish_report evidence referenceId must be a triage artifact id.");
     }
 
-    private static string DeriveEvidenceKind(string artifactKind, string? memoryKind)
+    private string DeriveEvidenceKind(
+        string artifactKind,
+        string? memoryKind,
+        string? domainRef,
+        string payload,
+        string? currentRelease)
     {
+        if (artifactKind == "RetrievedItem" && memoryKind is null)
+        {
+            if (SourceCodeEvidenceShape.IsCitable(domainRef, payload, currentRelease))
+            {
+                return "RetrievedItem";
+            }
+
+            if (ExistingTicketEvidenceShape.IsCitable(domainRef, payload, configuredTicketRepository))
+            {
+                return "RetrievedItem";
+            }
+
+            throw new TriageReportValidationException(
+                "publish_report RetrievedItem evidence has an unsupported or invalid evidence shape.");
+        }
+
         return artifactKind switch
         {
             "RetrievedItem" => memoryKind switch

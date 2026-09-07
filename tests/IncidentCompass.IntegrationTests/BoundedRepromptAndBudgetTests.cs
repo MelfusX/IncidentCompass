@@ -3,9 +3,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using IncidentCompass.Application.Core.ModelClients;
-using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Application.Intake.Configuration;
-using Microsoft.AspNetCore.Hosting;
+using IncidentCompass.Application.Investigation.Jobs;
+using IncidentCompass.Domain.Incidents;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,7 +37,11 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, workerModelCalls);
         Assert.Equal(1, workerDeltas);
-        Assert.Contains("bounded reprompts", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // last_error_message is now a bounded classification ("<error code>: <exception type>."),
+        // not the raw exhausted-reprompt exception text, so this checks the new shape instead of
+        // the scenario-specific wording the exception used to carry; the model-call/delta counts
+        // above already discriminate this scenario from the others in this file.
+        Assert.Equal("triage_job_attempt_failed: InvalidOperationException.", job.LastErrorMessage);
     }
 
     [DockerAvailableFact]
@@ -54,7 +58,9 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, orchestratorModelCalls);
-        Assert.Contains("did not propose", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // See the comment on the InvalidWorkerOutput test above: the classified message no longer
+        // echoes the reprompt-exhaustion exception's own text.
+        Assert.Equal("triage_job_attempt_failed: InvalidOperationException.", job.LastErrorMessage);
     }
 
     [DockerAvailableFact]
@@ -108,7 +114,9 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(2, orchestratorModelCalls);
         Assert.Equal(30, chargedTokens);
-        Assert.Contains("unknown tool", job.LastErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // See the comment on the InvalidWorkerOutput test above: the classified message no longer
+        // echoes the reprompt-exhaustion exception's own text.
+        Assert.Equal("triage_job_attempt_failed: InvalidOperationException.", job.LastErrorMessage);
     }
 
     [DockerAvailableFact]
@@ -124,6 +132,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             "SELECT COALESCE(SUM(workers_delta), 0) FROM incidentcompass.triage_ledger WHERE job_id = @job_id AND event_type = 'BudgetEvent';",
             ("job_id", ingested.JobId.Value));
 
+        Assert.Equal("triage_budget_max_workers_reached", job.LastErrorCode);
         Assert.Equal("DeadLettered", job.Status);
         Assert.Equal(1, workerDeltas);
         Assert.Contains(budgetEvents, value => value.Contains("max_workers_reached", StringComparison.Ordinal));
@@ -161,6 +170,41 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
         Assert.True(tokens > 0);
         Assert.Contains(budgetEvents, value => value.Contains("max_tokens_overshot_after_call", StringComparison.Ordinal));
         Assert.Contains(budgetEvents, value => value.Contains("max_tokens_reached_before_call", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Budget exhaustion is permanent for the job: a replay would spend the same tokens and stop at
+    /// the same guard. The over-budget attempt must therefore dead-letter under its own error code
+    /// after exactly one attempt, even when the retry budget still has attempts left.
+    /// </summary>
+    [DockerAvailableFact]
+    public async Task ProcessClaimedAsync_TokenBudgetExhaustionDeadLettersAfterExactlyOneAttempt()
+    {
+        using var scope = await CreateScopeAsync(RepromptScenario.NoOrchestratorTool, maxReprompts: 2, maxTokens: 10, contextWindowTokens: 8192);
+        var ingested = await IngestOneAsync(scope);
+        Assert.NotNull(ingested.JobId);
+
+        await ProcessNextAsync(scope, "worker-budget-exhaustion", maxAttempts: 3, retryDelay: TimeSpan.Zero);
+
+        var job = await ReadJobAsync(scope.ConnectionString, ingested.JobId.Value);
+        var attempt = await ScalarAsync<int>(
+            scope.ConnectionString,
+            "SELECT attempt FROM incidentcompass.triage_jobs WHERE id = @job_id;",
+            ("job_id", ingested.JobId.Value));
+
+        Assert.Equal("DeadLettered", job.Status);
+        Assert.Equal("triage_budget_max_tokens_reached", job.LastErrorCode);
+        // last_error_message is a bounded classification built from the same code as
+        // last_error_code, not the raw TriageBudgetExhaustedException text, so the row is
+        // self-explanatory when read directly from the database without a raw provider/exception
+        // string ever being persisted.
+        Assert.Equal("triage_budget_max_tokens_reached: TriageBudgetExhaustedException.", job.LastErrorMessage);
+        Assert.Equal(1, attempt);
+
+        var reclaimed = await TryClaimNextAsync(scope, "worker-budget-exhaustion");
+        Assert.True(
+            reclaimed?.Id != ingested.JobId.Value,
+            "A dead-lettered over-budget job must not be claimable for a second attempt.");
     }
 
     [DockerAvailableFact]
@@ -244,6 +288,13 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
             workerId,
             new TriageJobProcessingSettings(maxAttempts, retryDelay),
             TestContext.Current.CancellationToken);
+    }
+
+    private static async Task<TriageJob?> TryClaimNextAsync(TestScope scope, string workerId)
+    {
+        using var serviceScope = scope.Factory.Services.CreateScope();
+        var runner = serviceScope.ServiceProvider.GetRequiredService<ITriageJobRunner>();
+        return await runner.ClaimNextAsync(workerId, TimeSpan.FromMinutes(5), TestContext.Current.CancellationToken);
     }
 
     private static async Task ProcessNextWithMissingConfigAsync(
@@ -398,6 +449,8 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
     private sealed class RepromptModelClient(RepromptScenario scenario) : IAiModelClient
     {
+        private static readonly string[] ValidWorkerKeyFacts = ["Valid worker output."];
+
         private int orchestratorCalls;
 
         public Task<AiModelResponse> CompleteAsync(AiModelRequest request, CancellationToken cancellationToken)
@@ -484,7 +537,7 @@ public sealed class BoundedRepromptAndBudgetTests(PostgresRepositoryFixture post
 
             return Response(request, JsonSerializer.Serialize(new
             {
-                keyFacts = new[] { "Valid worker output." },
+                keyFacts = ValidWorkerKeyFacts,
                 candidateClassification = "SimpleKnownError",
                 needsDeeperContext = false,
                 rationale = "Valid worker output."

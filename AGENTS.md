@@ -35,8 +35,9 @@ Before making non-trivial changes, read the relevant public docs:
 - `Investigation/` holds Worker job orchestration, config rehydration, bounded model calls, delegation,
   worker-tool execution and grounded report publication contracts.
 - `Memory/` holds incident-memory contracts and the governed `memory_search` tool.
-- `Governance/` holds live triage-ledger contracts and worker-policy helpers. The upstream standalone
-  `GovernedAgentToolExecutor` / `AgentToolAuditLogWriter` stack remains dormant and is not the live Worker path.
+- `Governance/` holds live triage-ledger contracts, worker-tool contracts and validation primitives.
+  `ToolRuleEngine` is the single tool-policy decision path shared by immediate Worker reads and
+  backend-owned post-report action proposals.
 - `Infrastructure` implements PostgreSQL persistence, configuration loading, model/embedding clients,
   incident memory and other Application ports.
 - Live model observability uses structured application logs plus durable `ModelCall` and `BudgetEvent`
@@ -59,7 +60,7 @@ Before making non-trivial changes, read the relevant public docs:
 - Auth: foreground `IUserContext` for API callers, `IBackgroundUserContext`
   for Worker/system jobs, and demo header auth only for local/sample use.
 - Providers: OpenAI-compatible providers are the normal local/demo runtime path; deterministic mock providers are for automated tests and explicit mock-only checks.
-- Governance: the live Worker path validates role grants and configured rules before backend tool execution, records decisions in the triage ledger and fails closed. The dormant standalone executor is not registered.
+- Governance: the live Worker path validates role grants and configured rules before backend tool execution, records decisions in the triage ledger and fails closed through a single rule path.
 - Intake fingerprinting: a strong fingerprint requires both a real non-`unknown` service name and structured `errorType`. A user/manual report with only an operator-entered `serviceName` remains weak and opens its own fault.
 
 ## Safety Rules
@@ -83,7 +84,7 @@ Before making non-trivial changes, read the relevant public docs:
 ## Code Organization
 
 - Follow `docs/code-organization.md`.
-- Keep production classes under 200 physical lines unless a local exception is clearly easier to defend than a split.
+- Keep production classes under 400 physical lines unless a local exception is clearly easier to defend than a split.
 - Keep one public/internal type per file: class, record, struct, enum or interface.
 - Use feature/action folders for Application use cases: `Command.cs`, `Query.cs`, `Handler.cs`, `Validator.cs`, `Response.cs`.
 - Keep handlers as orchestration. Put parsing, policy, persistence detail and provider detail behind named collaborators.
@@ -111,17 +112,22 @@ Common commands:
 ```powershell
 dotnet restore IncidentCompass.slnx
 dotnet build IncidentCompass.slnx
-dotnet test IncidentCompass.slnx
+dotnet test --solution IncidentCompass.slnx
 dotnet format IncidentCompass.slnx --verify-no-changes --verbosity minimal
 powershell -ExecutionPolicy Bypass -File scripts\package-vulnerability-gate.ps1
 powershell -ExecutionPolicy Bypass -File scripts\code-organization-gate.ps1
 ```
 
+After changing a package version in `Directory.Packages.props`, regenerate every lock file with
+`dotnet restore IncidentCompass.slnx --force-evaluate` and commit the files it changes. Central
+package management makes one bump change the lock file of every project that reaches the package,
+and CI restores with `--locked-mode`; see `docs/versioning.md`, "Dependency Lock Files".
+
 For persistence-sensitive changes:
 
 ```powershell
 $env:INCIDENTCOMPASS_REQUIRE_DOCKER_TESTS = "true"
-dotnet test tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj
+dotnet test --project tests\IncidentCompass.IntegrationTests\IncidentCompass.IntegrationTests.csproj
 ```
 
 ## Contribution And Release Flow

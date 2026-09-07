@@ -35,10 +35,10 @@ public sealed class ApplicationDispatcherTests
     {
         public async Task<string> HandleAsync(
             PingRequest request,
-            RequestHandlerDelegate<string> next,
+            PipelineContinuation<string> continuation,
             CancellationToken cancellationToken)
         {
-            var result = await next();
+            var result = await continuation();
             return $"{result} through-pipeline";
         }
     }

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TicketsWorkerOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "matched": { "type": "boolean" },
+    "items": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "artifactId": { "type": "string" },
+          "provider": { "type": "string" },
+          "scope": { "type": "string" },
+          "externalId": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": "string" },
+          "assignee": { "type": ["string", "null"] },
+          "createdAtUtc": { "type": "string", "format": "date-time" },
+          "url": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "required": ["artifactId", "provider", "scope", "externalId", "title", "status", "assignee", "createdAtUtc", "url", "score"]
+      }
+    },
+    "noMatchReason": { "type": ["string", "null"] }
+  },
+  "required": ["matched", "items"]
+}

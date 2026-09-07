@@ -1,7 +1,6 @@
 using System.Text.Json;
 using IncidentCompass.Application.Investigation.Jobs;
 using IncidentCompass.Domain.Incidents;
-using IncidentCompass.Infrastructure.Intake;
 using IncidentCompass.Infrastructure.Postgres;
 using Npgsql;
 

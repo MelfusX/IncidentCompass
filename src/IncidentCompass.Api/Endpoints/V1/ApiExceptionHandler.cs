@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Diagnostics;
 
 namespace IncidentCompass.Api;
 
-internal sealed class ApiExceptionHandler(
+internal sealed partial class ApiExceptionHandler(
     ILogger<ApiExceptionHandler> logger)
     : IExceptionHandler
 {
@@ -14,30 +14,65 @@ internal sealed class ApiExceptionHandler(
         Exception exception,
         CancellationToken cancellationToken)
     {
-        var result = MapException(exception);
-        if (result is null)
+        var mapped = MapException(exception);
+        if (mapped is not { } value)
         {
             return false;
         }
 
-        await result.ExecuteAsync(httpContext);
+        LogMappedException(httpContext, exception, value.Code);
+        await value.Result.ExecuteAsync(httpContext);
         return true;
     }
 
-    private IResult? MapException(Exception exception)
+    private static MappedApiError? MapException(Exception exception)
     {
-        if (exception is DomainException)
-        {
-            logger.LogError(exception, "A domain exception reached the API error boundary.");
-        }
-
         return exception switch
         {
             NotFoundException current => ApiErrorMapping.NotFound(current),
+            ConflictException current => ApiErrorMapping.Conflict(current),
+            ForbiddenRequestException current => ApiErrorMapping.Forbidden(current),
             RequestValidationException current => ApiErrorMapping.RequestValidation(current),
-            ValidationException current => ApiErrorMapping.BadRequest(current.Message),
-            DomainException current => ApiErrorMapping.InternalDomainViolation(current),
+            ValidationException current => ApiErrorMapping.BadRequest(current),
+            DomainException => ApiErrorMapping.InternalDomainViolation(),
             _ => null
         };
     }
+
+    // Every mapped exception is logged here, once, with the correlation id an operator would use
+    // to find the request and the stable code that was returned to the caller. AppException and
+    // DomainException messages are authored by this codebase (not raw provider or infrastructure
+    // text), so attaching the exception itself is safe and matches the precedent already set for
+    // domain exceptions reaching this boundary.
+    private void LogMappedException(HttpContext httpContext, Exception exception, string errorCode)
+    {
+        var correlationId = httpContext.TraceIdentifier;
+        if (exception is DomainException)
+        {
+            LogDomainExceptionReachedBoundary(logger, exception, correlationId, errorCode);
+            return;
+        }
+
+        LogClientExceptionReachedBoundary(logger, exception, correlationId, errorCode);
+    }
+
+    [LoggerMessage(
+        EventId = 4001,
+        Level = LogLevel.Error,
+        Message = "A domain exception reached the API error boundary with correlation id {CorrelationId} and error code {ErrorCode}.")]
+    private static partial void LogDomainExceptionReachedBoundary(
+        ILogger logger,
+        Exception exception,
+        string correlationId,
+        string errorCode);
+
+    [LoggerMessage(
+        EventId = 4002,
+        Level = LogLevel.Warning,
+        Message = "A client-facing exception reached the API error boundary with correlation id {CorrelationId} and error code {ErrorCode}.")]
+    private static partial void LogClientExceptionReachedBoundary(
+        ILogger logger,
+        Exception exception,
+        string correlationId,
+        string errorCode);
 }
